@@ -6,8 +6,10 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.goodgirl.accounting.domain.StockMovementReconciliation
+import java.math.BigDecimal
 
-const val ACCOUNTING_DATABASE_VERSION = 4
+const val ACCOUNTING_DATABASE_VERSION = 5
 
 @Database(
     entities = [
@@ -68,6 +70,61 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Older installations could have product balances that were not fully
+         * represented in stock_movements. Add only the exact difference, so the
+         * existing movement history and current on-hand quantity reconcile.
+         */
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.query(
+                    "SELECT id, stockQuantity, purchaseCost, priceCurrencyCode, createdAt FROM products"
+                ).use { products ->
+                    while (products.moveToNext()) {
+                        val productId = products.getString(0)
+                        val currentBalance = products.getString(1)
+                        val purchaseCost = products.getString(2)
+                        val currencyCode = products.getString(3)
+                        val createdAt = products.getLong(4)
+                        val movementDeltas = mutableListOf<String>()
+
+                        database.query(
+                            "SELECT quantityDelta FROM stock_movements WHERE productId = ?",
+                            arrayOf(productId)
+                        ).use { movements ->
+                            while (movements.moveToNext()) {
+                                movementDeltas += movements.getString(0)
+                            }
+                        }
+
+                        val adjustment = StockMovementReconciliation.calculateAdjustment(
+                            currentBalance,
+                            movementDeltas
+                        )
+                        if (BigDecimal(adjustment).compareTo(BigDecimal.ZERO) != 0) {
+                            database.execSQL(
+                                "INSERT INTO stock_movements " +
+                                    "(id, productId, quantityDelta, unitCostSnapshot, currencyCode, " +
+                                    "sourceType, sourceId, occurredAt, note) " +
+                                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                                arrayOf(
+                                    "migration-v5-$productId",
+                                    productId,
+                                    adjustment,
+                                    purchaseCost,
+                                    currencyCode,
+                                    "MIGRATION_RECONCILIATION",
+                                    productId,
+                                    createdAt,
+                                    "تسوية رصيد تاريخي عند تحديث قاعدة البيانات"
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         @Volatile
         private var INSTANCE: AccountingDatabase? = null
 
@@ -77,7 +134,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build().also { INSTANCE = it }
             }
     }
 }
