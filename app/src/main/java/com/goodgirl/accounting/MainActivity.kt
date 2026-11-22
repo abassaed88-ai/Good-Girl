@@ -701,7 +701,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                     ) { Text(if (currencyCode == "SYP") "✓ الليرة السورية" else "الليرة السورية") }
                     TextButton(
                         enabled = draftLines.isEmpty(),
-                        onClick = { currencyCode = "USD"; if (exchangeRate == "1") exchangeRate = ""; selectedProductId = null; selectedUnitName = null }
+                        onClick = { currencyCode = "USD"; exchangeRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1"; selectedProductId = null; selectedUnitName = null }
                     ) { Text(if (currencyCode == "USD") "✓ الدولار الأمريكي" else "الدولار الأمريكي") }
                 }
                 if (draftLines.isNotEmpty()) {
@@ -1130,7 +1130,7 @@ private fun CashManagementScreen(onBack: () -> Unit) {
                     TextButton(onClick = { currencyCode = "SYP"; exchangeRate = "1" }) {
                         Text(if (currencyCode == "SYP") "✓ ليرة سورية" else "ليرة سورية")
                     }
-                    TextButton(onClick = { currencyCode = "USD"; exchangeRate = "" }) {
+                    TextButton(onClick = { currencyCode = "USD"; exchangeRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1" }) {
                         Text(if (currencyCode == "USD") "✓ دولار أمريكي" else "دولار أمريكي")
                     }
                 }
@@ -1287,7 +1287,7 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                     paymentRate = "1"
                 } else if (party?.currencyCode == "USD") {
                     paymentCurrency = "USD"
-                    paymentRate = party?.openingExchangeRate ?: "1"
+                    paymentRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1"
                 }
             }, modifier = Modifier.fillMaxWidth()) {
                 Text(if (party?.kind == "CUSTOMER") "تسجيل تحصيل مستقل" else "تسجيل دفعة مستقلة")
@@ -2611,7 +2611,7 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
                                     quantity = "1"
                                     salePrice = "0"
                                     lineDiscount = "0"
-                                    exchangeRate = ""
+                                    exchangeRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1"
                                     paidAmount = ""
                                     paidAmountTouched = false
                                     note = ""
