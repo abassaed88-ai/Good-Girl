@@ -52,6 +52,7 @@ import com.goodgirl.accounting.data.AccountingBackupManager
 import com.goodgirl.accounting.data.CashTransactionRepository
 import com.goodgirl.accounting.data.CategoryRepository
 import com.goodgirl.accounting.data.InvoiceLineDraft
+import com.goodgirl.accounting.data.InvoicePdfExporter
 import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.PartyPaymentRepository
@@ -307,7 +308,6 @@ private fun DashboardScreen(
             "الحسابات والديون",
             "الصندوق والمصروفات",
             "التقارير والأرباح",
-            "العملات وأسعار الصرف",
             "النسخ الاحتياطي والاستعادة"
         )
         sections.forEachIndexed { index, title ->
@@ -321,7 +321,7 @@ private fun DashboardScreen(
                     3 -> onOpenParties
                     5 -> onOpenCash
                     6 -> onOpenReports
-                    8 -> onOpenBackup
+                    7 -> onOpenBackup
                     else -> null
                 }
             )
@@ -612,7 +612,41 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     val partyKind = if (kind == "SALE") "CUSTOMER" else "SUPPLIER"
     val parties by database.partyDao().observeByKind(partyKind).collectAsState(initial = emptyList())
     val invoices by repository.observeInvoices().collectAsState(initial = emptyList())
+    val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
+    var pendingPdfInvoiceId by remember { mutableStateOf<String?>(null) }
+    var isExportingPdf by remember { mutableStateOf(false) }
+    var pdfMessage by remember { mutableStateOf<String?>(null) }
+    val pdfExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        val targetInvoice = invoices.firstOrNull { it.id == pendingPdfInvoiceId }
+        if (uri != null && targetInvoice != null) {
+            val targetLines = invoiceLines.filter { it.invoiceId == targetInvoice.id }
+            val targetPartyName = parties.firstOrNull { it.id == targetInvoice.partyId }?.name
+            scope.launch {
+                isExportingPdf = true
+                pdfMessage = null
+                try {
+                    InvoicePdfExporter.write(
+                        context = context,
+                        destination = uri,
+                        invoice = targetInvoice,
+                        lines = targetLines,
+                        partyName = targetPartyName
+                    )
+                    pdfMessage = "تم حفظ ملف PDF للفاتورة " + targetInvoice.invoiceNumber
+                } catch (error: Exception) {
+                    pdfMessage = error.message ?: "تعذر إنشاء ملف PDF"
+                } finally {
+                    isExportingPdf = false
+                    pendingPdfInvoiceId = null
+                }
+            }
+        } else {
+            pendingPdfInvoiceId = null
+        }
+    }
     val draftLines = remember(kind) { mutableStateListOf<InvoiceLineDraft>() }
 
     var selectedProductId by remember { mutableStateOf<String?>(null) }
@@ -883,6 +917,14 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                     Text(invoice.invoiceNumber, color = Ink, fontWeight = FontWeight.Bold)
                     Text("الإجمالي: " + invoice.total + " " + invoice.currencyCode, color = BrandBlue, fontSize = 13.sp)
                     Text("المدفوع: " + invoice.paid + " — المتبقي: " + invoice.remaining + " " + invoice.currencyCode, color = Color(0xFF64748B), fontSize = 12.sp)
+                    TextButton(
+                        enabled = !isExportingPdf,
+                        onClick = {
+                            pendingPdfInvoiceId = invoice.id
+                            val safeNumber = invoice.invoiceNumber.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                            pdfExportLauncher.launch("GoodGirl_" + safeNumber + ".pdf")
+                        }
+                    ) { Text("تصدير PDF") }
                     if (invoice.remaining.toBigDecimalOrNull()?.compareTo(BigDecimal.ZERO) == 1) {
                         TextButton(onClick = {
                             paymentInvoiceId = invoice.id
@@ -938,6 +980,9 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                     TextButton(onClick = { paymentInvoiceId = null }) { Text("إلغاء") }
                 }
             }
+        }
+        pdfMessage?.let {
+            Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
         }
         paymentMessage?.let {
             Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
