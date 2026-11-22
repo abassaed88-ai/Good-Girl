@@ -3,7 +3,6 @@ package com.goodgirl.accounting.data
 import androidx.room.withTransaction
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.StockMovementEntity
-import com.goodgirl.accounting.domain.ProductInputRules
 import com.goodgirl.accounting.domain.StockInputRules
 import java.util.UUID
 
