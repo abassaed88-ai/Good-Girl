@@ -275,7 +275,7 @@ private fun DashboardScreen(
             Text("نظام إدارة ومحاسبة متكامل", color = Color.White, fontSize = 16.sp)
             Spacer(Modifier.height(12.dp))
             Text(
-                "نسخة تطويرية — تُعرض الأرصدة الفعلية بعد ربط كل الأقسام",
+                "تُحدّث مؤشرات اللوحة من السجلات المحفوظة على هذا الجهاز، مع فصل العملات",
                 color = Color.White.copy(alpha = 0.88f),
                 fontSize = 12.sp
             )
@@ -344,7 +344,7 @@ private fun DashboardScreen(
         }
 
         Text(
-            "الأقسام الأخرى ستُفعّل تباعاً بعد ربطها بدورة البيانات والمحاسبة.",
+            "تعتمد المؤشرات على الفواتير والحركات المسجلة؛ أدخل العمليات أولاً لتظهر نتائجها في الملخصات.",
             color = Color(0xFF64748B),
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
