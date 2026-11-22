@@ -127,6 +127,28 @@ class BackupIntegrityValidatorTest {
     }
 
     @Test
+    fun rejectsZeroMovementEvenWhenDecimalHasScale() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(
+                products = listOf(product()),
+                units = listOf(baseUnit()),
+                movements = listOf(
+                    StockMovementEntity(
+                        id = "m-zero",
+                        productId = "p1",
+                        quantityDelta = "0.0",
+                        unitCostSnapshot = "3",
+                        currencyCode = "SYP",
+                        sourceType = "MANUAL_ADJUSTMENT",
+                        sourceId = "m-zero",
+                        occurredAt = 1L
+                    )
+                )
+            )
+        }
+    }
+
+    @Test
     fun rejectsMovementPointingToMissingProduct() {
         assertThrows(IllegalArgumentException::class.java) {
             validate(
