@@ -161,7 +161,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
             val totalDiscount = lineDiscountTotal.add(cleanInvoiceDiscount)
             val amounts = InvoiceCalculator.calculate(subtotal, totalDiscount, cleanPaid)
             require(cleanPaid <= amounts.total) { "المبلغ المدفوع لا يمكن أن يتجاوز إجمالي الفاتورة" }
-            require(amounts.remaining == BigDecimal.ZERO || partyId != null) {
+            require(amounts.remaining.compareTo(BigDecimal.ZERO) == 0 || partyId != null) {
                 "اختر حساب العميل أو المورد عند وجود مبلغ آجل"
             }
 
