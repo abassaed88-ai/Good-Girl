@@ -2239,10 +2239,26 @@ private fun ProductManagementScreen(
                     }
                 }
                 OutlinedTextField(unit, { unit = it }, modifier = Modifier.fillMaxWidth(), label = { Text("وحدة القياس الأساسية") }, singleLine = true)
-                OutlinedTextField(purchaseCost, { purchaseCost = it }, modifier = Modifier.fillMaxWidth(), label = { Text("كلفة الوحدة") }, singleLine = true)
+                val editingProduct = products.firstOrNull { it.id == editingId }
+                val canEditPurchaseCost = editingProduct == null ||
+                    (editingProduct.stockQuantity.toBigDecimalOrNull()?.compareTo(BigDecimal.ZERO) == 0)
+                OutlinedTextField(
+                    purchaseCost,
+                    { purchaseCost = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("متوسط كلفة الشراء") },
+                    enabled = canEditPurchaseCost,
+                    singleLine = true
+                )
+                if (!canEditPurchaseCost) {
+                    Text(
+                        "متوسط الكلفة لا يُعدّل من بطاقة المنتج أثناء وجود مخزون. سجّل فاتورة شراء أو حركة إضافة مخزون لتحديثه مع حفظ أثر الحركة.",
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp
+                    )
+                }
                 OutlinedTextField(salePrice, { salePrice = it }, modifier = Modifier.fillMaxWidth(), label = { Text("سعر البيع") }, singleLine = true)
                 Text("عملة الكلفة وسعر البيع", color = Color(0xFF64748B), fontSize = 12.sp)
-                val editingProduct = products.firstOrNull { it.id == editingId }
                 val canChangeCurrency = editingProduct == null ||
                     (editingProduct.stockQuantity.toBigDecimalOrNull()?.compareTo(BigDecimal.ZERO) == 0)
                 if (canChangeCurrency) {
