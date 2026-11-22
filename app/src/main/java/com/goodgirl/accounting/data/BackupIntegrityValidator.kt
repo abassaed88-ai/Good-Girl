@@ -194,6 +194,19 @@ object BackupIntegrityValidator {
             requireCurrency(movement.currencyCode, "عملة حركة المخزون")
         }
 
+        // The product's stored balance must equal the sum of its complete movement history.
+        // This catches backups where the current stock was edited independently of the audit trail.
+        val movementBalanceByProduct = movements.groupBy { it.productId }.mapValues { (_, productMovements) ->
+            productMovements.fold(BigDecimal.ZERO) { balance, movement ->
+                balance.add(decimal(movement.quantityDelta, "كمية حركة المخزون"))
+            }
+        }
+        products.forEach { product ->
+            val movementBalance = movementBalanceByProduct[product.id] ?: BigDecimal.ZERO
+            require(movementBalance.compareTo(decimal(product.stockQuantity, "رصيد المنتج ${product.name}")) == 0) {
+                "رصيد المنتج ${product.name} لا يطابق مجموع حركات المخزون"
+            }
+        }
         ledgerEntries.forEach { entry ->
             require(entry.partyId == null || entry.partyId in partyById) {
                 "يوجد قيد مالي مرتبط بحساب غير موجود"
