@@ -16,6 +16,30 @@ class StockInputRulesTest {
     }
 
     @Test
+    fun stockInAdjustmentUpdatesWeightedAverageCost() {
+        val result = StockInputRules.calculateAdjustmentCost(
+            currentQuantity = "10",
+            currentAverageCost = "10",
+            quantityDelta = "5",
+            incomingUnitCost = "20"
+        )
+        assertEquals("20", result.movementUnitCost)
+        assertEquals("13.33333333", result.resultingAverageCost)
+    }
+
+    @Test
+    fun stockOutUsesCurrentAverageCostWithoutChangingIt() {
+        val result = StockInputRules.calculateAdjustmentCost(
+            currentQuantity = "10",
+            currentAverageCost = "12.5",
+            quantityDelta = "-3",
+            incomingUnitCost = ""
+        )
+        assertEquals("12.5", result.movementUnitCost)
+        assertEquals("12.5", result.resultingAverageCost)
+    }
+
+    @Test
     fun rejectsNegativeResultingBalance() {
         assertThrows(IllegalArgumentException::class.java) {
             StockInputRules.calculateNewBalance("2", "-3")
