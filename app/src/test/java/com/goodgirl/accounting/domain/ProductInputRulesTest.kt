@@ -30,6 +30,19 @@ class ProductInputRulesTest {
     }
 
     @Test
+    fun acceptsSupportedCurrencies() {
+        assertEquals("SYP", ProductInputRules.normalizeCurrencyCode("syp"))
+        assertEquals("USD", ProductInputRules.normalizeCurrencyCode("USD"))
+    }
+
+    @Test
+    fun rejectsUnsupportedCurrency() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ProductInputRules.normalizeCurrencyCode("EUR")
+        }
+    }
+
+    @Test
     fun rejectsMalformedAmount() {
         assertThrows(IllegalArgumentException::class.java) {
             ProductInputRules.normalizeNonNegativeDecimal("12x", "السعر")

@@ -3,6 +3,12 @@ package com.goodgirl.accounting.domain
 import java.math.BigDecimal
 
 object ProductInputRules {
+    fun normalizeCurrencyCode(value: String): String {
+        val currency = value.trim().uppercase()
+        require(currency == "SYP" || currency == "USD") { "عملة المنتج غير مدعومة" }
+        return currency
+    }
+
     fun normalizeNonNegativeDecimal(value: String, fieldName: String): String {
         val parsed = try {
             BigDecimal(value.trim())

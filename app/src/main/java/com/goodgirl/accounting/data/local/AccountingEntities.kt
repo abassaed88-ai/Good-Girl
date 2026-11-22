@@ -28,6 +28,7 @@ data class ProductEntity(
     val baseUnit: String = "قطعة",
     val purchaseCost: String = "0",
     val salePrice: String = "0",
+    val priceCurrencyCode: String = "SYP",
     val stockQuantity: String = "0",
     val lowStockThreshold: String = "0",
     val note: String = "",
@@ -102,6 +103,7 @@ data class StockMovementEntity(
     /** Signed quantity: positive for stock-in, negative for stock-out. */
     val quantityDelta: String,
     val unitCostSnapshot: String,
+    val currencyCode: String = "SYP",
     val sourceType: String,
     val sourceId: String,
     val occurredAt: Long,

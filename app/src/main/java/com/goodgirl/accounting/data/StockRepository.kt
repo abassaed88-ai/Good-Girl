@@ -33,6 +33,7 @@ class StockRepository(private val database: AccountingDatabase) {
                     productId = productId,
                     quantityDelta = cleanDelta,
                     unitCostSnapshot = cleanCost,
+                    currencyCode = product.priceCurrencyCode,
                     sourceType = "MANUAL_ADJUSTMENT",
                     sourceId = movementId,
                     occurredAt = now,

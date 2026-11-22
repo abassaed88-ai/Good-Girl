@@ -287,8 +287,17 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                 }
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { currencyCode = "SYP"; exchangeRate = "1" }) { Text(if (currencyCode == "SYP") "✓ الليرة السورية" else "الليرة السورية") }
-                    TextButton(onClick = { currencyCode = "USD"; if (exchangeRate == "1") exchangeRate = "" }) { Text(if (currencyCode == "USD") "✓ الدولار الأمريكي" else "الدولار الأمريكي") }
+                    TextButton(
+                        enabled = draftLines.isEmpty(),
+                        onClick = { currencyCode = "SYP"; exchangeRate = "1"; selectedProductId = null }
+                    ) { Text(if (currencyCode == "SYP") "✓ الليرة السورية" else "الليرة السورية") }
+                    TextButton(
+                        enabled = draftLines.isEmpty(),
+                        onClick = { currencyCode = "USD"; if (exchangeRate == "1") exchangeRate = ""; selectedProductId = null }
+                    ) { Text(if (currencyCode == "USD") "✓ الدولار الأمريكي" else "الدولار الأمريكي") }
+                }
+                if (draftLines.isNotEmpty()) {
+                    Text("لا يمكن تبديل عملة الفاتورة بعد إضافة المواد. احذف المواد أولاً إذا أردت تغيير العملة.", color = Color(0xFF64748B), fontSize = 12.sp)
                 }
                 if (currencyCode == "USD") {
                     OutlinedTextField(
@@ -306,11 +315,15 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("إضافة مادة إلى الفاتورة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
                 Box {
-                    Button(onClick = { productMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
-                        Text(selectedProduct?.name ?: "اختيار المادة")
+                    Button(
+                        onClick = { productMenuExpanded = true },
+                        enabled = products.any { it.priceCurrencyCode == currencyCode },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(selectedProduct?.name ?: "اختيار المادة (" + currencyCode + ")")
                     }
                     DropdownMenu(expanded = productMenuExpanded, onDismissRequest = { productMenuExpanded = false }) {
-                        products.forEach { product ->
+                        products.filter { it.priceCurrencyCode == currencyCode }.forEach { product ->
                             DropdownMenuItem(
                                 text = { Text(product.name + " — المتوفر: " + product.stockQuantity + " " + product.baseUnit) },
                                 onClick = {
@@ -321,6 +334,9 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                             )
                         }
                     }
+                }
+                if (products.none { it.priceCurrencyCode == currencyCode }) {
+                    Text("لا توجد مواد معرفة بهذه العملة. أضف مادة أو عدّل عملتها من شاشة المنتجات.", color = Color(0xFF64748B), fontSize = 12.sp)
                 }
                 OutlinedTextField(quantity, { quantity = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الكمية") }, singleLine = true)
                 OutlinedTextField(unitPrice, { unitPrice = it }, modifier = Modifier.fillMaxWidth(), label = { Text(unitPriceLabel) }, singleLine = true)
@@ -780,6 +796,7 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
     var unit by remember { mutableStateOf("قطعة") }
     var purchaseCost by remember { mutableStateOf("0") }
     var salePrice by remember { mutableStateOf("0") }
+    var priceCurrencyCode by remember { mutableStateOf("SYP") }
     var openingStock by remember { mutableStateOf("0") }
     var note by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
@@ -799,6 +816,7 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
         unit = "قطعة"
         purchaseCost = "0"
         salePrice = "0"
+        priceCurrencyCode = "SYP"
         openingStock = "0"
         note = ""
     }
@@ -812,6 +830,7 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
         unit = product.baseUnit
         purchaseCost = product.purchaseCost
         salePrice = product.salePrice
+        priceCurrencyCode = product.priceCurrencyCode
         note = product.note
         message = null
     }
@@ -851,6 +870,22 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
                 OutlinedTextField(unit, { unit = it }, modifier = Modifier.fillMaxWidth(), label = { Text("وحدة القياس") }, singleLine = true)
                 OutlinedTextField(purchaseCost, { purchaseCost = it }, modifier = Modifier.fillMaxWidth(), label = { Text("كلفة الوحدة") }, singleLine = true)
                 OutlinedTextField(salePrice, { salePrice = it }, modifier = Modifier.fillMaxWidth(), label = { Text("سعر البيع") }, singleLine = true)
+                Text("عملة الكلفة وسعر البيع", color = Color(0xFF64748B), fontSize = 12.sp)
+                val editingProduct = products.firstOrNull { it.id == editingId }
+                val canChangeCurrency = editingProduct == null ||
+                    (editingProduct.stockQuantity.toBigDecimalOrNull()?.compareTo(BigDecimal.ZERO) == 0)
+                if (canChangeCurrency) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { priceCurrencyCode = "SYP" }) {
+                            Text(if (priceCurrencyCode == "SYP") "✓ ليرة سورية" else "ليرة سورية")
+                        }
+                        TextButton(onClick = { priceCurrencyCode = "USD" }) {
+                            Text(if (priceCurrencyCode == "USD") "✓ دولار أمريكي" else "دولار أمريكي")
+                        }
+                    }
+                } else {
+                    Text("عملة المنتج ثابتة ما دام له رصيد مخزني: " + priceCurrencyCode, color = Color(0xFF64748B), fontSize = 12.sp)
+                }
                 if (editingId == null) {
                     OutlinedTextField(openingStock, { openingStock = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الرصيد الافتتاحي") }, singleLine = true)
                 } else {
@@ -875,7 +910,8 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
                                         unit = unit,
                                         purchaseCost = purchaseCost,
                                         salePrice = salePrice,
-                                        note = note
+                                        note = note,
+                                        priceCurrencyCode = priceCurrencyCode
                                     )
                                     check(updated) { "تعذر العثور على المنتج لتحديثه" }
                                 } else {
@@ -886,7 +922,8 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
                                         purchaseCost = purchaseCost,
                                         salePrice = salePrice,
                                         openingStock = openingStock,
-                                        note = note
+                                        note = note,
+                                        priceCurrencyCode = priceCurrencyCode
                                     )
                                 }
                                 resetForm()
@@ -1041,9 +1078,9 @@ private fun ProductListItem(
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("الرصيد: ${product.stockQuantity} ${product.baseUnit}", color = BrandBlue, fontSize = 13.sp)
-                Text("سعر البيع: ${product.salePrice}", color = Color(0xFF287A4B), fontSize = 13.sp)
+                Text("سعر البيع: ${product.salePrice} ${product.priceCurrencyCode}", color = Color(0xFF287A4B), fontSize = 13.sp)
             }
-            Text("الكلفة: ${product.purchaseCost}", color = Color(0xFF64748B), fontSize = 12.sp)
+            Text("الكلفة: ${product.purchaseCost} ${product.priceCurrencyCode}", color = Color(0xFF64748B), fontSize = 12.sp)
         }
     }
 }

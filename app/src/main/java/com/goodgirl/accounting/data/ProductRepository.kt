@@ -19,7 +19,8 @@ class ProductRepository(private val database: AccountingDatabase) {
         purchaseCost: String,
         salePrice: String,
         openingStock: String,
-        note: String
+        note: String,
+        priceCurrencyCode: String = "SYP"
     ) {
         val now = System.currentTimeMillis()
         val productId = UUID.randomUUID().toString()
@@ -29,6 +30,7 @@ class ProductRepository(private val database: AccountingDatabase) {
         val cleanPrice = ProductInputRules.normalizeNonNegativeDecimal(salePrice, "سعر البيع")
         val cleanStock = ProductInputRules.normalizeNonNegativeDecimal(openingStock, "الرصيد الافتتاحي")
         val cleanSku = sku.trim()
+        val cleanCurrency = ProductInputRules.normalizeCurrencyCode(priceCurrencyCode)
 
         database.withTransaction {
             database.productDao().insert(
@@ -39,6 +41,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                     baseUnit = cleanUnit,
                     purchaseCost = cleanCost,
                     salePrice = cleanPrice,
+                    priceCurrencyCode = cleanCurrency,
                     stockQuantity = cleanStock,
                     note = note.trim(),
                     createdAt = now,
@@ -53,6 +56,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                         productId = productId,
                         quantityDelta = cleanStock,
                         unitCostSnapshot = cleanCost,
+                        currencyCode = cleanCurrency,
                         sourceType = "OPENING_BALANCE",
                         sourceId = productId,
                         occurredAt = now,
@@ -70,17 +74,23 @@ class ProductRepository(private val database: AccountingDatabase) {
         unit: String,
         purchaseCost: String,
         salePrice: String,
-        note: String
+        note: String,
+        priceCurrencyCode: String = "SYP"
     ): Boolean {
         val cleanName = ProductInputRules.requireName(name)
         val cleanUnit = unit.trim().ifEmpty { "قطعة" }
         val cleanCost = ProductInputRules.normalizeNonNegativeDecimal(purchaseCost, "كلفة الشراء")
         val cleanPrice = ProductInputRules.normalizeNonNegativeDecimal(salePrice, "سعر البيع")
+        val cleanCurrency = ProductInputRules.normalizeCurrencyCode(priceCurrencyCode)
         var updated = false
 
         database.withTransaction {
             val current = database.productDao().findById(id)
             if (current != null && current.isActive) {
+                val currentStock = current.stockQuantity.toBigDecimal()
+                require(currentStock.compareTo(java.math.BigDecimal.ZERO) == 0 || cleanCurrency == current.priceCurrencyCode) {
+                    "لا يمكن تغيير عملة المنتج ما دام لديه رصيد في المخزون"
+                }
                 database.productDao().update(
                     current.copy(
                         sku = sku.trim(),
@@ -88,6 +98,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                         baseUnit = cleanUnit,
                         purchaseCost = cleanCost,
                         salePrice = cleanPrice,
+                        priceCurrencyCode = cleanCurrency,
                         note = note.trim(),
                         updatedAt = System.currentTimeMillis()
                     )

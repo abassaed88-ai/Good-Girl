@@ -156,6 +156,9 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 val product = database.productDao().findById(draft.productId)
                     ?: throw IllegalArgumentException("إحدى المواد غير موجودة")
                 require(product.isActive) { "لا يمكن استخدام مادة مؤرشفة في فاتورة جديدة" }
+                require(product.priceCurrencyCode == cleanCurrency) {
+                    "عملة المنتج " + product.name + " هي " + product.priceCurrencyCode + "، ولا تطابق عملة الفاتورة " + cleanCurrency
+                }
 
                 val quantityText = InvoicePostingRules.normalizePositiveQuantity(draft.quantity)
                 val quantity = quantityText.toBigDecimal()
@@ -182,6 +185,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                             productId = product.id,
                             quantityDelta = quantity.negate().stripTrailingZeros().toPlainString(),
                             unitCostSnapshot = unitCostSnapshot,
+                            currencyCode = cleanCurrency,
                             sourceType = "SALE_INVOICE",
                             sourceId = lineId,
                             occurredAt = issuedAt,
@@ -211,6 +215,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                             productId = product.id,
                             quantityDelta = quantity.stripTrailingZeros().toPlainString(),
                             unitCostSnapshot = unitCostSnapshot,
+                            currencyCode = cleanCurrency,
                             sourceType = "PURCHASE_INVOICE",
                             sourceId = lineId,
                             occurredAt = issuedAt,
