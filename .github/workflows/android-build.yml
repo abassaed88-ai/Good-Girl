@@ -35,6 +35,21 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Checkout v4 source for Room schema export
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: legacy-v4
+
+      - name: Generate legacy v4 Room schema
+        working-directory: legacy-v4
+        run: gradle :app:kaptDebugKotlin --no-daemon
+
+      - name: Copy v4 schema into current build
+        run: |
+          mkdir -p app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase
+          cp legacy-v4/app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json
+
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --no-daemon
 
@@ -50,6 +65,14 @@ jobs:
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
+
+      - name: Upload Room schema snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: good-girl-room-schemas
+          path: app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/*.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
