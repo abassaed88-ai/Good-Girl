@@ -46,6 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.goodgirl.accounting.data.CashTransactionRepository
 import com.goodgirl.accounting.data.InvoiceLineDraft
 import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.PartyRepository
@@ -54,6 +55,7 @@ import com.goodgirl.accounting.data.StockRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.domain.CashTransactionRules
 import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
 import java.math.BigDecimal
@@ -98,6 +100,7 @@ private fun GoodGirlApp() {
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
             when (activePage) {
+                "cash" -> CashManagementScreen(onBack = { activePage = "dashboard" })
                 "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
                 "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
                 "products" -> ProductManagementScreen(onBack = { activePage = "dashboard" })
@@ -116,7 +119,8 @@ private fun GoodGirlApp() {
                     onOpenSales = { activePage = "sales" },
                     onOpenPurchases = { activePage = "purchases" },
                     onOpenProducts = { activePage = "products" },
-                    onOpenParties = { activePage = "parties" }
+                    onOpenParties = { activePage = "parties" },
+                    onOpenCash = { activePage = "cash" }
                 )
             }
         }
@@ -128,7 +132,8 @@ private fun DashboardScreen(
     onOpenSales: () -> Unit,
     onOpenPurchases: () -> Unit,
     onOpenProducts: () -> Unit,
-    onOpenParties: () -> Unit
+    onOpenParties: () -> Unit,
+    onOpenCash: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -191,6 +196,7 @@ private fun DashboardScreen(
                     1 -> onOpenPurchases
                     2 -> onOpenProducts
                     3 -> onOpenParties
+                    5 -> onOpenCash
                     else -> null
                 }
             )
@@ -514,6 +520,147 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
 
 
 @Composable
+private fun CashManagementScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val repository = remember(database) { CashTransactionRepository(database) }
+    val entries by repository.observeEntries().collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+
+    var selectedKind by remember { mutableStateOf("INCOME") }
+    var amount by remember { mutableStateOf("") }
+    var currencyCode by remember { mutableStateOf("SYP") }
+    var exchangeRate by remember { mutableStateOf("1") }
+    var description by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    val cashMovements = remember(entries) {
+        entries.filter { it.entryType == "CASH_IN" || it.entryType == "CASH_OUT" }
+            .sortedByDescending { it.occurredAt }
+    }
+    val totals = remember(cashMovements) {
+        val grouped = mutableMapOf<String, Pair<BigDecimal, BigDecimal>>()
+        cashMovements.forEach { entry ->
+            val previous = grouped[entry.currencyCode] ?: (BigDecimal.ZERO to BigDecimal.ZERO)
+            val value = entry.amount.toBigDecimal()
+            grouped[entry.currencyCode] = if (entry.entryType == "CASH_IN") {
+                (previous.first.add(value) to previous.second)
+            } else {
+                (previous.first to previous.second.add(value))
+            }
+        }
+        grouped
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
+        Text("الصندوق والمصروفات", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        Text("تسجيل الإيرادات والمصروفات ومتابعة حركات القبض والصرف المسجلة", color = Color(0xFF64748B), fontSize = 13.sp)
+
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("حركة مالية جديدة", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Ink)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = { selectedKind = "INCOME"; message = null }, modifier = Modifier.weight(1f)) {
+                        Text(if (selectedKind == "INCOME") "✓ إيراد" else "إيراد")
+                    }
+                    Button(onClick = { selectedKind = "EXPENSE"; message = null }, modifier = Modifier.weight(1f)) {
+                        Text(if (selectedKind == "EXPENSE") "✓ مصروف" else "مصروف")
+                    }
+                }
+                OutlinedTextField(amount, { amount = it }, modifier = Modifier.fillMaxWidth(), label = { Text("المبلغ") }, singleLine = true)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { currencyCode = "SYP"; exchangeRate = "1" }) {
+                        Text(if (currencyCode == "SYP") "✓ ليرة سورية" else "ليرة سورية")
+                    }
+                    TextButton(onClick = { currencyCode = "USD"; exchangeRate = "" }) {
+                        Text(if (currencyCode == "USD") "✓ دولار أمريكي" else "دولار أمريكي")
+                    }
+                }
+                if (currencyCode == "USD") {
+                    OutlinedTextField(exchangeRate, { exchangeRate = it }, modifier = Modifier.fillMaxWidth(), label = { Text("سعر صرف الدولار مقابل الليرة") }, singleLine = true)
+                }
+                OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("البيان أو سبب الحركة") }, minLines = 2)
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isSaving = true
+                            message = null
+                            try {
+                                repository.recordTransaction(
+                                    kind = selectedKind,
+                                    amount = amount,
+                                    currencyCode = currencyCode,
+                                    exchangeRate = if (currencyCode == "SYP") "1" else exchangeRate,
+                                    description = description
+                                )
+                                amount = ""
+                                description = ""
+                                message = if (selectedKind == "INCOME") "تم تسجيل الإيراد وإضافته إلى الصندوق" else "تم تسجيل المصروف وتخفيض الصندوق"
+                            } catch (error: Exception) {
+                                message = error.message ?: "تعذر حفظ الحركة"
+                            } finally {
+                                isSaving = false
+                            }
+                        }
+                    },
+                    enabled = !isSaving,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isSaving) "جارٍ الحفظ..." else if (selectedKind == "INCOME") "تسجيل الإيراد" else "تسجيل المصروف")
+                }
+                message?.let {
+                    Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                }
+            }
+        }
+
+        Text("ملخص الصندوق حسب العملة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        if (totals.isEmpty()) {
+            Text("لا توجد حركات نقدية مسجلة بعد.", color = Color(0xFF64748B), fontSize = 13.sp)
+        } else {
+            totals.forEach { (currency, pair) ->
+                val net = pair.first.subtract(pair.second)
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(currency, color = BrandBlue, fontWeight = FontWeight.Bold)
+                        Text("إجمالي المقبوض: " + pair.first.stripTrailingZeros().toPlainString(), color = Color(0xFF287A4B), fontSize = 13.sp)
+                        Text("إجمالي المصروف: " + pair.second.stripTrailingZeros().toPlainString(), color = Color(0xFFB42332), fontSize = 13.sp)
+                        Text("صافي الحركات: " + net.stripTrailingZeros().toPlainString(), color = Ink, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        Text("آخر حركات الصندوق", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        if (cashMovements.isEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Text("لا توجد حركات بعد.", modifier = Modifier.padding(18.dp), color = Color(0xFF64748B))
+            }
+        } else {
+            cashMovements.take(30).forEach { entry ->
+                val isIn = entry.entryType == "CASH_IN"
+                val date = remember(entry.occurredAt) {
+                    SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(entry.occurredAt))
+                }
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(if (isIn) "قبض" else "صرف", color = if (isIn) Color(0xFF287A4B) else Color(0xFFB42332), fontWeight = FontWeight.Bold)
+                        Text(entry.amount + " " + entry.currencyCode, color = Ink, fontWeight = FontWeight.SemiBold)
+                        Text(date, color = Color(0xFF64748B), fontSize = 11.sp)
+                        if (entry.note.isNotBlank()) Text(entry.note, color = Color(0xFF64748B), fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
@@ -692,7 +839,7 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
                         TextButton(onClick = { openingCurrency = "SYP"; openingExchangeRate = "1" }) {
                             Text(if (openingCurrency == "SYP") "✓ ليرة سورية" else "ليرة سورية")
                         }
-                        TextButton(onClick = { openingCurrency = "USD"; openingExchangeRate = "" }) {
+                        TextButton(onClick = { openingCurrency = "USD"; openingExchangeRate = "1" }) {
                             Text(if (openingCurrency == "USD") "✓ دولار أمريكي" else "دولار أمريكي")
                         }
                     }
