@@ -7,6 +7,7 @@ import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.domain.InvoiceCalculator
+import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
 import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.ProductInputRules
 import com.goodgirl.accounting.domain.ProductUnitInputRules
@@ -154,7 +155,38 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 require(party.kind == requiredKind) { "نوع الحساب لا يتوافق مع نوع الفاتورة" }
             }
 
-            lines.forEach { draft ->
+            val lineNetAmounts = lines.map { draft ->
+                val quantity = InvoicePostingRules.normalizePositiveQuantity(draft.quantity).toBigDecimal()
+                val unitPrice = ProductInputRules.normalizeNonNegativeDecimal(draft.unitPrice, "سعر الوحدة").toBigDecimal()
+                val lineDiscount = ProductInputRules.normalizeNonNegativeDecimal(draft.discount, "خصم السطر").toBigDecimal()
+                val grossLine = quantity.multiply(unitPrice)
+                require(lineDiscount <= grossLine) { "خصم السطر أكبر من قيمة السطر" }
+                grossLine.subtract(lineDiscount)
+            }
+            val netBeforeInvoiceDiscount = lineNetAmounts.fold(BigDecimal.ZERO, BigDecimal::add)
+            require(cleanInvoiceDiscount <= netBeforeInvoiceDiscount) {
+                "خصم الفاتورة أكبر من قيمة الفاتورة بعد خصومات المواد"
+            }
+            val invoiceDiscountShares = InvoiceDiscountAllocator.allocate(
+                lineNetAmounts,
+                cleanInvoiceDiscount
+            )
+            val purchaseUnitCosts = lines.mapIndexed { index, draft ->
+                val product = database.productDao().findById(draft.productId)
+                    ?: throw IllegalArgumentException("إحدى المواد غير موجودة")
+                val selectedUnit = database.productUnitDao().findByName(
+                    product.id,
+                    draft.unitName ?: product.baseUnit
+                ) ?: throw IllegalArgumentException("وحدة القياس المحددة غير مرتبطة بهذه المادة")
+                val quantity = InvoicePostingRules.normalizePositiveQuantity(draft.quantity).toBigDecimal()
+                val factor = ProductUnitInputRules.normalizeFactor(selectedUnit.baseFactor).toBigDecimal()
+                val baseQuantity = quantity.multiply(factor)
+                lineNetAmounts[index].subtract(invoiceDiscountShares[index])
+                    .divide(baseQuantity, 8, java.math.RoundingMode.HALF_UP)
+                    .stripTrailingZeros().toPlainString()
+            }
+
+            lines.forEachIndexed { lineIndex, draft ->
                 val product = database.productDao().findById(draft.productId)
                     ?: throw IllegalArgumentException("إحدى المواد غير موجودة")
                 require(product.isActive) { "لا يمكن استخدام مادة مؤرشفة في فاتورة جديدة" }
@@ -201,8 +233,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                         )
                     )
                 } else {
-                    val incomingBaseCost = unitPrice.divide(unitFactor, 8, java.math.RoundingMode.HALF_UP)
-                        .stripTrailingZeros().toPlainString()
+                    val incomingBaseCost = purchaseUnitCosts[lineIndex]
                     val newStock = currentStock.add(baseQuantity).stripTrailingZeros().toPlainString()
                     val newAverageCost = InvoicePostingRules.calculateWeightedAverageCost(
                         currentQuantity = product.stockQuantity,
