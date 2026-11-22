@@ -19,6 +19,20 @@ object ProductInputRules {
         return parsed.stripTrailingZeros().toPlainString()
     }
 
+    fun requirePurchaseCostChangeIsTracked(
+        currentQuantity: String,
+        currentCost: String,
+        requestedCost: String
+    ): String {
+        val quantity = normalizeNonNegativeDecimal(currentQuantity, "الرصيد الحالي").toBigDecimal()
+        val previous = normalizeNonNegativeDecimal(currentCost, "كلفة الشراء الحالية")
+        val requested = normalizeNonNegativeDecimal(requestedCost, "كلفة الشراء").toBigDecimal()
+        require(quantity.compareTo(BigDecimal.ZERO) == 0 || requested.compareTo(previous.toBigDecimal()) == 0) {
+            "لا يمكن تعديل متوسط كلفة المخزون يدوياً مع وجود رصيد؛ سجّل فاتورة شراء أو حركة إضافة مخزون لتوثيق الكلفة الجديدة"
+        }
+        return requested.stripTrailingZeros().toPlainString()
+    }
+
     fun isLowStock(quantity: String, threshold: String): Boolean {
         val current = normalizeNonNegativeDecimal(quantity, "الرصيد").toBigDecimal()
         val limit = normalizeNonNegativeDecimal(threshold, "حد تنبيه المخزون").toBigDecimal()
