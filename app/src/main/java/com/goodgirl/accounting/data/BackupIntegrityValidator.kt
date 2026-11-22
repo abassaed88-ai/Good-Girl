@@ -75,7 +75,7 @@ object BackupIntegrityValidator {
             require(baseUnits.size == 1 && baseUnits.single().unitName == product.baseUnit) {
                 "وحدة الأساس للمنتج ${product.name} غير مكتملة أو غير متطابقة"
             }
-            require(decimal(baseUnits.single().baseFactor, "معامل وحدة الأساس") == BigDecimal.ONE) {
+            require(decimal(baseUnits.single().baseFactor, "معامل وحدة الأساس").compareTo(BigDecimal.ONE) == 0) {
                 "معامل وحدة الأساس للمنتج ${product.name} يجب أن يساوي 1"
             }
         }
