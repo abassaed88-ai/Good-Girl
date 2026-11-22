@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.goodgirl.accounting.data.ProductRepository
+import com.goodgirl.accounting.data.StockRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.ProductEntity
 import kotlinx.coroutines.launch
@@ -166,6 +167,7 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { ProductRepository(database) }
+    val stockRepository = remember(database) { StockRepository(database) }
     val products by repository.observeProducts().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
@@ -179,6 +181,12 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var editingId by remember { mutableStateOf<String?>(null) }
+    var adjustingProductId by remember { mutableStateOf<String?>(null) }
+    var adjustmentDelta by remember { mutableStateOf("") }
+    var adjustmentCost by remember { mutableStateOf("0") }
+    var adjustmentNote by remember { mutableStateOf("") }
+    var stockMessage by remember { mutableStateOf<String?>(null) }
+    var isSavingStock by remember { mutableStateOf(false) }
 
     fun resetForm() {
         editingId = null
@@ -192,6 +200,8 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
     }
 
     fun startEditing(product: ProductEntity) {
+        adjustingProductId = null
+        stockMessage = null
         editingId = product.id
         name = product.name
         sku = product.sku
@@ -199,7 +209,16 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
         purchaseCost = product.purchaseCost
         salePrice = product.salePrice
         note = product.note
-        message = "تعديل بيانات المنتج: ${product.name}"
+        message = null
+    }
+
+    fun startStockAdjustment(product: ProductEntity) {
+        editingId = null
+        adjustingProductId = product.id
+        adjustmentDelta = ""
+        adjustmentCost = product.purchaseCost
+        adjustmentNote = ""
+        stockMessage = null
     }
 
     Column(
@@ -293,6 +312,86 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
             }
         }
 
+
+        val adjustingProduct = products.firstOrNull { it.id == adjustingProductId }
+        if (adjustingProduct != null) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    Text("حركة مخزون: " + adjustingProduct.name, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                    Text(
+                        "الرصيد الحالي: " + adjustingProduct.stockQuantity + " " + adjustingProduct.baseUnit,
+                        color = BrandBlue,
+                        fontSize = 13.sp
+                    )
+                    Text("اكتب كمية موجبة للإضافة أو سالبة للسحب، مثل 5 أو -2.", color = Color(0xFF64748B), fontSize = 12.sp)
+                    OutlinedTextField(
+                        adjustmentDelta,
+                        { adjustmentDelta = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("كمية الحركة (+ إضافة / - سحب)") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        adjustmentCost,
+                        { adjustmentCost = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("كلفة الوحدة لهذه الحركة") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        adjustmentNote,
+                        { adjustmentNote = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("سبب الحركة أو ملاحظات") },
+                        minLines = 2
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSavingStock = true
+                                stockMessage = null
+                                try {
+                                    val newBalance = stockRepository.adjustStock(
+                                        productId = adjustingProduct.id,
+                                        quantityDelta = adjustmentDelta,
+                                        unitCost = adjustmentCost,
+                                        note = adjustmentNote
+                                    )
+                                    stockMessage = "تم تحديث الرصيد إلى " + newBalance
+                                    adjustingProductId = null
+                                } catch (error: Exception) {
+                                    stockMessage = error.message ?: "تعذر تسجيل حركة المخزون"
+                                } finally {
+                                    isSavingStock = false
+                                }
+                            }
+                        },
+                        enabled = !isSavingStock,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isSavingStock) "جارٍ حفظ الحركة..." else "حفظ حركة المخزون")
+                    }
+                    TextButton(onClick = { adjustingProductId = null; stockMessage = null }) {
+                        Text("إلغاء")
+                    }
+                }
+            }
+        }
+        stockMessage?.let {
+            Text(
+                it,
+                color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
+                fontSize = 13.sp
+            )
+        }
+
         Text("قائمة المنتجات (${products.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
         if (products.isEmpty()) {
             Card(
@@ -304,14 +403,22 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
             }
         } else {
             products.forEach { product ->
-                ProductListItem(product, onEdit = { startEditing(product) })
+                ProductListItem(
+                    product,
+                    onEdit = { startEditing(product) },
+                    onStockAdjustment = { startStockAdjustment(product) }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ProductListItem(product: ProductEntity, onEdit: () -> Unit) {
+private fun ProductListItem(
+    product: ProductEntity,
+    onEdit: () -> Unit,
+    onStockAdjustment: () -> Unit
+) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -320,7 +427,10 @@ private fun ProductListItem(product: ProductEntity, onEdit: () -> Unit) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(product.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                TextButton(onClick = onEdit) { Text("تعديل") }
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    TextButton(onClick = onEdit) { Text("تعديل") }
+                    TextButton(onClick = onStockAdjustment) { Text("حركة مخزون") }
+                }
             }
             if (product.sku.isNotBlank()) {
                 Text("الرمز: ${product.sku}", color = Color(0xFF64748B), fontSize = 12.sp)
