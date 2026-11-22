@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: android-build-${{ github.ref }}
@@ -52,6 +52,21 @@ jobs:
 
       - name: Generate current v5 Room schema
         run: gradle :app:kaptDebugKotlin --no-daemon
+
+      - name: Persist exported Room schemas in the PR branch
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/5.json
+          if git diff --cached --quiet; then
+            echo "Room schemas are already current."
+          else
+            git commit -m "chore: persist Room schema snapshots [skip ci]"
+            git push origin "HEAD:${PR_BRANCH}"
+          fi
 
       - name: Upload Room schema snapshots
         uses: actions/upload-artifact@v4
