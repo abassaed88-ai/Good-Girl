@@ -218,6 +218,11 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     var note by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    var paymentInvoiceId by remember { mutableStateOf<String?>(null) }
+    var paymentAmount by remember { mutableStateOf("") }
+    var paymentNote by remember { mutableStateOf("") }
+    var isSavingPayment by remember { mutableStateOf(false) }
+    var paymentMessage by remember { mutableStateOf<String?>(null) }
 
     val selectedProduct = products.firstOrNull { it.id == selectedProductId }
     val selectedParty = parties.firstOrNull { it.id == selectedPartyId }
@@ -413,9 +418,65 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(invoice.invoiceNumber, color = Ink, fontWeight = FontWeight.Bold)
                     Text("الإجمالي: " + invoice.total + " " + invoice.currencyCode, color = BrandBlue, fontSize = 13.sp)
-                    Text("المدفوع: " + invoice.paid + " — المتبقي: " + invoice.remaining, color = Color(0xFF64748B), fontSize = 12.sp)
+                    Text("المدفوع: " + invoice.paid + " — المتبقي: " + invoice.remaining + " " + invoice.currencyCode, color = Color(0xFF64748B), fontSize = 12.sp)
+                    if (invoice.remaining.toBigDecimalOrNull()?.compareTo(BigDecimal.ZERO) == 1) {
+                        TextButton(onClick = {
+                            paymentInvoiceId = invoice.id
+                            paymentAmount = invoice.remaining
+                            paymentNote = ""
+                            paymentMessage = null
+                        }) { Text(if (kind == "SALE") "تسجيل قبض" else "تسجيل دفع") }
+                    }
                 }
             }
+        }
+
+        val paymentInvoice = recentInvoices.firstOrNull { it.id == paymentInvoiceId }
+        if (paymentInvoice != null) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text(
+                        (if (kind == "SALE") "قبض دفعة من " else "دفع دفعة إلى ") + paymentInvoice.invoiceNumber,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = Ink
+                    )
+                    Text("المتبقي الحالي: " + paymentInvoice.remaining + " " + paymentInvoice.currencyCode, color = BrandBlue)
+                    OutlinedTextField(paymentAmount, { paymentAmount = it }, modifier = Modifier.fillMaxWidth(), label = { Text("قيمة الدفعة") }, singleLine = true)
+                    OutlinedTextField(paymentNote, { paymentNote = it }, modifier = Modifier.fillMaxWidth(), label = { Text("ملاحظة الدفعة") }, minLines = 2)
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSavingPayment = true
+                                paymentMessage = null
+                                try {
+                                    val result = repository.recordPayment(
+                                        invoiceId = paymentInvoice.id,
+                                        amount = paymentAmount,
+                                        note = paymentNote
+                                    )
+                                    paymentMessage = "تم تسجيل الدفعة. المدفوع: " + result.paid + " — المتبقي: " + result.remaining + " " + result.currencyCode
+                                    paymentInvoiceId = null
+                                    paymentAmount = ""
+                                    paymentNote = ""
+                                } catch (error: Exception) {
+                                    paymentMessage = error.message ?: "تعذر تسجيل الدفعة"
+                                } finally {
+                                    isSavingPayment = false
+                                }
+                            }
+                        },
+                        enabled = !isSavingPayment,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isSavingPayment) "جارٍ تسجيل الدفعة..." else "تأكيد الدفعة")
+                    }
+                    TextButton(onClick = { paymentInvoiceId = null }) { Text("إلغاء") }
+                }
+            }
+        }
+        paymentMessage?.let {
+            Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
         }
     }
 }

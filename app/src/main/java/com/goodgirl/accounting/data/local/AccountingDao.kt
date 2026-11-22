@@ -60,6 +60,12 @@ interface InvoiceDao {
     @Query("SELECT * FROM invoice_lines WHERE invoiceId = :invoiceId ORDER BY id")
     suspend fun getLines(invoiceId: String): List<InvoiceLineEntity>
 
+    @Query("SELECT * FROM invoices WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): InvoiceEntity?
+
+    @Update
+    suspend fun updateInvoice(invoice: InvoiceEntity)
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertInvoice(invoice: InvoiceEntity)
 

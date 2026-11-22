@@ -28,8 +28,88 @@ data class PostedInvoiceResult(
     val remaining: String
 )
 
+data class InvoicePaymentResult(
+    val paymentId: String,
+    val invoiceNumber: String,
+    val paid: String,
+    val remaining: String,
+    val currencyCode: String
+)
+
 class InvoiceRepository(private val database: AccountingDatabase) {
     fun observeInvoices(): Flow<List<InvoiceEntity>> = database.invoiceDao().observeAll()
+
+
+    suspend fun recordPayment(
+        invoiceId: String,
+        amount: String,
+        note: String = "",
+        occurredAt: Long = System.currentTimeMillis()
+    ): InvoicePaymentResult {
+        val paymentId = UUID.randomUUID().toString()
+        var result: InvoicePaymentResult? = null
+
+        database.withTransaction {
+            val invoice = database.invoiceDao().findById(invoiceId)
+                ?: throw IllegalArgumentException("الفاتورة غير موجودة")
+            require(invoice.status == "POSTED") { "لا يمكن تسجيل دفعة على فاتورة غير مرحلة" }
+            val payment = com.goodgirl.accounting.domain.InvoicePaymentRules.calculate(
+                remaining = invoice.remaining,
+                alreadyPaid = invoice.paid,
+                payment = amount
+            )
+            val newRemaining = payment.newRemaining.stripTrailingZeros().toPlainString()
+            val newPaid = payment.newPaid.stripTrailingZeros().toPlainString()
+
+            database.invoiceDao().updateInvoice(
+                invoice.copy(
+                    paid = newPaid,
+                    remaining = newRemaining
+                )
+            )
+
+            val isSale = invoice.kind == "SALE"
+            val cleanAmount = payment.payment.stripTrailingZeros().toPlainString()
+            database.ledgerDao().insert(
+                LedgerEntryEntity(
+                    id = UUID.randomUUID().toString(),
+                    partyId = invoice.partyId,
+                    entryType = if (isSale) "CASH_IN" else "CASH_OUT",
+                    amount = cleanAmount,
+                    currencyCode = invoice.currencyCode,
+                    exchangeRateSnapshot = invoice.exchangeRateSnapshot,
+                    sourceType = if (isSale) "SALE_RECEIPT" else "PURCHASE_PAYMENT",
+                    sourceId = paymentId,
+                    occurredAt = occurredAt,
+                    note = note.trim().ifEmpty { "دفعة للفاتورة ${invoice.invoiceNumber}" }
+                )
+            )
+            database.ledgerDao().insert(
+                LedgerEntryEntity(
+                    id = UUID.randomUUID().toString(),
+                    partyId = invoice.partyId,
+                    entryType = if (isSale) "RECEIVABLE_PAYMENT" else "PAYABLE_PAYMENT",
+                    amount = cleanAmount,
+                    currencyCode = invoice.currencyCode,
+                    exchangeRateSnapshot = invoice.exchangeRateSnapshot,
+                    sourceType = if (isSale) "RECEIVABLE_SETTLEMENT" else "PAYABLE_SETTLEMENT",
+                    sourceId = paymentId,
+                    occurredAt = occurredAt,
+                    note = note.trim().ifEmpty { "تسوية رصيد الفاتورة ${invoice.invoiceNumber}" }
+                )
+            )
+
+            result = InvoicePaymentResult(
+                paymentId = paymentId,
+                invoiceNumber = invoice.invoiceNumber,
+                paid = newPaid,
+                remaining = newRemaining,
+                currencyCode = invoice.currencyCode
+            )
+        }
+
+        return result ?: error("تعذر تسجيل الدفعة")
+    }
 
     suspend fun postInvoice(
         invoiceNumber: String,
