@@ -15,16 +15,16 @@ object PartyPaymentRules {
         amount: String,
         currencyCode: String,
         exchangeRate: String,
-        partyCurrencyCode: String
+        outstandingBalance: String
     ): NormalizedPartyPayment {
         val kind = PartyInputRules.normalizeKind(partyKind)
         val cleanAmount = ProductInputRules.normalizeNonNegativeDecimal(amount, "مبلغ الدفعة")
         require(cleanAmount.toBigDecimal() > BigDecimal.ZERO) { "مبلغ الدفعة يجب أن يكون أكبر من صفر" }
 
         val currency = currencyCode.trim().uppercase()
-        val partyCurrency = partyCurrencyCode.trim().uppercase()
         require(currency == "SYP" || currency == "USD") { "عملة الدفعة غير مدعومة" }
-        require(currency == partyCurrency) { "عملة الدفعة يجب أن تطابق عملة حساب جهة التعامل" }
+        val available = ProductInputRules.normalizeNonNegativeDecimal(outstandingBalance, "الرصيد المستحق").toBigDecimal()
+        require(cleanAmount.toBigDecimal() <= available) { "مبلغ الدفعة أكبر من الرصيد المستحق بهذه العملة" }
 
         val rate = ProductInputRules.normalizeNonNegativeDecimal(exchangeRate, "سعر الصرف")
         require(rate.toBigDecimal() > BigDecimal.ZERO) { "سعر الصرف يجب أن يكون أكبر من صفر" }
