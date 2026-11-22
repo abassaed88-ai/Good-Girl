@@ -42,8 +42,14 @@ interface PartyDao {
     @Query("SELECT * FROM parties WHERE kind = :kind ORDER BY name COLLATE NOCASE")
     fun observeByKind(kind: String): Flow<List<PartyEntity>>
 
+    @Query("SELECT * FROM parties WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): PartyEntity?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(party: PartyEntity)
+
+    @Update
+    suspend fun update(party: PartyEntity)
 }
 
 @Dao

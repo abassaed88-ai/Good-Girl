@@ -42,9 +42,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.ProductRepository
 import com.goodgirl.accounting.data.StockRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
 import kotlinx.coroutines.launch
 
@@ -70,7 +72,7 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun GoodGirlApp() {
-    var showingProducts by remember { mutableStateOf(false) }
+    var activePage by remember { mutableStateOf("dashboard") }
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = BrandBlue,
@@ -82,17 +84,20 @@ private fun GoodGirlApp() {
         )
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
-            if (showingProducts) {
-                ProductManagementScreen(onBack = { showingProducts = false })
-            } else {
-                DashboardScreen(onOpenProducts = { showingProducts = true })
+            when (activePage) {
+                "products" -> ProductManagementScreen(onBack = { activePage = "dashboard" })
+                "parties" -> PartyManagementScreen(onBack = { activePage = "dashboard" })
+                else -> DashboardScreen(
+                    onOpenProducts = { activePage = "products" },
+                    onOpenParties = { activePage = "parties" }
+                )
             }
         }
     }
 }
 
 @Composable
-private fun DashboardScreen(onOpenProducts: () -> Unit) {
+private fun DashboardScreen(onOpenProducts: () -> Unit, onOpenParties: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -149,7 +154,11 @@ private fun DashboardScreen(onOpenProducts: () -> Unit) {
             SectionRow(
                 number = index + 1,
                 title = title,
-                onClick = if (index == 2) onOpenProducts else null
+                onClick = when (index) {
+                    2 -> onOpenProducts
+                    3 -> onOpenParties
+                    else -> null
+                }
             )
         }
 
@@ -159,6 +168,145 @@ private fun DashboardScreen(onOpenProducts: () -> Unit) {
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
         )
+    }
+}
+
+
+@Composable
+private fun PartyManagementScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val repository = remember(database) { PartyRepository(database) }
+    var selectedKind by remember { mutableStateOf("CUSTOMER") }
+    val parties by repository.observeParties(selectedKind).collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+
+    var editingId by remember { mutableStateOf<String?>(null) }
+    var name by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    fun clearForm() {
+        editingId = null
+        name = ""
+        phone = ""
+        address = ""
+        note = ""
+    }
+
+    fun loadParty(party: PartyEntity) {
+        editingId = party.id
+        name = party.name
+        phone = party.phone
+        address = party.address
+        note = party.note
+        message = null
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
+        Text("العملاء والموردون", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        Text("إدارة بيانات جهات التعامل وحفظها محلياً على الهاتف", color = Color(0xFF64748B), fontSize = 13.sp)
+
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Button(
+                onClick = { selectedKind = "CUSTOMER"; clearForm(); message = null },
+                modifier = Modifier.weight(1f)
+            ) { Text("العملاء") }
+            Button(
+                onClick = { selectedKind = "SUPPLIER"; clearForm(); message = null },
+                modifier = Modifier.weight(1f)
+            ) { Text("الموردون") }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text(
+                    if (editingId == null) {
+                        if (selectedKind == "CUSTOMER") "إضافة عميل" else "إضافة مورد"
+                    } else {
+                        if (selectedKind == "CUSTOMER") "تعديل بيانات العميل" else "تعديل بيانات المورد"
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Ink
+                )
+                OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الاسم *") }, singleLine = true)
+                OutlinedTextField(phone, { phone = it }, modifier = Modifier.fillMaxWidth(), label = { Text("رقم الهاتف") }, singleLine = true)
+                OutlinedTextField(address, { address = it }, modifier = Modifier.fillMaxWidth(), label = { Text("العنوان") }, singleLine = true)
+                OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth(), label = { Text("ملاحظات") }, minLines = 2)
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isSaving = true
+                            message = null
+                            try {
+                                repository.saveParty(
+                                    id = editingId,
+                                    kind = selectedKind,
+                                    name = name,
+                                    phone = phone,
+                                    address = address,
+                                    note = note
+                                )
+                                clearForm()
+                                message = if (editingId == null) "تم حفظ البيانات" else "تم تحديث البيانات"
+                            } catch (error: Exception) {
+                                message = error.message ?: "تعذر حفظ البيانات"
+                            } finally {
+                                isSaving = false
+                            }
+                        }
+                    },
+                    enabled = !isSaving,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isSaving) "جارٍ الحفظ..." else if (editingId == null) "حفظ" else "حفظ التعديلات")
+                }
+                if (editingId != null) {
+                    TextButton(onClick = { clearForm(); message = null }) { Text("إلغاء التعديل") }
+                }
+                message?.let {
+                    Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                }
+            }
+        }
+
+        Text(
+            (if (selectedKind == "CUSTOMER") "قائمة العملاء (" else "قائمة الموردين (") + parties.size + ")",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = Ink
+        )
+        if (parties.isEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Text("لا توجد سجلات بعد. أضف أول جهة تعامل من النموذج أعلاه.", modifier = Modifier.padding(18.dp), color = Color(0xFF64748B))
+            }
+        } else {
+            parties.forEach { party ->
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text(party.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            TextButton(onClick = { loadParty(party) }) { Text("تعديل") }
+                        }
+                        if (party.phone.isNotBlank()) Text("الهاتف: " + party.phone, color = Color(0xFF64748B), fontSize = 12.sp)
+                        if (party.address.isNotBlank()) Text("العنوان: " + party.address, color = Color(0xFF64748B), fontSize = 12.sp)
+                        if (party.note.isNotBlank()) Text("ملاحظة: " + party.note, color = Color(0xFF64748B), fontSize = 12.sp)
+                    }
+                }
+            }
+        }
     }
 }
 
