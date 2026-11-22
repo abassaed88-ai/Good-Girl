@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -16,6 +17,12 @@ interface ProductDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(product: ProductEntity)
+
+    @Update
+    suspend fun update(product: ProductEntity)
+
+    @Query("UPDATE products SET isActive = 0, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun archive(id: String, updatedAt: Long)
 
     @Query("UPDATE products SET stockQuantity = :quantity, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateStock(id: String, quantity: String, updatedAt: Long)
