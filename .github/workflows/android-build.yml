@@ -11,8 +11,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-build-${{ github.workflow }}-${{ github.ref }}-${{ github.sha }}
-  cancel-in-progress: false
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -53,6 +53,14 @@ jobs:
       - name: Generate current v5 Room schema
         run: gradle :app:kaptDebugKotlin --no-daemon
 
+      - name: Upload Room schema snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: good-girl-room-schemas
+          path: app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/*.json
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --no-daemon
 
@@ -68,14 +76,6 @@ jobs:
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
-
-      - name: Upload Room schema snapshots
-        uses: actions/upload-artifact@v4
-        with:
-          name: good-girl-room-schemas
-          path: app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/*.json
-          if-no-files-found: error
-          retention-days: 14
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
