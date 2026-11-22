@@ -117,6 +117,7 @@ private fun GoodGirlApp() {
                 "cash" -> CashManagementScreen(onBack = { activePage = "dashboard" })
                 "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
                 "backup" -> BackupManagementScreen(onBack = { activePage = "dashboard" })
+                "settings" -> SettingsScreen(onBack = { activePage = "dashboard" })
                 "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
                 "daily_sales" -> DailySalesScreen(
                     onBack = { activePage = "dashboard" },
@@ -163,7 +164,8 @@ private fun GoodGirlApp() {
                     onOpenParties = { activePage = "parties" },
                     onOpenCash = { activePage = "cash" },
                     onOpenReports = { activePage = "reports" },
-                    onOpenBackup = { activePage = "backup" }
+                    onOpenBackup = { activePage = "backup" },
+                    onOpenSettings = { activePage = "settings" }
                 )
             }
         }
@@ -179,7 +181,8 @@ private fun DashboardScreen(
     onOpenParties: () -> Unit,
     onOpenCash: () -> Unit,
     onOpenReports: () -> Unit,
-    onOpenBackup: () -> Unit
+    onOpenBackup: () -> Unit,
+    onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
@@ -262,7 +265,16 @@ private fun DashboardScreen(
             )
         }
 
-        Text("لوحة التحكم", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text("لوحة التحكم", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+            TextButton(onClick = onOpenSettings) {
+                Text("⚙️ الإعدادات", color = BrandBlue, fontWeight = FontWeight.Bold)
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -325,6 +337,112 @@ private fun DashboardScreen(
 }
 
 
+
+@Composable
+private fun SettingsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val preferences = remember(context) {
+        context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+    }
+    var exchangeRate by remember {
+        mutableStateOf(preferences.getString("usd_syp_rate", "1") ?: "1")
+    }
+    var lastUpdated by remember {
+        mutableStateOf(preferences.getLong("usd_syp_rate_updated_at", 0L))
+    }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
+        Text(
+            "الإعدادات",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Ink
+        )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("العملات وأسعار الصرف", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text(
+                    "حدد قيمة الدولار الواحد بالليرة السورية. يُستخدم السعر المحفوظ كقيمة افتراضية للفواتير الجديدة بالدولار، ويمكن تعديل السعر داخل الفاتورة عند الحاجة.",
+                    color = Color(0xFF64748B),
+                    fontSize = 13.sp
+                )
+                OutlinedTextField(
+                    value = exchangeRate,
+                    onValueChange = {
+                        exchangeRate = it
+                        message = null
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("سعر 1 دولار مقابل الليرة السورية") },
+                    singleLine = true
+                )
+                if (lastUpdated > 0L) {
+                    Text(
+                        "آخر تعديل: " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(lastUpdated)),
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp
+                    )
+                } else {
+                    Text("لم يتم حفظ سعر صرف بعد.", color = Color(0xFF64748B), fontSize = 12.sp)
+                }
+                Button(
+                    onClick = {
+                        val normalized = runCatching {
+                            BigDecimal(exchangeRate.trim().replace(',', '.'))
+                        }.getOrNull()
+                        if (normalized == null || normalized <= BigDecimal.ZERO) {
+                            message = "أدخل سعر صرف صحيحاً أكبر من صفر."
+                        } else {
+                            val cleanRate = normalized.stripTrailingZeros().toPlainString()
+                            val savedAt = System.currentTimeMillis()
+                            preferences.edit()
+                                .putString("usd_syp_rate", cleanRate)
+                                .putLong("usd_syp_rate_updated_at", savedAt)
+                                .apply()
+                            exchangeRate = cleanRate
+                            lastUpdated = savedAt
+                            message = "تم حفظ سعر الصرف الجديد. سيُستخدم للفواتير الجديدة فقط."
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("حفظ سعر الصرف")
+                }
+                message?.let {
+                    Text(
+                        it,
+                        color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
+                        fontSize = 13.sp
+                    )
+                }
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("ملاحظات", color = Ink, fontWeight = FontWeight.Bold)
+                Text("• سعر الصرف محفوظ محلياً على هذا الجهاز.", color = Color(0xFF64748B), fontSize = 12.sp)
+                Text("• الفواتير السابقة تحتفظ بسعر الصرف المسجل وقت إنشائها.", color = Color(0xFF64748B), fontSize = 12.sp)
+                Text("• العملة السورية تعتمد سعر صرف 1 تلقائياً.", color = Color(0xFF64748B), fontSize = 12.sp)
+            }
+        }
+    }
+}
 
 @Composable
 private fun BackupManagementScreen(onBack: () -> Unit) {
@@ -472,7 +590,12 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     var invoiceDiscount by remember { mutableStateOf("0") }
     var paidAmount by remember { mutableStateOf("0") }
     var currencyCode by remember { mutableStateOf("SYP") }
-    var exchangeRate by remember { mutableStateOf("1") }
+    var exchangeRate by remember {
+        mutableStateOf(
+            context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+                .getString("usd_syp_rate", "1") ?: "1"
+        )
+    }
     var note by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
