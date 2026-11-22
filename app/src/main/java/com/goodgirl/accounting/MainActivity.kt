@@ -51,6 +51,7 @@ import com.goodgirl.accounting.data.CategoryRepository
 import com.goodgirl.accounting.data.InvoiceLineDraft
 import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.PartyRepository
+import com.goodgirl.accounting.data.PartyPaymentRepository
 import com.goodgirl.accounting.data.ProductRepository
 import com.goodgirl.accounting.data.ProductUnitRepository
 import com.goodgirl.accounting.data.StockRepository
@@ -854,6 +855,15 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
     val repository = remember(database) { PartyRepository(database) }
     val party by repository.observeParty(partyId).collectAsState(initial = null)
     val entries by database.ledgerDao().observeForParty(partyId).collectAsState(initial = emptyList())
+    val paymentRepository = remember(database) { PartyPaymentRepository(database) }
+    val scope = rememberCoroutineScope()
+    var showPaymentForm by remember { mutableStateOf(false) }
+    var paymentAmount by remember { mutableStateOf("") }
+    var paymentCurrency by remember { mutableStateOf("SYP") }
+    var paymentRate by remember { mutableStateOf("1") }
+    var paymentNote by remember { mutableStateOf("") }
+    var paymentMessage by remember { mutableStateOf("") }
+    var isSavingPayment by remember { mutableStateOf(false) }
 
     val statementEntries = remember(entries, party?.kind) {
         val relevantTypes = if (party?.kind == "CUSTOMER") {
@@ -899,6 +909,87 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                         balances.forEach { (currency, amount) ->
                             Text(amount.stripTrailingZeros().toPlainString() + " " + currency, color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         }
+                    }
+                }
+            }
+            Button(onClick = {
+                showPaymentForm = !showPaymentForm
+                paymentMessage = ""
+                if (party?.currencyCode == "SYP") {
+                    paymentCurrency = "SYP"
+                    paymentRate = "1"
+                } else if (party?.currencyCode == "USD") {
+                    paymentCurrency = "USD"
+                    paymentRate = party?.openingExchangeRate ?: "1"
+                }
+            }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (party?.kind == "CUSTOMER") "تسجيل تحصيل مستقل" else "تسجيل دفعة مستقلة")
+            }
+            if (showPaymentForm) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("تسجيل حركة مالية للحساب", color = Ink, fontWeight = FontWeight.Bold)
+                        OutlinedTextField(
+                            paymentAmount,
+                            { paymentAmount = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("المبلغ") },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            paymentCurrency,
+                            { paymentCurrency = it.uppercase() },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("العملة (SYP أو USD)") },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            paymentRate,
+                            { paymentRate = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("سعر الصرف وقت الحركة") },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            paymentNote,
+                            { paymentNote = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("البيان / الملاحظة") },
+                            minLines = 2
+                        )
+                        if (paymentMessage.isNotBlank()) {
+                            Text(paymentMessage, color = if (paymentMessage.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332))
+                        }
+                        Button(
+                            onClick = {
+                                val currentParty = party ?: return@Button
+                                scope.launch {
+                                    isSavingPayment = true
+                                    paymentMessage = ""
+                                    try {
+                                        paymentRepository.recordPayment(
+                                            partyId = currentParty.id,
+                                            amount = paymentAmount,
+                                            currencyCode = paymentCurrency,
+                                            exchangeRate = paymentRate,
+                                            note = paymentNote
+                                        )
+                                        paymentMessage = "تم تسجيل الحركة وتحديث الصندوق وكشف الحساب"
+                                        paymentAmount = ""
+                                        paymentNote = ""
+                                    } catch (error: Exception) {
+                                        paymentMessage = error.message ?: "تعذر تسجيل الحركة"
+                                    } finally {
+                                        isSavingPayment = false
+                                    }
+                                }
+                            },
+                            enabled = !isSavingPayment,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isSavingPayment) "جارٍ الحفظ..." else "تأكيد الحركة")
+                        }
+                        TextButton(onClick = { showPaymentForm = false }) { Text("إغلاق") }
                     }
                 }
             }
