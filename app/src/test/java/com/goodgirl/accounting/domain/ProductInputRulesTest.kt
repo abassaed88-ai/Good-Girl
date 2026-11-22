@@ -30,6 +30,29 @@ class ProductInputRulesTest {
     }
 
     @Test
+    fun allowsAverageCostChangeWhenThereIsNoStock() {
+        assertEquals(
+            "15",
+            ProductInputRules.requirePurchaseCostChangeIsTracked("0", "10", "15")
+        )
+    }
+
+    @Test
+    fun preventsUntrackedAverageCostChangeWhileStockExists() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ProductInputRules.requirePurchaseCostChangeIsTracked("8", "10", "15")
+        }
+    }
+
+    @Test
+    fun allowsKeepingCurrentAverageCostWhileStockExists() {
+        assertEquals(
+            "10",
+            ProductInputRules.requirePurchaseCostChangeIsTracked("8", "10.00", "10")
+        )
+    }
+
+    @Test
     fun detectsLowStockOnlyWhenThresholdIsSet() {
         assertEquals(true, ProductInputRules.isLowStock("3", "5"))
         assertEquals(true, ProductInputRules.isLowStock("5", "5"))
