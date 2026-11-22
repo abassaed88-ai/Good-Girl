@@ -35,7 +35,9 @@ class FinancialReportCalculatorTest {
             unitCostSnapshot = cost,
             unitPriceSnapshot = price,
             discount = discount,
-            lineTotal = quantity.toBigDecimal().multiply(price.toBigDecimal()).subtract(discount.toBigDecimal()).toPlainString()
+            lineTotal = quantity.toBigDecimal().multiply(price.toBigDecimal()).subtract(discount.toBigDecimal()).toPlainString(),
+            unitFactorSnapshot = "1",
+            baseQuantity = quantity
         )
 
     private fun ledger(type: String, amount: String) = LedgerEntryEntity(
