@@ -3,6 +3,7 @@ package com.goodgirl.accounting.data
 import androidx.room.withTransaction
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
+import com.goodgirl.accounting.domain.PartyBalanceCalculator
 import com.goodgirl.accounting.domain.PartyPaymentRules
 import java.util.UUID
 
@@ -27,25 +28,30 @@ class PartyPaymentRepository(private val database: AccountingDatabase) {
         exchangeRate: String,
         note: String
     ): PartyPaymentResult {
-        val party = database.partyDao().findById(partyId)
-            ?: throw IllegalArgumentException("جهة التعامل غير موجودة")
-        val values = PartyPaymentRules.normalize(
-            party.kind,
-            amount,
-            currencyCode,
-            exchangeRate,
-            party.currencyCode
-        )
         val cleanNote = note.trim()
         require(cleanNote.isNotEmpty()) { "بيان الدفعة مطلوب" }
-
         val paymentId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
-        val isCustomer = values.partyKind == "CUSTOMER"
-        val partyEntryType = if (isCustomer) "RECEIVABLE_PAYMENT" else "PAYABLE_PAYMENT"
-        val cashEntryType = if (isCustomer) "CASH_IN" else "CASH_OUT"
 
-        database.withTransaction {
+        val recorded = database.withTransaction {
+            val party = database.partyDao().findById(partyId)
+                ?: throw IllegalArgumentException("جهة التعامل غير موجودة")
+            val existingEntries = database.ledgerDao().getForParty(partyId)
+            val balances = PartyBalanceCalculator.calculate(party.kind, existingEntries)
+            val normalizedCurrency = currencyCode.trim().uppercase()
+            val outstanding = balances[normalizedCurrency]?.toPlainString() ?: "0"
+            val values = PartyPaymentRules.normalize(
+                party.kind,
+                amount,
+                normalizedCurrency,
+                exchangeRate,
+                outstanding
+            )
+
+            val isCustomer = values.partyKind == "CUSTOMER"
+            val partyEntryType = if (isCustomer) "RECEIVABLE_PAYMENT" else "PAYABLE_PAYMENT"
+            val cashEntryType = if (isCustomer) "CASH_IN" else "CASH_OUT"
+
             database.ledgerDao().insert(
                 LedgerEntryEntity(
                     id = UUID.randomUUID().toString(),
@@ -73,15 +79,16 @@ class PartyPaymentRepository(private val database: AccountingDatabase) {
                     note = cleanNote
                 )
             )
+            Triple(values, partyEntryType, cashEntryType)
         }
 
         return PartyPaymentResult(
             paymentId = paymentId,
             partyId = partyId,
-            amount = values.amount,
-            currencyCode = values.currencyCode,
-            partyEntryType = partyEntryType,
-            cashEntryType = cashEntryType
+            amount = recorded.first.amount,
+            currencyCode = recorded.first.currencyCode,
+            partyEntryType = recorded.second,
+            cashEntryType = recorded.third
         )
     }
 }
