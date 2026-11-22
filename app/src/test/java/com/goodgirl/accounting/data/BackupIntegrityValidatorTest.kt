@@ -106,14 +106,14 @@ class BackupIntegrityValidatorTest {
             lines = listOf(saleLine()),
             movements = listOf(
                 StockMovementEntity(
-                    id = "m1",
-                    productId = "p1",
-                    quantityDelta = "-2",
-                    unitCostSnapshot = "3",
-                    currencyCode = "SYP",
-                    sourceType = "SALE_INVOICE",
-                    sourceId = "l1",
-                    occurredAt = 2L
+                    id = "m-opening", productId = "p1", quantityDelta = "6",
+                    unitCostSnapshot = "3", currencyCode = "SYP",
+                    sourceType = "OPENING_BALANCE", sourceId = "p1", occurredAt = 1L
+                ),
+                StockMovementEntity(
+                    id = "m1", productId = "p1", quantityDelta = "-2",
+                    unitCostSnapshot = "3", currencyCode = "SYP",
+                    sourceType = "SALE_INVOICE", sourceId = "l1", occurredAt = 2L
                 )
             )
         )
@@ -126,6 +126,22 @@ class BackupIntegrityValidatorTest {
         }
     }
 
+    @Test
+    fun rejectsProductBalanceThatDoesNotMatchMovementHistory() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(
+                products = listOf(product()),
+                units = listOf(baseUnit()),
+                movements = listOf(
+                    StockMovementEntity(
+                        id = "m-opening", productId = "p1", quantityDelta = "3",
+                        unitCostSnapshot = "3", currencyCode = "SYP",
+                        sourceType = "OPENING_BALANCE", sourceId = "p1", occurredAt = 1L
+                    )
+                )
+            )
+        }
+    }
     @Test
     fun rejectsZeroMovementEvenWhenDecimalHasScale() {
         assertThrows(IllegalArgumentException::class.java) {
