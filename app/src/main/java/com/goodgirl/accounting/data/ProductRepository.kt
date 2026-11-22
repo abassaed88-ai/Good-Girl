@@ -113,6 +113,11 @@ class ProductRepository(private val database: AccountingDatabase) {
             val current = database.productDao().findById(id)
             if (current != null && current.isActive) {
                 val currentStock = current.stockQuantity.toBigDecimal()
+                val trackedPurchaseCost = ProductInputRules.requirePurchaseCostChangeIsTracked(
+                    currentQuantity = current.stockQuantity,
+                    currentCost = current.purchaseCost,
+                    requestedCost = cleanCost
+                )
                 require(currentStock.compareTo(java.math.BigDecimal.ZERO) == 0 || cleanCurrency == current.priceCurrencyCode) {
                     "لا يمكن تغيير عملة المنتج ما دام لديه رصيد في المخزون"
                 }
@@ -124,7 +129,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                         sku = sku.trim(),
                         name = cleanName,
                         baseUnit = cleanUnit,
-                        purchaseCost = cleanCost,
+                        purchaseCost = trackedPurchaseCost,
                         salePrice = cleanPrice,
                         priceCurrencyCode = cleanCurrency,
                         categoryId = categoryId,
