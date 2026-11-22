@@ -102,6 +102,7 @@ class MainActivity : ComponentActivity() {
 private fun GoodGirlApp() {
     var activePage by remember { mutableStateOf("dashboard") }
     var statementPartyId by remember { mutableStateOf<String?>(null) }
+    var statementReturnPage by remember { mutableStateOf("parties") }
     var unitsProductId by remember { mutableStateOf<String?>(null) }
     var historyProductId by remember { mutableStateOf<String?>(null) }
     MaterialTheme(
@@ -147,16 +148,26 @@ private fun GoodGirlApp() {
                     productId = historyProductId.orEmpty(),
                     onBack = { activePage = "products" }
                 )
+                "accounts" -> AccountsAndDebtsScreen(
+                    onBack = { activePage = "dashboard" },
+                    onManageParties = { activePage = "parties" },
+                    onOpenStatement = { partyId ->
+                        statementPartyId = partyId
+                        statementReturnPage = "accounts"
+                        activePage = "statement"
+                    }
+                )
                 "parties" -> PartyManagementScreen(
                     onBack = { activePage = "dashboard" },
                     onOpenStatement = { partyId ->
                         statementPartyId = partyId
+                        statementReturnPage = "parties"
                         activePage = "statement"
                     }
                 )
                 "statement" -> PartyStatementScreen(
                     partyId = statementPartyId.orEmpty(),
-                    onBack = { activePage = "parties" }
+                    onBack = { activePage = statementReturnPage }
                 )
                 else -> DashboardScreen(
                     onOpenDailySales = { activePage = "daily_sales" },
@@ -164,6 +175,7 @@ private fun GoodGirlApp() {
                     onOpenPurchases = { activePage = "purchases" },
                     onOpenProducts = { activePage = "products" },
                     onOpenParties = { activePage = "parties" },
+                    onOpenAccounts = { activePage = "accounts" },
                     onOpenCash = { activePage = "cash" },
                     onOpenReports = { activePage = "reports" },
                     onOpenBackup = { activePage = "backup" },
@@ -181,6 +193,7 @@ private fun DashboardScreen(
     onOpenPurchases: () -> Unit,
     onOpenProducts: () -> Unit,
     onOpenParties: () -> Unit,
+    onOpenAccounts: () -> Unit,
     onOpenCash: () -> Unit,
     onOpenReports: () -> Unit,
     onOpenBackup: () -> Unit,
@@ -320,6 +333,7 @@ private fun DashboardScreen(
                     1 -> onOpenPurchases
                     2 -> onOpenProducts
                     3 -> onOpenParties
+                    4 -> onOpenAccounts
                     5 -> onOpenCash
                     6 -> onOpenReports
                     7 -> onOpenBackup
@@ -1304,6 +1318,152 @@ private fun CashManagementScreen(onBack: () -> Unit) {
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun AccountsAndDebtsScreen(
+    onBack: () -> Unit,
+    onManageParties: () -> Unit,
+    onOpenStatement: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val customers by database.partyDao().observeByKind("CUSTOMER").collectAsState(initial = emptyList())
+    val suppliers by database.partyDao().observeByKind("SUPPLIER").collectAsState(initial = emptyList())
+    val ledgerEntries by database.ledgerDao().observeAll().collectAsState(initial = emptyList())
+
+    val customerRows = remember(customers, ledgerEntries) {
+        customers.map { party ->
+            val balances = PartyBalanceCalculator.calculate(
+                party.kind,
+                ledgerEntries.filter { it.partyId == party.id }
+            ).filterValues { it.compareTo(BigDecimal.ZERO) != 0 }
+            party to balances
+        }.filter { it.second.isNotEmpty() }
+    }
+    val supplierRows = remember(suppliers, ledgerEntries) {
+        suppliers.map { party ->
+            val balances = PartyBalanceCalculator.calculate(
+                party.kind,
+                ledgerEntries.filter { it.partyId == party.id }
+            ).filterValues { it.compareTo(BigDecimal.ZERO) != 0 }
+            party to balances
+        }.filter { it.second.isNotEmpty() }
+    }
+    val customerTotals = remember(customerRows) {
+        val totals = mutableMapOf<String, BigDecimal>()
+        customerRows.forEach { (_, balances) ->
+            balances.forEach { (currency, amount) ->
+                totals[currency] = (totals[currency] ?: BigDecimal.ZERO).add(amount)
+            }
+        }
+        totals
+    }
+    val supplierTotals = remember(supplierRows) {
+        val totals = mutableMapOf<String, BigDecimal>()
+        supplierRows.forEach { (_, balances) ->
+            balances.forEach { (currency, amount) ->
+                totals[currency] = (totals[currency] ?: BigDecimal.ZERO).add(amount)
+            }
+        }
+        totals
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
+        Text("الحسابات والديون", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        Text(
+            "متابعة المبالغ المستحقة لنا من العملاء والمستحقة علينا للموردين، مع إبقاء كل عملة مستقلة.",
+            color = Color(0xFF64748B),
+            fontSize = 13.sp
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Card(
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(modifier = Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("ديون العملاء", color = Color(0xFF64748B), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(formatCurrencyTotals(customerTotals), color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(customerRows.size.toString() + " حساب عليه رصيد", color = Color(0xFF64748B), fontSize = 11.sp)
+                }
+            }
+            Card(
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(modifier = Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("ديون الموردين", color = Color(0xFF64748B), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Text(formatCurrencyTotals(supplierTotals), color = Color(0xFFB42332), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(supplierRows.size.toString() + " حساب له رصيد", color = Color(0xFF64748B), fontSize = 11.sp)
+                }
+            }
+        }
+
+        Text("المبالغ المستحقة لنا", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        if (customerRows.isEmpty()) {
+            Text("لا توجد أرصدة مستحقة على العملاء حالياً.", color = Color(0xFF64748B), fontSize = 13.sp)
+        } else {
+            customerRows.forEach { (party, balances) ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { onOpenStatement(party.id) },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(party.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        balances.forEach { (currency, amount) ->
+                            Text(
+                                amount.stripTrailingZeros().toPlainString() + " " + currency,
+                                color = BrandBlue,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                        }
+                        Text("فتح كشف الحساب", color = BrandBlue, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        Text("المبالغ المستحقة للموردين", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        if (supplierRows.isEmpty()) {
+            Text("لا توجد أرصدة مستحقة للموردين حالياً.", color = Color(0xFF64748B), fontSize = 13.sp)
+        } else {
+            supplierRows.forEach { (party, balances) ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { onOpenStatement(party.id) },
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Text(party.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        balances.forEach { (currency, amount) ->
+                            Text(
+                                amount.stripTrailingZeros().toPlainString() + " " + currency,
+                                color = Color(0xFFB42332),
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp
+                            )
+                        }
+                        Text("فتح كشف الحساب", color = BrandBlue, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        Button(onClick = onManageParties, modifier = Modifier.fillMaxWidth()) {
+            Text("إدارة العملاء والموردين")
         }
     }
 }
