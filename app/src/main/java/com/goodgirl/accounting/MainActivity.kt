@@ -613,7 +613,7 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(product.productName, color = Ink, fontWeight = FontWeight.Bold)
-                        Text("الكمية المباعة: " + product.quantity.stripTrailingZeros().toPlainString(), color = Color(0xFF64748B), fontSize = 12.sp)
+                        Text("الكمية بوحدة الأساس: " + product.quantity.stripTrailingZeros().toPlainString(), color = Color(0xFF64748B), fontSize = 12.sp)
                         Text("صافي المبيعات: " + product.revenue.stripTrailingZeros().toPlainString() + " " + product.currencyCode, color = BrandBlue, fontSize = 12.sp)
                         Text("تكلفة البضاعة: " + product.cost.stripTrailingZeros().toPlainString() + " " + product.currencyCode, color = Color(0xFF64748B), fontSize = 12.sp)
                         Text(

@@ -15,6 +15,9 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): ProductEntity?
 
+    @Query("SELECT * FROM products WHERE id = :id LIMIT 1")
+    fun observeProduct(id: String): Flow<ProductEntity?>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(product: ProductEntity)
 

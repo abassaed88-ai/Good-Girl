@@ -122,7 +122,7 @@ object FinancialReportCalculator {
                 val totals = productTotals.getOrPut(key) {
                     mutableListOf(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
                 }
-                totals[0] = totals[0].add(line.quantity.toBigDecimal())
+                totals[0] = totals[0].add(line.baseQuantity.toBigDecimal())
                 totals[1] = totals[1].add(revenue)
                 totals[2] = totals[2].add(cost)
             }

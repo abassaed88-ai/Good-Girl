@@ -9,6 +9,7 @@ import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.domain.InvoiceCalculator
 import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.ProductInputRules
+import com.goodgirl.accounting.domain.ProductUnitInputRules
 import kotlinx.coroutines.flow.Flow
 import java.math.BigDecimal
 import java.util.UUID
