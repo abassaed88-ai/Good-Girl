@@ -40,6 +40,28 @@ class StockInputRulesTest {
     }
 
     @Test
+    fun stocktakeDeltaAddsWhenActualQuantityIsHigher() {
+        assertEquals("3", StockInputRules.calculateCountDelta("7", "10"))
+    }
+
+    @Test
+    fun stocktakeDeltaRemovesWhenActualQuantityIsLower() {
+        assertEquals("-2.5", StockInputRules.calculateCountDelta("7.5", "5"))
+    }
+
+    @Test
+    fun stocktakeDeltaIsZeroWhenQuantitiesMatch() {
+        assertEquals("0", StockInputRules.calculateCountDelta("5", "5"))
+    }
+
+    @Test
+    fun rejectsNegativeCountedQuantity() {
+        assertThrows(IllegalArgumentException::class.java) {
+            StockInputRules.calculateCountDelta("5", "-1")
+        }
+    }
+
+    @Test
     fun rejectsNegativeResultingBalance() {
         assertThrows(IllegalArgumentException::class.java) {
             StockInputRules.calculateNewBalance("2", "-3")
