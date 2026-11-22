@@ -2475,7 +2475,7 @@ private fun ProductManagementScreen(
                                         StockInputRules.normalizeDelta(adjustmentDelta)
                                     }
                                     if (deltaToSave == "0") {
-                                        stockMessage = "الجرد مطابق للرصيد المسجل؛ لم تكن هناك حاجة إلى تسوية."
+                                        stockMessage = "تم التحقق من الجرد: الكمية مطابقة للرصيد المسجل، ولم تكن هناك حاجة إلى تسوية."
                                         adjustingProductId = null
                                     } else {
                                         val noteToSave = (
