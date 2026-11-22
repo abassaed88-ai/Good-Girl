@@ -9,6 +9,15 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ProductDao {
+    @Query("SELECT * FROM products ORDER BY id")
+    suspend fun getAll(): List<ProductEntity>
+
+    @Query("DELETE FROM products")
+    suspend fun deleteAll()
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(products: List<ProductEntity>)
+
     @Query("SELECT * FROM products WHERE isActive = 1 ORDER BY name COLLATE NOCASE")
     fun observeActiveProducts(): Flow<List<ProductEntity>>
 
@@ -33,6 +42,15 @@ interface ProductDao {
 
 @Dao
 interface ProductUnitDao {
+    @Query("SELECT * FROM product_units ORDER BY id")
+    suspend fun getAll(): List<ProductUnitEntity>
+
+    @Query("DELETE FROM product_units")
+    suspend fun deleteAll()
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(units: List<ProductUnitEntity>)
+
     @Query("SELECT * FROM product_units WHERE productId = :productId ORDER BY isBaseUnit DESC, unitName COLLATE NOCASE")
     fun observeForProduct(productId: String): Flow<List<ProductUnitEntity>>
 
@@ -48,6 +66,15 @@ interface ProductUnitDao {
 
 @Dao
 interface CategoryDao {
+    @Query("SELECT * FROM categories ORDER BY id")
+    suspend fun getAll(): List<CategoryEntity>
+
+    @Query("DELETE FROM categories")
+    suspend fun deleteAll()
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(categories: List<CategoryEntity>)
+
     @Query("SELECT * FROM categories ORDER BY name COLLATE NOCASE")
     fun observeAll(): Flow<List<CategoryEntity>>
 
@@ -66,6 +93,15 @@ interface CategoryDao {
 
 @Dao
 interface PartyDao {
+    @Query("SELECT * FROM parties ORDER BY id")
+    suspend fun getAll(): List<PartyEntity>
+
+    @Query("DELETE FROM parties")
+    suspend fun deleteAll()
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(parties: List<PartyEntity>)
+
     @Query("SELECT * FROM parties WHERE kind = :kind ORDER BY name COLLATE NOCASE")
     fun observeByKind(kind: String): Flow<List<PartyEntity>>
 
@@ -84,6 +120,21 @@ interface PartyDao {
 
 @Dao
 interface InvoiceDao {
+    @Query("SELECT * FROM invoices ORDER BY id")
+    suspend fun getAllInvoices(): List<InvoiceEntity>
+
+    @Query("SELECT * FROM invoice_lines ORDER BY id")
+    suspend fun getAllLines(): List<InvoiceLineEntity>
+
+    @Query("DELETE FROM invoice_lines")
+    suspend fun deleteAllLines()
+
+    @Query("DELETE FROM invoices")
+    suspend fun deleteAllInvoices()
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAllInvoices(invoices: List<InvoiceEntity>)
+
     @Query("SELECT * FROM invoices ORDER BY issuedAt DESC")
     fun observeAll(): Flow<List<InvoiceEntity>>
 
@@ -111,10 +162,22 @@ interface InvoiceDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertLines(lines: List<InvoiceLineEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAllLines(lines: List<InvoiceLineEntity>)
 }
 
 @Dao
 interface StockMovementDao {
+    @Query("SELECT * FROM stock_movements ORDER BY id")
+    suspend fun getAll(): List<StockMovementEntity>
+
+    @Query("DELETE FROM stock_movements")
+    suspend fun deleteAll()
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(movements: List<StockMovementEntity>)
+
     @Query("SELECT * FROM stock_movements WHERE productId = :productId ORDER BY occurredAt DESC")
     fun observeForProduct(productId: String): Flow<List<StockMovementEntity>>
 
@@ -124,6 +187,15 @@ interface StockMovementDao {
 
 @Dao
 interface LedgerDao {
+    @Query("SELECT * FROM ledger_entries ORDER BY id")
+    suspend fun getAll(): List<LedgerEntryEntity>
+
+    @Query("DELETE FROM ledger_entries")
+    suspend fun deleteAll()
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(entries: List<LedgerEntryEntity>)
+
     @Query("SELECT * FROM ledger_entries ORDER BY occurredAt DESC")
     fun observeAll(): Flow<List<LedgerEntryEntity>>
 
