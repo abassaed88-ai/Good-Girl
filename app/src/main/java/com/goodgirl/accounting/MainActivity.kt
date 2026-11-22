@@ -65,6 +65,7 @@ import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.domain.CashTransactionRules
 import com.goodgirl.accounting.domain.FinancialReportCalculator
 import com.goodgirl.accounting.domain.InvoicePostingRules
+import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
 import com.goodgirl.accounting.domain.ProductInputRules
 import java.math.BigDecimal
@@ -116,6 +117,10 @@ private fun GoodGirlApp() {
                 "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
                 "backup" -> BackupManagementScreen(onBack = { activePage = "dashboard" })
                 "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
+                "daily_sales" -> DailySalesScreen(
+                    onBack = { activePage = "dashboard" },
+                    onAddSale = { activePage = "sales" }
+                )
                 "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
                 "products" -> ProductManagementScreen(
                     onBack = { activePage = "dashboard" },
@@ -150,6 +155,7 @@ private fun GoodGirlApp() {
                     onBack = { activePage = "parties" }
                 )
                 else -> DashboardScreen(
+                    onOpenDailySales = { activePage = "daily_sales" },
                     onOpenSales = { activePage = "sales" },
                     onOpenPurchases = { activePage = "purchases" },
                     onOpenProducts = { activePage = "products" },
@@ -165,6 +171,7 @@ private fun GoodGirlApp() {
 
 @Composable
 private fun DashboardScreen(
+    onOpenDailySales: () -> Unit,
     onOpenSales: () -> Unit,
     onOpenPurchases: () -> Unit,
     onOpenProducts: () -> Unit,
@@ -278,6 +285,7 @@ private fun DashboardScreen(
         }
 
         Text("الأقسام الرئيسية", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        SectionRow(number = 0, title = "المبيعات اليومية", icon = "🧾", onClick = onOpenDailySales)
         val sections = listOf(
             "المبيعات والفواتير",
             "المشتريات",
@@ -2051,6 +2059,216 @@ private fun ProductListItem(
     }
 }
 
+
+private data class DailySaleRow(
+    val invoiceNumber: String,
+    val issuedAt: Long,
+    val productName: String,
+    val quantity: String,
+    val unitName: String,
+    val unitPrice: String,
+    val currencyCode: String,
+    val netSales: BigDecimal,
+    val profit: BigDecimal,
+    val note: String
+)
+
+@Composable
+private fun DailySalesScreen(onBack: () -> Unit, onAddSale: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
+    val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
+    var selectedDay by remember {
+        mutableStateOf(
+            Calendar.getInstance().apply {
+                set(Calendar.HOUR_OF_DAY, 0)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }.timeInMillis
+        )
+    }
+    val dayBounds = remember(selectedDay) {
+        val start = Calendar.getInstance().apply { timeInMillis = selectedDay }
+        val end = (start.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 1) }
+        start.timeInMillis to end.timeInMillis
+    }
+    val dayLabel = remember(selectedDay) {
+        SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date(selectedDay))
+    }
+    val rows = remember(invoices, invoiceLines, dayBounds) {
+        invoices.asSequence()
+            .filter {
+                it.kind == "SALE" && it.status == "POSTED" &&
+                    it.issuedAt >= dayBounds.first && it.issuedAt < dayBounds.second
+            }
+            .flatMap { invoice ->
+                val lines = invoiceLines.filter { it.invoiceId == invoice.id }
+                val lineNetAmounts = lines.map { it.lineTotal.toBigDecimal() }
+                val lineDiscountTotal = lines.fold(BigDecimal.ZERO) { total, line ->
+                    total.add(line.discount.toBigDecimal())
+                }
+                val extraInvoiceDiscount = invoice.discount.toBigDecimal()
+                    .subtract(lineDiscountTotal).max(BigDecimal.ZERO)
+                val allocatedDiscounts = InvoiceDiscountAllocator.allocate(
+                    lineNetAmounts,
+                    extraInvoiceDiscount
+                )
+                lines.mapIndexed { index, line ->
+                    val netSales = lineNetAmounts[index].subtract(allocatedDiscounts[index])
+                    val cost = line.unitCostSnapshot.toBigDecimal()
+                        .multiply(line.baseQuantity.toBigDecimal())
+                    DailySaleRow(
+                        invoiceNumber = invoice.invoiceNumber,
+                        issuedAt = invoice.issuedAt,
+                        productName = line.productNameSnapshot,
+                        quantity = line.quantity,
+                        unitName = line.unitSnapshot,
+                        unitPrice = line.unitPriceSnapshot,
+                        currencyCode = invoice.currencyCode,
+                        netSales = netSales,
+                        profit = netSales.subtract(cost),
+                        note = invoice.note
+                    )
+                }
+            }
+            .sortedByDescending { it.issuedAt }
+            .toList()
+    }
+    val salesTotals = remember(rows) {
+        rows.groupBy { it.currencyCode }.mapValues { (_, items) ->
+            items.fold(BigDecimal.ZERO) { total, row -> total.add(row.netSales) }
+        }
+    }
+    val profitTotals = remember(rows) {
+        rows.groupBy { it.currencyCode }.mapValues { (_, items) ->
+            items.fold(BigDecimal.ZERO) { total, row -> total.add(row.profit) }
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
+        Text(
+            "المبيعات اليومية",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Ink
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            TextButton(onClick = {
+                selectedDay = Calendar.getInstance().apply {
+                    timeInMillis = selectedDay
+                    add(Calendar.DAY_OF_MONTH, -1)
+                }.timeInMillis
+            }) { Text("اليوم السابق") }
+            Text(dayLabel, color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            TextButton(onClick = {
+                selectedDay = Calendar.getInstance().apply {
+                    timeInMillis = selectedDay
+                    add(Calendar.DAY_OF_MONTH, 1)
+                }.timeInMillis
+            }) { Text("اليوم التالي") }
+        }
+        Button(onClick = onAddSale, modifier = Modifier.fillMaxWidth()) {
+            Text("إضافة مبيعة جديدة")
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            SummaryCard(
+                "إجمالي المبيعات",
+                formatCurrencyTotals(salesTotals),
+                "لليوم المحدد",
+                BrandBlue,
+                Modifier.weight(1f)
+            )
+            SummaryCard(
+                "إجمالي الأرباح",
+                formatCurrencyTotals(profitTotals),
+                "بعد خصومات الفواتير",
+                SoftGreen,
+                Modifier.weight(1f)
+            )
+        }
+        Text(
+            "تفاصيل المواد المباعة (" + rows.size + ")",
+            style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold,
+            color = Ink
+        )
+        if (rows.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Text(
+                    "لا توجد مبيعات مرحلة في هذا اليوم.",
+                    modifier = Modifier.padding(18.dp),
+                    color = Color(0xFF64748B)
+                )
+            }
+        } else {
+            rows.forEach { row ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(row.productName, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text(
+                            "الكمية: " + row.quantity + " " + row.unitName +
+                                "  |  سعر المبيع: " + row.unitPrice + " " + row.currencyCode,
+                            color = Color(0xFF64748B),
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            "قيمة المبيع: " + row.netSales.stripTrailingZeros().toPlainString() +
+                                " " + row.currencyCode,
+                            color = Ink,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            "الربح: " + row.profit.stripTrailingZeros().toPlainString() +
+                                " " + row.currencyCode,
+                            color = if (row.profit >= BigDecimal.ZERO) Color(0xFF287A4B) else Color(0xFFB42332),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            "رقم الفاتورة: " + row.invoiceNumber,
+                            color = Color(0xFF64748B),
+                            fontSize = 11.sp
+                        )
+                        Text(
+                            "الملاحظات: " + row.note.ifBlank { "لا توجد ملاحظات" },
+                            color = Color(0xFF64748B),
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        }
+        Text(
+            "هذه الصفحة تعرض المبيعات المرحلة من فواتير البيع؛ لا تنشئ قيوداً أو حركات مخزون إضافية.",
+            color = Color(0xFF64748B),
+            fontSize = 12.sp
+        )
+    }
+}
+
 private fun formatCurrencyTotals(values: Map<String, BigDecimal>): String {
     if (values.isEmpty()) return "0"
     return values.toSortedMap().entries.joinToString("\n") { (currency, amount) ->
@@ -2084,7 +2302,7 @@ private fun SummaryCard(
 }
 
 @Composable
-private fun SectionRow(number: Int, title: String, onClick: (() -> Unit)? = null) {
+private fun SectionRow(number: Int, title: String, icon: String? = null, onClick: (() -> Unit)? = null) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
@@ -2097,7 +2315,11 @@ private fun SectionRow(number: Int, title: String, onClick: (() -> Unit)? = null
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(number.toString(), color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            if (icon != null) {
+                Text(icon, fontSize = 22.sp)
+            } else {
+                Text(number.toString(), color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+            }
             Text(title, color = Ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             if (onClick != null) {
                 Spacer(Modifier.weight(1f))
