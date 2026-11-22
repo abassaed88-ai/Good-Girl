@@ -54,6 +54,7 @@ import com.goodgirl.accounting.data.CategoryRepository
 import com.goodgirl.accounting.data.InvoiceLineDraft
 import com.goodgirl.accounting.data.InvoicePdfExporter
 import com.goodgirl.accounting.data.InvoiceRepository
+import com.goodgirl.accounting.data.FinancialReportPdfExporter
 import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.PartyPaymentRepository
 import com.goodgirl.accounting.data.ProductRepository
@@ -998,7 +999,38 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
     val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
     val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
     val ledgerEntries by database.ledgerDao().observeAll().collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
     var selectedPeriod by remember { mutableStateOf("TODAY") }
+    var isExportingReport by remember { mutableStateOf(false) }
+    var reportExportMessage by remember { mutableStateOf<String?>(null) }
+    val reportPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isExportingReport = true
+                reportExportMessage = null
+                try {
+                    val label = when (selectedPeriod) {
+                        "TODAY" -> "اليوم"
+                        "MONTH" -> "هذا الشهر"
+                        else -> "كل المدة"
+                    }
+                    FinancialReportPdfExporter.write(
+                        context = context,
+                        destination = uri,
+                        report = report,
+                        periodLabel = label
+                    )
+                    reportExportMessage = "تم حفظ تقرير PDF بنجاح."
+                } catch (error: Exception) {
+                    reportExportMessage = error.message ?: "تعذر إنشاء تقرير PDF"
+                } finally {
+                    isExportingReport = false
+                }
+            }
+        }
+    }
 
     val now = System.currentTimeMillis()
     val fromTime = remember(selectedPeriod) {
@@ -1035,6 +1067,24 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
     ) {
         TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
         Text("التقارير والأرباح", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        Button(
+            onClick = {
+                val periodSuffix = when (selectedPeriod) {
+                    "TODAY" -> "Today"
+                    "MONTH" -> "Month"
+                    else -> "All"
+                }
+                val dateSuffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                reportPdfLauncher.launch("GoodGirl_Report_" + periodSuffix + "_" + dateSuffix + ".pdf")
+            },
+            enabled = !isExportingReport,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (isExportingReport) "جارٍ تجهيز التقرير..." else "تصدير التقرير إلى PDF")
+        }
+        reportExportMessage?.let {
+            Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+        }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TextButton(onClick = { selectedPeriod = "TODAY" }, enabled = selectedPeriod != "TODAY") { Text("اليوم") }
             TextButton(onClick = { selectedPeriod = "MONTH" }, enabled = selectedPeriod != "MONTH") { Text("هذا الشهر") }
