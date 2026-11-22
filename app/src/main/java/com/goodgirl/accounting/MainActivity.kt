@@ -251,6 +251,7 @@ private fun PartyManagementScreen(onBack: () -> Unit) {
                             isSaving = true
                             message = null
                             try {
+                                val wasEditing = editingId != null
                                 repository.saveParty(
                                     id = editingId,
                                     kind = selectedKind,
@@ -260,7 +261,7 @@ private fun PartyManagementScreen(onBack: () -> Unit) {
                                     note = note
                                 )
                                 clearForm()
-                                message = if (editingId == null) "تم حفظ البيانات" else "تم تحديث البيانات"
+                                message = if (wasEditing) "تم تحديث البيانات" else "تم حفظ البيانات"
                             } catch (error: Exception) {
                                 message = error.message ?: "تعذر حفظ البيانات"
                             } finally {
