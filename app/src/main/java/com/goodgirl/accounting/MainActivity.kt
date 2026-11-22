@@ -178,6 +178,29 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
     var note by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    var editingId by remember { mutableStateOf<String?>(null) }
+
+    fun resetForm() {
+        editingId = null
+        name = ""
+        sku = ""
+        unit = "قطعة"
+        purchaseCost = "0"
+        salePrice = "0"
+        openingStock = "0"
+        note = ""
+    }
+
+    fun startEditing(product: ProductEntity) {
+        editingId = product.id
+        name = product.name
+        sku = product.sku
+        unit = product.baseUnit
+        purchaseCost = product.purchaseCost
+        salePrice = product.salePrice
+        note = product.note
+        message = "تعديل بيانات المنتج: ${product.name}"
+    }
 
     Column(
         modifier = Modifier
@@ -199,13 +222,18 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
-                Text("إضافة منتج جديد", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Ink)
+                Text(if (editingId == null) "إضافة منتج جديد" else "تعديل بيانات المنتج", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Ink)
                 OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("اسم المنتج *") }, singleLine = true)
                 OutlinedTextField(sku, { sku = it }, modifier = Modifier.fillMaxWidth(), label = { Text("رمز المنتج (اختياري)") }, singleLine = true)
                 OutlinedTextField(unit, { unit = it }, modifier = Modifier.fillMaxWidth(), label = { Text("وحدة القياس") }, singleLine = true)
                 OutlinedTextField(purchaseCost, { purchaseCost = it }, modifier = Modifier.fillMaxWidth(), label = { Text("كلفة الوحدة") }, singleLine = true)
                 OutlinedTextField(salePrice, { salePrice = it }, modifier = Modifier.fillMaxWidth(), label = { Text("سعر البيع") }, singleLine = true)
-                OutlinedTextField(openingStock, { openingStock = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الرصيد الافتتاحي") }, singleLine = true)
+                if (editingId == null) {
+                    OutlinedTextField(openingStock, { openingStock = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الرصيد الافتتاحي") }, singleLine = true)
+                } else {
+                    val currentStock = products.firstOrNull { it.id == editingId }?.stockQuantity ?: "—"
+                    Text("الرصيد الحالي: $currentStock — يُعدّل عبر حركات المخزون وليس من بطاقة المنتج.", color = Color(0xFF64748B), fontSize = 12.sp)
+                }
                 OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth(), label = { Text("ملاحظات") }, minLines = 2)
 
                 Button(
@@ -214,23 +242,32 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
                             isSaving = true
                             message = null
                             try {
-                                repository.addProduct(
-                                    sku = sku,
-                                    name = name,
-                                    unit = unit,
-                                    purchaseCost = purchaseCost,
-                                    salePrice = salePrice,
-                                    openingStock = openingStock,
-                                    note = note
-                                )
-                                name = ""
-                                sku = ""
-                                unit = "قطعة"
-                                purchaseCost = "0"
-                                salePrice = "0"
-                                openingStock = "0"
-                                note = ""
-                                message = "تم حفظ المنتج ورصيده الافتتاحي بنجاح"
+                                val wasEditing = editingId != null
+                                if (wasEditing) {
+                                    val id = editingId ?: return@launch
+                                    val updated = repository.updateProduct(
+                                        id = id,
+                                        sku = sku,
+                                        name = name,
+                                        unit = unit,
+                                        purchaseCost = purchaseCost,
+                                        salePrice = salePrice,
+                                        note = note
+                                    )
+                                    check(updated) { "تعذر العثور على المنتج لتحديثه" }
+                                } else {
+                                    repository.addProduct(
+                                        sku = sku,
+                                        name = name,
+                                        unit = unit,
+                                        purchaseCost = purchaseCost,
+                                        salePrice = salePrice,
+                                        openingStock = openingStock,
+                                        note = note
+                                    )
+                                }
+                                resetForm()
+                                message = if (wasEditing) "تم تحديث بيانات المنتج بنجاح، دون تغيير حركاته السابقة" else "تم حفظ المنتج ورصيده الافتتاحي بنجاح"
                             } catch (error: Exception) {
                                 message = error.message ?: "تعذر حفظ المنتج"
                             } finally {
@@ -241,7 +278,7 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
                     enabled = !isSaving,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(if (isSaving) "جارٍ الحفظ..." else "حفظ المنتج")
+                    Text(if (isSaving) "جارٍ الحفظ..." else if (editingId != null) "حفظ التعديلات" else "حفظ المنتج")
                 }
                 message?.let {
                     Text(
@@ -249,6 +286,9 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
                         color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
                         fontSize = 13.sp
                     )
+                }
+                if (editingId != null) {
+                    TextButton(onClick = { resetForm(); message = null }) { Text("إلغاء التعديل") }
                 }
             }
         }
@@ -264,21 +304,24 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
             }
         } else {
             products.forEach { product ->
-                ProductListItem(product)
+                ProductListItem(product, onEdit = { startEditing(product) })
             }
         }
     }
 }
 
 @Composable
-private fun ProductListItem(product: ProductEntity) {
+private fun ProductListItem(product: ProductEntity, onEdit: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Text(product.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(product.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                TextButton(onClick = onEdit) { Text("تعديل") }
+            }
             if (product.sku.isNotBlank()) {
                 Text("الرمز: ${product.sku}", color = Color(0xFF64748B), fontSize = 12.sp)
             }
