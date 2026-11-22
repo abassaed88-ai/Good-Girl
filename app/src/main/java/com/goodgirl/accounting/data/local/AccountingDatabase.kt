@@ -75,7 +75,7 @@ abstract class AccountingDatabase : RoomDatabase() {
          * represented in stock_movements. Add only the exact difference, so the
          * existing movement history and current on-hand quantity reconcile.
          */
-        private val MIGRATION_4_5 = object : Migration(4, 5) {
+        internal val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.query(
                     "SELECT id, stockQuantity, purchaseCost, priceCurrencyCode FROM products"
