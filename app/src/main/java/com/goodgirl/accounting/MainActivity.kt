@@ -253,7 +253,7 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
             }
         }
 
-        Text("قائمة المنتجات (\${products.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        Text("قائمة المنتجات (${products.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
         if (products.isEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -280,13 +280,13 @@ private fun ProductListItem(product: ProductEntity) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Text(product.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
             if (product.sku.isNotBlank()) {
-                Text("الرمز: \${product.sku}", color = Color(0xFF64748B), fontSize = 12.sp)
+                Text("الرمز: ${product.sku}", color = Color(0xFF64748B), fontSize = 12.sp)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("الرصيد: \${product.stockQuantity} \${product.baseUnit}", color = BrandBlue, fontSize = 13.sp)
-                Text("سعر البيع: \${product.salePrice}", color = Color(0xFF287A4B), fontSize = 13.sp)
+                Text("الرصيد: ${product.stockQuantity} ${product.baseUnit}", color = BrandBlue, fontSize = 13.sp)
+                Text("سعر البيع: ${product.salePrice}", color = Color(0xFF287A4B), fontSize = 13.sp)
             }
-            Text("الكلفة: \${product.purchaseCost}", color = Color(0xFF64748B), fontSize = 12.sp)
+            Text("الكلفة: ${product.purchaseCost}", color = Color(0xFF64748B), fontSize = 12.sp)
         }
     }
 }
