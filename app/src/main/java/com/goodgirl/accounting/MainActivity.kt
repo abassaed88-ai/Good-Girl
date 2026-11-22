@@ -57,6 +57,7 @@ import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.FinancialReportPdfExporter
 import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.PartyPaymentRepository
+import com.goodgirl.accounting.data.PartyStatementPdfExporter
 import com.goodgirl.accounting.data.ProductRepository
 import com.goodgirl.accounting.data.ProductUnitRepository
 import com.goodgirl.accounting.data.StockRepository
