@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
+import java.math.BigDecimal
 
 data class AccountingBackupResult(
     val recordCount: Int,
@@ -34,6 +35,10 @@ class AccountingBackupManager(
 ) {
     suspend fun exportBackup(destination: Uri): AccountingBackupResult = withContext(Dispatchers.IO) {
         val exportedAt = System.currentTimeMillis()
+        val settingsPreferences = context.getSharedPreferences("good_girl_settings", Context.MODE_PRIVATE)
+        val savedRate = settingsPreferences.getString("usd_syp_rate", "1") ?: "1"
+        val savedRateUpdatedAt = settingsPreferences.getLong("usd_syp_rate_updated_at", 0L)
+        val savedRateHistory = settingsPreferences.getStringSet("usd_syp_rate_history", emptySet())?.toList().orEmpty()
         val snapshot = database.withTransaction {
             val categories = database.categoryDao().getAll()
             val products = database.productDao().getAll()
@@ -47,6 +52,12 @@ class AccountingBackupManager(
             val json = JSONObject()
                 .put("format", BACKUP_FORMAT)
                 .put("formatVersion", BACKUP_FORMAT_VERSION)
+                .put("settings", JSONObject()
+                    .put("usdSypRate", savedRate)
+                    .put("usdSypRateUpdatedAt", savedRateUpdatedAt)
+                    .put("usdSypRateHistory", JSONArray().also { array ->
+                        savedRateHistory.forEach { array.put(it) }
+                    }))
                 .put("applicationId", APPLICATION_ID)
                 .put("databaseVersion", DATABASE_VERSION)
                 .put("exportedAt", exportedAt)
@@ -96,7 +107,8 @@ class AccountingBackupManager(
             throw IllegalArgumentException("ملف النسخة الاحتياطية تالف أو غير صالح", error)
         }
         require(root.getString("format") == BACKUP_FORMAT) { "الملف المحدد ليس نسخة احتياطية لتطبيق Good Girl" }
-        require(root.getInt("formatVersion") == BACKUP_FORMAT_VERSION) { "صيغة النسخة الاحتياطية غير مدعومة" }
+        val formatVersion = root.getInt("formatVersion")
+        require(formatVersion in 1..BACKUP_FORMAT_VERSION) { "صيغة النسخة الاحتياطية غير مدعومة" }
         require(root.getString("applicationId") == APPLICATION_ID) { "النسخة الاحتياطية لا تخص هذا التطبيق" }
         require(root.getInt("databaseVersion") == DATABASE_VERSION) {
             "إصدار قاعدة البيانات في النسخة لا يتوافق مع إصدار التطبيق الحالي"
@@ -113,6 +125,28 @@ class AccountingBackupManager(
         val totalRecords = categories.size + products.size + units.size + parties.size +
             invoices.size + invoiceLines.size + movements.size + ledgerEntries.size
         val exportedAt = root.getLong("exportedAt")
+
+        val settingsObject = if (formatVersion >= 2) root.optJSONObject("settings") else null
+        val restoredRate = settingsObject?.optString("usdSypRate", "1")?.takeIf { it.isNotBlank() } ?: "1"
+        val parsedRestoredRate = runCatching { BigDecimal(restoredRate) }.getOrNull()
+        require(parsedRestoredRate != null && parsedRestoredRate > BigDecimal.ZERO) {
+            "سعر الصرف الموجود في النسخة الاحتياطية غير صالح"
+        }
+        val restoredRateUpdatedAt = settingsObject?.optLong("usdSypRateUpdatedAt", 0L) ?: 0L
+        val restoredRateHistory = buildSet {
+            val array = settingsObject?.optJSONArray("usdSypRateHistory")
+            if (array != null) {
+                for (index in 0 until array.length()) {
+                    val item = array.optString(index, "")
+                    val parts = item.split("|", limit = 2)
+                    val timestamp = parts.firstOrNull()?.toLongOrNull()
+                    val historyRate = parts.getOrNull(1)?.let { runCatching { BigDecimal(it) }.getOrNull() }
+                    if (timestamp != null && timestamp > 0L && historyRate != null && historyRate > BigDecimal.ZERO) {
+                        add(timestamp.toString() + "|" + historyRate.stripTrailingZeros().toPlainString())
+                    }
+                }
+            }
+        }.take(30).toSet()
 
         // The replacement is atomic: an invalid insert rolls back and preserves current data.
         database.withTransaction {
@@ -134,6 +168,12 @@ class AccountingBackupManager(
             database.stockMovementDao().insertAll(movements)
             database.ledgerDao().insertAll(ledgerEntries)
         }
+
+        context.getSharedPreferences("good_girl_settings", Context.MODE_PRIVATE).edit()
+            .putString("usd_syp_rate", parsedRestoredRate!!.stripTrailingZeros().toPlainString())
+            .putLong("usd_syp_rate_updated_at", restoredRateUpdatedAt)
+            .putStringSet("usd_syp_rate_history", restoredRateHistory)
+            .apply()
 
         AccountingBackupResult(totalRecords, exportedAt)
     }
@@ -251,7 +291,7 @@ class AccountingBackupManager(
 
     companion object {
         private const val BACKUP_FORMAT = "good-girl-accounting-backup"
-        private const val BACKUP_FORMAT_VERSION = 1
+        private const val BACKUP_FORMAT_VERSION = 2
         private const val APPLICATION_ID = "com.goodgirl.accounting"
         private const val DATABASE_VERSION = ACCOUNTING_DATABASE_VERSION
         private const val MAX_BACKUP_BYTES = 50 * 1024 * 1024
