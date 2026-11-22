@@ -123,6 +123,9 @@ interface LedgerDao {
     @Query("SELECT * FROM ledger_entries WHERE partyId = :partyId ORDER BY occurredAt DESC")
     fun observeForParty(partyId: String): Flow<List<LedgerEntryEntity>>
 
+    @Query("SELECT * FROM ledger_entries WHERE partyId = :partyId ORDER BY occurredAt DESC")
+    suspend fun getForParty(partyId: String): List<LedgerEntryEntity>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: LedgerEntryEntity)
 }
