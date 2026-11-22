@@ -7,6 +7,8 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 
+const val ACCOUNTING_DATABASE_VERSION = 4
+
 @Database(
     entities = [
         CategoryEntity::class,
@@ -18,7 +20,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         StockMovementEntity::class,
         LedgerEntryEntity::class
     ],
-    version = 4,
+    version = ACCOUNTING_DATABASE_VERSION,
     exportSchema = true
 )
 abstract class AccountingDatabase : RoomDatabase() {
