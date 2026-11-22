@@ -1044,7 +1044,9 @@ private fun CashManagementScreen(onBack: () -> Unit) {
     var selectedKind by remember { mutableStateOf("INCOME") }
     var amount by remember { mutableStateOf("") }
     var currencyCode by remember { mutableStateOf("SYP") }
-    var exchangeRate by remember { mutableStateOf("1") }
+    var exchangeRate by remember {
+        mutableStateOf(context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1")
+    }
     var description by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
@@ -1186,7 +1188,9 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
     var showPaymentForm by remember { mutableStateOf(false) }
     var paymentAmount by remember { mutableStateOf("") }
     var paymentCurrency by remember { mutableStateOf("SYP") }
-    var paymentRate by remember { mutableStateOf("1") }
+    var paymentRate by remember {
+        mutableStateOf(context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1")
+    }
     var paymentNote by remember { mutableStateOf("") }
     var paymentMessage by remember { mutableStateOf("") }
     var isSavingPayment by remember { mutableStateOf(false) }
@@ -2227,7 +2231,9 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
     var quantity by remember { mutableStateOf("1") }
     var salePrice by remember { mutableStateOf("0") }
     var lineDiscount by remember { mutableStateOf("0") }
-    var exchangeRate by remember { mutableStateOf("") }
+    var exchangeRate by remember {
+        mutableStateOf(context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1")
+    }
     var paidAmount by remember { mutableStateOf("") }
     var paidAmountTouched by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
@@ -2380,7 +2386,7 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
                                     selectedUnitName = product.baseUnit
                                     salePrice = product.salePrice
                                     lineDiscount = "0"
-                                    exchangeRate = if (product.priceCurrencyCode == "SYP") "1" else ""
+                                    exchangeRate = if (product.priceCurrencyCode == "SYP") "1" else (context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1")
                                     paidAmountTouched = false
                                     paidAmount = ""
                                     productMenuExpanded = false
