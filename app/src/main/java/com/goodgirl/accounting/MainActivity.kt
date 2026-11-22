@@ -1511,6 +1511,28 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
         }.reversed()
     }
 
+    var isExportingStatement by remember { mutableStateOf(false) }
+    var statementPdfMessage by remember { mutableStateOf<String?>(null) }
+    val statementPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        val currentParty = party
+        if (uri != null && currentParty != null) {
+            scope.launch {
+                isExportingStatement = true
+                statementPdfMessage = null
+                try {
+                    PartyStatementPdfExporter.write(context, uri, currentParty, statementEntries)
+                    statementPdfMessage = "تم حفظ كشف الحساب بصيغة PDF."
+                } catch (error: Exception) {
+                    statementPdfMessage = error.message ?: "تعذر إنشاء ملف PDF"
+                } finally {
+                    isExportingStatement = false
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1533,6 +1555,20 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                         }
                     }
                 }
+            }
+            Button(
+                onClick = {
+                    val safeName = party?.name.orEmpty().replace(Regex("[^A-Za-z0-9_-]"), "_").take(30).ifBlank { "Account" }
+                    val dateSuffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                    statementPdfLauncher.launch("GoodGirl_Statement_" + safeName + "_" + dateSuffix + ".pdf")
+                },
+                enabled = !isExportingStatement,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isExportingStatement) "جارٍ تجهيز كشف الحساب..." else "تصدير كشف الحساب PDF")
+            }
+            if (statementPdfMessage != null) {
+                Text(statementPdfMessage.orEmpty(), color = if (statementPdfMessage!!.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332))
             }
             Button(onClick = {
                 showPaymentForm = !showPaymentForm
