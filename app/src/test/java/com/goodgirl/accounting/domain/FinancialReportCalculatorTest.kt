@@ -107,6 +107,37 @@ class FinancialReportCalculatorTest {
     }
 
     @Test
+    fun allocatesRoundingRemainderSoProductSalesMatchInvoiceTotalExactly() {
+        val invoice = invoice("sale-rounding", "SALE", "0.99", "0.02").copy(subtotal = "1.01")
+        val first = line("sale-rounding", "1", "0.33", "0.10")
+            .copy(id = "line-1", productNameSnapshot = "مادة أولى")
+        val second = line("sale-rounding", "1", "0.34", "0.10")
+            .copy(id = "line-2", productNameSnapshot = "مادة ثانية")
+        val third = line("sale-rounding", "1", "0.34", "0.10")
+            .copy(id = "line-3", productNameSnapshot = "مادة ثالثة")
+
+        val report = FinancialReportCalculator.calculate(
+            0L, 200L,
+            listOf(invoice),
+            listOf(first, second, third),
+            emptyList()
+        )
+
+        val productRevenue = report.products.fold(java.math.BigDecimal.ZERO) { total, product ->
+            total.add(product.revenue)
+        }
+        val productProfit = report.products.fold(java.math.BigDecimal.ZERO) { total, product ->
+            total.add(product.profit)
+        }
+        assertEquals("0.99", productRevenue.stripTrailingZeros().toPlainString())
+        assertEquals("0.69", productProfit.stripTrailingZeros().toPlainString())
+        assertEquals(
+            report.currencySummaries.single().sales.stripTrailingZeros().toPlainString(),
+            productRevenue.stripTrailingZeros().toPlainString()
+        )
+    }
+
+    @Test
     fun keepsCurrenciesSeparate() {
         val report = FinancialReportCalculator.calculate(
             0L, 200L,
