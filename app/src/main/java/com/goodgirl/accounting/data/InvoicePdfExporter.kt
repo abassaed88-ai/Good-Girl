@@ -11,6 +11,7 @@ import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
+import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -109,6 +110,11 @@ object InvoicePdfExporter {
         val extraInvoiceDiscount = invoice.discount.toBigDecimal()
             .subtract(lineDiscountTotal)
             .max(java.math.BigDecimal.ZERO)
+        val lineNetAmounts = lines.map { it.lineTotal.toBigDecimal() }
+        val allocatedInvoiceDiscounts = InvoiceDiscountAllocator.allocate(
+            lineNetAmounts,
+            extraInvoiceDiscount
+        )
         val builder = StringBuilder()
         builder.append("Good Girl\n")
         builder.append(title).append("\n")
@@ -125,11 +131,14 @@ object InvoicePdfExporter {
             builder.append("لا توجد تفاصيل مواد لهذه الفاتورة.\n")
         } else {
             lines.forEachIndexed { index, line ->
+                val invoiceDiscountShare = allocatedInvoiceDiscounts[index]
+                val finalLineNet = lineNetAmounts[index].subtract(invoiceDiscountShare)
                 builder.append(index + 1).append(") ").append(line.productNameSnapshot).append("\n")
                 builder.append("الكمية: ").append(line.quantity).append(" ").append(line.unitSnapshot)
                     .append("   سعر الوحدة: ").append(line.unitPriceSnapshot).append("\n")
                 builder.append("خصم المادة: ").append(line.discount)
-                    .append("   صافي المادة: ").append(line.lineTotal).append("\n")
+                    .append("   خصم الفاتورة الموزع: ").append(invoiceDiscountShare.stripTrailingZeros().toPlainString()).append("\n")
+                builder.append("صافي المادة بعد الخصومات: ").append(finalLineNet.stripTrailingZeros().toPlainString()).append("\n")
             }
         }
         builder.append("----------------------------------------\n")
