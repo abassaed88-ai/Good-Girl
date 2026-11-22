@@ -50,6 +50,9 @@ jobs:
           mkdir -p app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase
           cp legacy-v4/app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json
 
+      - name: Generate current v5 Room schema
+        run: gradle :app:kaptDebugKotlin --no-daemon
+
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --no-daemon
 
