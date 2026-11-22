@@ -44,6 +44,10 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
+    }
 }
 
 kapt {
@@ -74,4 +78,5 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.sqlite:sqlite-framework:2.5.0")
+    androidTestImplementation("androidx.room:room-testing:2.7.1")
 }
