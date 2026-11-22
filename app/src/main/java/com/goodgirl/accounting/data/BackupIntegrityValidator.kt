@@ -147,6 +147,44 @@ object BackupIntegrityValidator {
             require(unitCost >= BigDecimal.ZERO) { "كلفة بند الفاتورة غير صالحة" }
         }
 
+        val linesByInvoice = invoiceLines.groupBy { it.invoiceId }
+        invoices.forEach { invoice ->
+            val lines = linesByInvoice[invoice.id].orEmpty()
+            if (invoice.status == "POSTED") {
+                require(lines.isNotEmpty()) {
+                    "الفاتورة المرحلة ${invoice.invoiceNumber} لا تحتوي على بنود"
+                }
+            }
+            if (lines.isNotEmpty()) {
+                val grossLines = lines.fold(BigDecimal.ZERO) { total, line ->
+                    total.add(line.quantity.toBigDecimal().multiply(line.unitPriceSnapshot.toBigDecimal()))
+                }
+                val lineDiscounts = lines.fold(BigDecimal.ZERO) { total, line ->
+                    total.add(line.discount.toBigDecimal())
+                }
+                val netLines = lines.fold(BigDecimal.ZERO) { total, line ->
+                    total.add(line.lineTotal.toBigDecimal())
+                }
+                require(grossLines.compareTo(invoice.subtotal.toBigDecimal()) == 0) {
+                    "مجموع بنود الفاتورة ${invoice.invoiceNumber} لا يطابق مجموعها قبل الخصومات"
+                }
+                require(lineDiscounts <= invoice.discount.toBigDecimal()) {
+                    "خصومات البنود في الفاتورة ${invoice.invoiceNumber} تتجاوز خصم الفاتورة"
+                }
+                val documentDiscount = invoice.discount.toBigDecimal().subtract(lineDiscounts)
+                require(documentDiscount <= netLines &&
+                    netLines.subtract(documentDiscount).compareTo(invoice.total.toBigDecimal()) == 0
+                ) {
+                    "مجموع بنود وخصومات الفاتورة ${invoice.invoiceNumber} لا يطابق إجماليها"
+                }
+            }
+            if (invoice.remaining.toBigDecimal() > BigDecimal.ZERO) {
+                require(invoice.partyId != null) {
+                    "الفاتورة الآجلة ${invoice.invoiceNumber} لا ترتبط بحساب عميل أو مورد"
+                }
+            }
+        }
+
         movements.forEach { movement ->
             require(movement.productId in productById) { "حركة مخزون مرتبطة بمنتج غير موجود" }
             require(decimal(movement.quantityDelta, "كمية حركة المخزون").compareTo(BigDecimal.ZERO) != 0) {
