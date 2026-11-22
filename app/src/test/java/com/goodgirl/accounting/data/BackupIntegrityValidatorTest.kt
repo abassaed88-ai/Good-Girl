@@ -210,6 +210,37 @@ class BackupIntegrityValidatorTest {
     }
 
     @Test
+    fun rejectsPostedInvoiceWithoutLines() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(invoices = listOf(saleInvoice()))
+        }
+    }
+
+    @Test
+    fun rejectsInvoiceHeaderThatDoesNotMatchItsLineTotals() {
+        assertThrows(IllegalArgumentException::class.java) {
+            val inconsistent = saleInvoice().copy(
+                subtotal = "110",
+                discount = "10",
+                total = "100"
+            )
+            validate(
+                products = listOf(product()),
+                units = listOf(baseUnit()),
+                invoices = listOf(inconsistent),
+                lines = listOf(saleLine())
+            )
+        }
+    }
+
+    @Test
+    fun rejectsCreditInvoiceWithoutPartyAccount() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(invoices = listOf(saleInvoice().copy(paid = "90", remaining = "10")))
+        }
+    }
+
+    @Test
     fun rejectsInvoiceWhosePaidAndRemainingDoNotMatchTotal() {
         assertThrows(IllegalArgumentException::class.java) {
             validate(invoices = listOf(saleInvoice().copy(remaining = "1")))
