@@ -63,6 +63,41 @@ class ProductRepository(private val database: AccountingDatabase) {
         }
     }
 
+    suspend fun updateProduct(
+        id: String,
+        sku: String,
+        name: String,
+        unit: String,
+        purchaseCost: String,
+        salePrice: String,
+        note: String
+    ): Boolean {
+        val cleanName = ProductInputRules.requireName(name)
+        val cleanUnit = unit.trim().ifEmpty { "قطعة" }
+        val cleanCost = ProductInputRules.normalizeNonNegativeDecimal(purchaseCost, "كلفة الشراء")
+        val cleanPrice = ProductInputRules.normalizeNonNegativeDecimal(salePrice, "سعر البيع")
+        var updated = false
+
+        database.withTransaction {
+            val current = database.productDao().findById(id)
+            if (current != null && current.isActive) {
+                database.productDao().update(
+                    current.copy(
+                        sku = sku.trim(),
+                        name = cleanName,
+                        baseUnit = cleanUnit,
+                        purchaseCost = cleanCost,
+                        salePrice = cleanPrice,
+                        note = note.trim(),
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+                updated = true
+            }
+        }
+        return updated
+    }
+
     suspend fun archiveProduct(id: String) {
         database.productDao().archive(id, System.currentTimeMillis())
     }
