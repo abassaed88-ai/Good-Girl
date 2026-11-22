@@ -149,7 +149,7 @@ object BackupIntegrityValidator {
 
         movements.forEach { movement ->
             require(movement.productId in productById) { "حركة مخزون مرتبطة بمنتج غير موجود" }
-            require(decimal(movement.quantityDelta, "كمية حركة المخزون") != BigDecimal.ZERO) {
+            require(decimal(movement.quantityDelta, "كمية حركة المخزون").compareTo(BigDecimal.ZERO) != 0) {
                 "يوجد سجل حركة مخزون بكمية صفرية"
             }
             nonNegative(movement.unitCostSnapshot, "كلفة حركة المخزون")
