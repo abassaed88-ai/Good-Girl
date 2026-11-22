@@ -28,7 +28,7 @@ object InvoiceDiscountAllocator {
                 discount.subtract(allocated)
             } else {
                 discount.multiply(lineNetAmounts[index])
-                    .divide(total, 8, RoundingMode.HALF_UP)
+                    .divide(total, 8, RoundingMode.DOWN)
             }
             result[index] = share
             allocated = allocated.add(share)
