@@ -71,6 +71,7 @@ import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
 import com.goodgirl.accounting.domain.ProductInputRules
+import com.goodgirl.accounting.domain.StockInputRules
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -2154,6 +2155,8 @@ private fun ProductManagementScreen(
     var adjustingProductId by remember { mutableStateOf<String?>(null) }
     var adjustmentDelta by remember { mutableStateOf("") }
     var adjustmentCost by remember { mutableStateOf("0") }
+    var stocktakeMode by remember { mutableStateOf(false) }
+    var countedQuantity by remember { mutableStateOf("") }
     var adjustmentNote by remember { mutableStateOf("") }
     var stockMessage by remember { mutableStateOf<String?>(null) }
     var isSavingStock by remember { mutableStateOf(false) }
@@ -2193,6 +2196,8 @@ private fun ProductManagementScreen(
         adjustingProductId = product.id
         adjustmentDelta = ""
         adjustmentCost = product.purchaseCost
+        stocktakeMode = false
+        countedQuantity = product.stockQuantity
         adjustmentNote = ""
         stockMessage = null
     }
@@ -2354,7 +2359,15 @@ private fun ProductManagementScreen(
 
 
         val adjustingProduct = products.firstOrNull { it.id == adjustingProductId }
-        val isStockDecrease = adjustmentDelta.trim().toBigDecimalOrNull()?.signum() == -1
+        val adjustmentDeltaPreview = if (stocktakeMode) {
+            val current = adjustingProduct?.stockQuantity?.toBigDecimalOrNull()
+            val counted = countedQuantity.trim().toBigDecimalOrNull()
+            if (current != null && counted != null) counted.subtract(current) else null
+        } else {
+            adjustmentDelta.trim().toBigDecimalOrNull()
+        }
+        val isStockDecrease = adjustmentDeltaPreview?.signum() == -1
+        val requiresIncomingCost = adjustmentDeltaPreview?.signum() == 1
         if (adjustingProduct != null) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -2365,40 +2378,79 @@ private fun ProductManagementScreen(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(9.dp)
                 ) {
-                    Text("حركة مخزون: " + adjustingProduct.name, fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                    Text(
+                        (if (stocktakeMode) "جرد مخزون: " else "حركة مخزون: ") + adjustingProduct.name,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = Ink
+                    )
                     Text(
                         "الرصيد الحالي: " + adjustingProduct.stockQuantity + " " + adjustingProduct.baseUnit,
                         color = BrandBlue,
                         fontSize = 13.sp
                     )
-                    Text("اكتب كمية موجبة للإضافة أو سالبة للسحب، مثل 5 أو -2.", color = Color(0xFF64748B), fontSize = 12.sp)
-                    OutlinedTextField(
-                        adjustmentDelta,
-                        { adjustmentDelta = it },
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("كمية الحركة (+ إضافة / - سحب)") },
-                        singleLine = true
-                    )
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        TextButton(onClick = { stocktakeMode = false }) {
+                            Text(if (!stocktakeMode) "✓ حركة إضافة أو سحب" else "حركة إضافة أو سحب")
+                        }
+                        TextButton(onClick = {
+                            stocktakeMode = true
+                            countedQuantity = adjustingProduct.stockQuantity
+                        }) {
+                            Text(if (stocktakeMode) "✓ جرد فعلي" else "جرد فعلي")
+                        }
+                    }
+                    if (stocktakeMode) {
+                        Text(
+                            "أدخل الكمية الموجودة فعلياً بعد العدّ؛ سيحسب التطبيق الفرق ويسجّل حركة تسوية تلقائياً.",
+                            color = Color(0xFF64748B),
+                            fontSize = 12.sp
+                        )
+                        OutlinedTextField(
+                            countedQuantity,
+                            { countedQuantity = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("الكمية الفعلية بعد الجرد") },
+                            singleLine = true
+                        )
+                    } else {
+                        Text(
+                            "اكتب كمية موجبة للإضافة أو سالبة للسحب، مثل 5 أو -2.",
+                            color = Color(0xFF64748B),
+                            fontSize = 12.sp
+                        )
+                        OutlinedTextField(
+                            adjustmentDelta,
+                            { adjustmentDelta = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("كمية الحركة (+ إضافة / - سحب)") },
+                            singleLine = true
+                        )
+                    }
                     Text(
-                        if (isStockDecrease) {
-                            "سيُسجّل السحب بمتوسط الكلفة الحالي دون تغيير متوسط كلفة المنتج."
-                        } else {
-                            "عند إضافة كمية، أدخل كلفتها ليُحدّث التطبيق متوسط كلفة المخزون تلقائياً."
+                        when {
+                            isStockDecrease -> "سيُسجّل النقص بمتوسط الكلفة الحالي دون تغيير متوسط كلفة المنتج."
+                            requiresIncomingCost == true -> "الزيادة ستدخل في متوسط كلفة المخزون؛ أدخل كلفة الكمية المضافة."
+                            stocktakeMode && adjustmentDeltaPreview?.signum() == 0 -> "الكمية الفعلية تطابق الرصيد المسجل؛ لن تُنشأ حركة."
+                            else -> "عند إضافة كمية، أدخل كلفتها ليُحدّث التطبيق متوسط كلفة المخزون تلقائياً."
                         },
                         color = Color(0xFF64748B),
                         fontSize = 12.sp
                     )
                     OutlinedTextField(
-                        if (isStockDecrease) adjustingProduct.purchaseCost else adjustmentCost,
+                        if (requiresIncomingCost == true) adjustmentCost else adjustingProduct.purchaseCost,
                         { adjustmentCost = it },
                         modifier = Modifier.fillMaxWidth(),
                         label = {
                             Text(
-                                if (isStockDecrease) "متوسط كلفة الوحدة المعتمد للسحب"
-                                else "كلفة الوحدة للكمية المضافة"
+                                if (requiresIncomingCost == true) "كلفة الوحدة للكمية المضافة"
+                                else "متوسط كلفة الوحدة المعتمد"
                             )
                         },
-                        enabled = !isStockDecrease,
+                        enabled = requiresIncomingCost == true,
                         singleLine = true
                     )
                     OutlinedTextField(
@@ -2414,14 +2466,31 @@ private fun ProductManagementScreen(
                                 isSavingStock = true
                                 stockMessage = null
                                 try {
-                                    val newBalance = stockRepository.adjustStock(
-                                        productId = adjustingProduct.id,
-                                        quantityDelta = adjustmentDelta,
-                                        unitCost = adjustmentCost,
-                                        note = adjustmentNote
-                                    )
-                                    stockMessage = "تم تحديث الرصيد إلى " + newBalance
-                                    adjustingProductId = null
+                                    val deltaToSave = if (stocktakeMode) {
+                                        StockInputRules.calculateCountDelta(
+                                            currentBalance = adjustingProduct.stockQuantity,
+                                            countedQuantity = countedQuantity
+                                        )
+                                    } else {
+                                        StockInputRules.normalizeDelta(adjustmentDelta)
+                                    }
+                                    if (deltaToSave == "0") {
+                                        stockMessage = "الجرد مطابق للرصيد المسجل؛ لم تكن هناك حاجة إلى تسوية."
+                                        adjustingProductId = null
+                                    } else {
+                                        val noteToSave = (
+                                            (if (stocktakeMode) "جرد فعلي للمخزون" else "تسوية مخزون يدوية") +
+                                                if (adjustmentNote.isBlank()) "" else " — " + adjustmentNote.trim()
+                                            )
+                                        val newBalance = stockRepository.adjustStock(
+                                            productId = adjustingProduct.id,
+                                            quantityDelta = deltaToSave,
+                                            unitCost = adjustmentCost,
+                                            note = noteToSave
+                                        )
+                                        stockMessage = "تم تحديث الرصيد إلى " + newBalance
+                                        adjustingProductId = null
+                                    }
                                 } catch (error: Exception) {
                                     stockMessage = error.message ?: "تعذر تسجيل حركة المخزون"
                                 } finally {
@@ -2432,7 +2501,11 @@ private fun ProductManagementScreen(
                         enabled = !isSavingStock,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(if (isSavingStock) "جارٍ حفظ الحركة..." else "حفظ حركة المخزون")
+                        Text(
+                            if (isSavingStock) "جارٍ الحفظ..."
+                            else if (stocktakeMode) "حفظ نتيجة الجرد وتسوية المخزون"
+                            else "حفظ حركة المخزون"
+                        )
                     }
                     TextButton(onClick = { adjustingProductId = null; stockMessage = null }) {
                         Text("إلغاء")
