@@ -350,6 +350,9 @@ private fun SettingsScreen(onBack: () -> Unit) {
     var lastUpdated by remember {
         mutableStateOf(preferences.getLong("usd_syp_rate_updated_at", 0L))
     }
+    var rateHistory by remember {
+        mutableStateOf(preferences.getStringSet("usd_syp_rate_history", emptySet())?.toList().orEmpty().sortedDescending())
+    }
     var message by remember { mutableStateOf<String?>(null) }
 
     Column(
@@ -407,12 +410,16 @@ private fun SettingsScreen(onBack: () -> Unit) {
                         } else {
                             val cleanRate = normalized.stripTrailingZeros().toPlainString()
                             val savedAt = System.currentTimeMillis()
+                            val historyEntry = savedAt.toString() + "|" + cleanRate
+                            val updatedHistory = (rateHistory + historyEntry).distinct().take(30)
                             preferences.edit()
                                 .putString("usd_syp_rate", cleanRate)
                                 .putLong("usd_syp_rate_updated_at", savedAt)
+                                .putStringSet("usd_syp_rate_history", updatedHistory.toSet())
                                 .apply()
                             exchangeRate = cleanRate
                             lastUpdated = savedAt
+                            rateHistory = updatedHistory.sortedDescending()
                             message = "تم حفظ سعر الصرف الجديد. سيُستخدم للفواتير الجديدة فقط."
                         }
                     },
@@ -426,6 +433,36 @@ private fun SettingsScreen(onBack: () -> Unit) {
                         color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
                         fontSize = 13.sp
                     )
+                }
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("سجل تعديلات سعر الصرف", color = Ink, fontWeight = FontWeight.Bold)
+                if (rateHistory.isEmpty()) {
+                    Text("لا يوجد سجل تعديلات حتى الآن.", color = Color(0xFF64748B), fontSize = 12.sp)
+                } else {
+                    rateHistory.take(10).forEach { item ->
+                        val parts = item.split("|", limit = 2)
+                        val timestamp = parts.firstOrNull()?.toLongOrNull() ?: 0L
+                        val rate = parts.getOrNull(1).orEmpty()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(rate + " ل.س / USD", color = BrandBlue, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                if (timestamp > 0L) SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(timestamp)) else "",
+                                color = Color(0xFF64748B),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
                 }
             }
         }
