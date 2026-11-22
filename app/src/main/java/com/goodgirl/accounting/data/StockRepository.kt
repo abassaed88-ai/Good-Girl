@@ -15,7 +15,6 @@ class StockRepository(private val database: AccountingDatabase) {
         note: String
     ): String {
         val cleanDelta = StockInputRules.normalizeDelta(quantityDelta)
-        val cleanCost = ProductInputRules.normalizeNonNegativeDecimal(unitCost, "كلفة الوحدة")
         val movementId = UUID.randomUUID().toString()
         val now = System.currentTimeMillis()
         var resultingBalance = ""
@@ -25,14 +24,26 @@ class StockRepository(private val database: AccountingDatabase) {
                 ?: throw IllegalArgumentException("المنتج غير موجود")
             require(product.isActive) { "لا يمكن تعديل مخزون منتج مؤرشف" }
 
+            val costResult = StockInputRules.calculateAdjustmentCost(
+                currentQuantity = product.stockQuantity,
+                currentAverageCost = product.purchaseCost,
+                quantityDelta = cleanDelta,
+                incomingUnitCost = unitCost
+            )
             resultingBalance = StockInputRules.calculateNewBalance(product.stockQuantity, cleanDelta)
-            database.productDao().updateStock(productId, resultingBalance, now)
+            database.productDao().update(
+                product.copy(
+                    stockQuantity = resultingBalance,
+                    purchaseCost = costResult.resultingAverageCost,
+                    updatedAt = now
+                )
+            )
             database.stockMovementDao().insert(
                 StockMovementEntity(
                     id = movementId,
                     productId = productId,
                     quantityDelta = cleanDelta,
-                    unitCostSnapshot = cleanCost,
+                    unitCostSnapshot = costResult.movementUnitCost,
                     currencyCode = product.priceCurrencyCode,
                     sourceType = "MANUAL_ADJUSTMENT",
                     sourceId = movementId,
