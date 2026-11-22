@@ -1,0 +1,87 @@
+package com.goodgirl.accounting.data
+
+import androidx.room.withTransaction
+import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.data.local.LedgerEntryEntity
+import com.goodgirl.accounting.domain.PartyPaymentRules
+import java.util.UUID
+
+data class PartyPaymentResult(
+    val paymentId: String,
+    val partyId: String,
+    val amount: String,
+    val currencyCode: String,
+    val partyEntryType: String,
+    val cashEntryType: String
+)
+
+/**
+ * Records customer receipts and supplier payments as a party-ledger entry
+ * and a matching cash movement in one database transaction.
+ */
+class PartyPaymentRepository(private val database: AccountingDatabase) {
+    suspend fun recordPayment(
+        partyId: String,
+        amount: String,
+        currencyCode: String,
+        exchangeRate: String,
+        note: String
+    ): PartyPaymentResult {
+        val party = database.partyDao().findById(partyId)
+            ?: throw IllegalArgumentException("جهة التعامل غير موجودة")
+        val values = PartyPaymentRules.normalize(
+            party.kind,
+            amount,
+            currencyCode,
+            exchangeRate,
+            party.currencyCode
+        )
+        val cleanNote = note.trim()
+        require(cleanNote.isNotEmpty()) { "بيان الدفعة مطلوب" }
+
+        val paymentId = UUID.randomUUID().toString()
+        val now = System.currentTimeMillis()
+        val isCustomer = values.partyKind == "CUSTOMER"
+        val partyEntryType = if (isCustomer) "RECEIVABLE_PAYMENT" else "PAYABLE_PAYMENT"
+        val cashEntryType = if (isCustomer) "CASH_IN" else "CASH_OUT"
+
+        database.withTransaction {
+            database.ledgerDao().insert(
+                LedgerEntryEntity(
+                    id = UUID.randomUUID().toString(),
+                    partyId = partyId,
+                    entryType = partyEntryType,
+                    amount = values.amount,
+                    currencyCode = values.currencyCode,
+                    exchangeRateSnapshot = values.exchangeRate,
+                    sourceType = if (isCustomer) "CUSTOMER_RECEIPT" else "SUPPLIER_PAYMENT",
+                    sourceId = paymentId,
+                    occurredAt = now,
+                    note = cleanNote
+                )
+            )
+            database.ledgerDao().insert(
+                LedgerEntryEntity(
+                    id = UUID.randomUUID().toString(),
+                    entryType = cashEntryType,
+                    amount = values.amount,
+                    currencyCode = values.currencyCode,
+                    exchangeRateSnapshot = values.exchangeRate,
+                    sourceType = if (isCustomer) "CUSTOMER_RECEIPT_CASH" else "SUPPLIER_PAYMENT_CASH",
+                    sourceId = paymentId,
+                    occurredAt = now,
+                    note = cleanNote
+                )
+            )
+        }
+
+        return PartyPaymentResult(
+            paymentId = paymentId,
+            partyId = partyId,
+            amount = values.amount,
+            currencyCode = values.currencyCode,
+            partyEntryType = partyEntryType,
+            cashEntryType = cashEntryType
+        )
+    }
+}
