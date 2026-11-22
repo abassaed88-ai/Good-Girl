@@ -2338,6 +2338,7 @@ private fun ProductManagementScreen(
 
 
         val adjustingProduct = products.firstOrNull { it.id == adjustingProductId }
+        val isStockDecrease = adjustmentDelta.trim().toBigDecimalOrNull()?.signum() == -1
         if (adjustingProduct != null) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -2362,11 +2363,26 @@ private fun ProductManagementScreen(
                         label = { Text("كمية الحركة (+ إضافة / - سحب)") },
                         singleLine = true
                     )
+                    Text(
+                        if (isStockDecrease) {
+                            "سيُسجّل السحب بمتوسط الكلفة الحالي دون تغيير متوسط كلفة المنتج."
+                        } else {
+                            "عند إضافة كمية، أدخل كلفتها ليُحدّث التطبيق متوسط كلفة المخزون تلقائياً."
+                        },
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp
+                    )
                     OutlinedTextField(
-                        adjustmentCost,
+                        if (isStockDecrease) adjustingProduct.purchaseCost else adjustmentCost,
                         { adjustmentCost = it },
                         modifier = Modifier.fillMaxWidth(),
-                        label = { Text("كلفة الوحدة لهذه الحركة") },
+                        label = {
+                            Text(
+                                if (isStockDecrease) "متوسط كلفة الوحدة المعتمد للسحب"
+                                else "كلفة الوحدة للكمية المضافة"
+                            )
+                        },
+                        enabled = !isStockDecrease,
                         singleLine = true
                     )
                     OutlinedTextField(
