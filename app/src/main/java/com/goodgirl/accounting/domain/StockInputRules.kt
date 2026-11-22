@@ -2,7 +2,47 @@ package com.goodgirl.accounting.domain
 
 import java.math.BigDecimal
 
+data class StockAdjustmentCostResult(
+    val movementUnitCost: String,
+    val resultingAverageCost: String
+)
+
 object StockInputRules {
+    /**
+     * A stock-in adjustment contributes its entered unit cost to weighted average cost.
+     * A stock-out adjustment is valued at the current average cost and never changes it.
+     */
+    fun calculateAdjustmentCost(
+        currentQuantity: String,
+        currentAverageCost: String,
+        quantityDelta: String,
+        incomingUnitCost: String
+    ): StockAdjustmentCostResult {
+        val delta = normalizeDelta(quantityDelta).toBigDecimal()
+        val averageCost = ProductInputRules.normalizeNonNegativeDecimal(
+            currentAverageCost, "متوسط الكلفة الحالي"
+        )
+        if (delta < BigDecimal.ZERO) {
+            return StockAdjustmentCostResult(
+                movementUnitCost = averageCost,
+                resultingAverageCost = averageCost
+            )
+        }
+
+        val cleanIncomingCost = ProductInputRules.normalizeNonNegativeDecimal(
+            incomingUnitCost, "كلفة الوحدة المضافة"
+        )
+        val newAverage = InvoicePostingRules.calculateWeightedAverageCost(
+            currentQuantity = currentQuantity,
+            currentUnitCost = averageCost,
+            incomingQuantity = delta.stripTrailingZeros().toPlainString(),
+            incomingUnitCost = cleanIncomingCost
+        )
+        return StockAdjustmentCostResult(
+            movementUnitCost = cleanIncomingCost,
+            resultingAverageCost = newAverage
+        )
+    }
     fun normalizeDelta(value: String): String {
         val parsed = try {
             BigDecimal(value.trim())
