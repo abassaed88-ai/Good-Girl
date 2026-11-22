@@ -3,6 +3,7 @@ package com.goodgirl.accounting.data
 import androidx.room.withTransaction
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.domain.ProductInputRules
 import kotlinx.coroutines.flow.Flow
@@ -49,6 +50,16 @@ class ProductRepository(private val database: AccountingDatabase) {
                 )
             )
 
+            database.productUnitDao().insert(
+                ProductUnitEntity(
+                    id = UUID.randomUUID().toString(),
+                    productId = productId,
+                    unitName = cleanUnit,
+                    baseFactor = "1",
+                    isBaseUnit = true
+                )
+            )
+
             if (cleanStock.toBigDecimal() > java.math.BigDecimal.ZERO) {
                 database.stockMovementDao().insert(
                     StockMovementEntity(
@@ -90,6 +101,9 @@ class ProductRepository(private val database: AccountingDatabase) {
                 val currentStock = current.stockQuantity.toBigDecimal()
                 require(currentStock.compareTo(java.math.BigDecimal.ZERO) == 0 || cleanCurrency == current.priceCurrencyCode) {
                     "لا يمكن تغيير عملة المنتج ما دام لديه رصيد في المخزون"
+                }
+                require(cleanUnit == current.baseUnit) {
+                    "وحدة الأساس ثابتة بعد إنشاء المنتج. أضف وحدات تحويل إضافية من شاشة الوحدات."
                 }
                 database.productDao().update(
                     current.copy(

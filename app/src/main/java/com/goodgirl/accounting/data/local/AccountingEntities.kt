@@ -91,7 +91,21 @@ data class InvoiceLineEntity(
     val unitCostSnapshot: String,
     val unitPriceSnapshot: String,
     val discount: String = "0",
-    val lineTotal: String
+    val lineTotal: String,
+    @ColumnInfo(defaultValue = "'1'") val unitFactorSnapshot: String = "1",
+    @ColumnInfo(defaultValue = "'1'") val baseQuantity: String = "1"
+)
+
+@Entity(
+    tableName = "product_units",
+    indices = [Index("productId"), Index(value = ["productId", "unitName"], unique = true)]
+)
+data class ProductUnitEntity(
+    @PrimaryKey val id: String,
+    val productId: String,
+    val unitName: String,
+    val baseFactor: String,
+    val isBaseUnit: Boolean = false
 )
 
 @Entity(

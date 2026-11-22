@@ -61,7 +61,7 @@ object FinancialReportCalculator {
         val costs = mutableMapOf<String, BigDecimal>()
         salesLines.forEach { line ->
             val invoice = invoiceById[line.invoiceId] ?: return@forEach
-            val cost = line.quantity.toBigDecimal().multiply(line.unitCostSnapshot.toBigDecimal())
+            val cost = line.baseQuantity.toBigDecimal().multiply(line.unitCostSnapshot.toBigDecimal())
             costs[invoice.currencyCode] = (costs[invoice.currencyCode] ?: BigDecimal.ZERO).add(cost)
         }
 
@@ -117,7 +117,7 @@ object FinancialReportCalculator {
                         .divide(totalLineNet, 8, RoundingMode.HALF_UP)
                 } else BigDecimal.ZERO
                 val revenue = lineNet.subtract(allocatedDiscount)
-                val cost = line.quantity.toBigDecimal().multiply(line.unitCostSnapshot.toBigDecimal())
+                val cost = line.baseQuantity.toBigDecimal().multiply(line.unitCostSnapshot.toBigDecimal())
                 val key = line.productNameSnapshot to invoice.currencyCode
                 val totals = productTotals.getOrPut(key) {
                     mutableListOf(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)

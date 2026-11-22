@@ -17,7 +17,8 @@ data class InvoiceLineDraft(
     val productId: String,
     val quantity: String,
     val unitPrice: String,
-    val discount: String = "0"
+    val discount: String = "0",
+    val unitName: String? = null
 )
 
 data class PostedInvoiceResult(
@@ -162,6 +163,12 @@ class InvoiceRepository(private val database: AccountingDatabase) {
 
                 val quantityText = InvoicePostingRules.normalizePositiveQuantity(draft.quantity)
                 val quantity = quantityText.toBigDecimal()
+                val selectedUnit = database.productUnitDao().findByName(
+                    product.id,
+                    draft.unitName ?: product.baseUnit
+                ) ?: throw IllegalArgumentException("وحدة القياس المحددة غير مرتبطة بهذه المادة")
+                val unitFactor = ProductUnitInputRules.normalizeFactor(selectedUnit.baseFactor).toBigDecimal()
+                val baseQuantity = quantity.multiply(unitFactor)
                 val unitPrice = ProductInputRules.normalizeNonNegativeDecimal(draft.unitPrice, "سعر الوحدة").toBigDecimal()
                 val lineDiscount = ProductInputRules.normalizeNonNegativeDecimal(draft.discount, "خصم السطر").toBigDecimal()
                 val grossLine = quantity.multiply(unitPrice)
@@ -174,8 +181,8 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 val unitCostSnapshot: String
 
                 if (cleanKind == "SALE") {
-                    require(currentStock >= quantity) { "الكمية المتاحة غير كافية للمنتج: " + product.name }
-                    val newStock = currentStock.subtract(quantity).stripTrailingZeros().toPlainString()
+                    require(currentStock >= baseQuantity) { "الكمية المتاحة غير كافية للمنتج: " + product.name }
+                    val newStock = currentStock.subtract(baseQuantity).stripTrailingZeros().toPlainString()
                     database.productDao().updateStock(product.id, newStock, now)
                     unitCostSnapshot = currentCost.stripTrailingZeros().toPlainString()
 
@@ -183,7 +190,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                         StockMovementEntity(
                             id = movementId,
                             productId = product.id,
-                            quantityDelta = quantity.negate().stripTrailingZeros().toPlainString(),
+                            quantityDelta = baseQuantity.negate().stripTrailingZeros().toPlainString(),
                             unitCostSnapshot = unitCostSnapshot,
                             currencyCode = cleanCurrency,
                             sourceType = "SALE_INVOICE",
@@ -193,12 +200,14 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                         )
                     )
                 } else {
-                    val newStock = currentStock.add(quantity).stripTrailingZeros().toPlainString()
+                    val incomingBaseCost = unitPrice.divide(unitFactor, 8, java.math.RoundingMode.HALF_UP)
+                        .stripTrailingZeros().toPlainString()
+                    val newStock = currentStock.add(baseQuantity).stripTrailingZeros().toPlainString()
                     val newAverageCost = InvoicePostingRules.calculateWeightedAverageCost(
                         currentQuantity = product.stockQuantity,
                         currentUnitCost = product.purchaseCost,
-                        incomingQuantity = quantityText,
-                        incomingUnitCost = unitPrice.stripTrailingZeros().toPlainString()
+                        incomingQuantity = baseQuantity.stripTrailingZeros().toPlainString(),
+                        incomingUnitCost = incomingBaseCost
                     )
                     database.productDao().update(
                         product.copy(
@@ -207,13 +216,13 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                             updatedAt = now
                         )
                     )
-                    unitCostSnapshot = unitPrice.stripTrailingZeros().toPlainString()
+                    unitCostSnapshot = incomingBaseCost
 
                     database.stockMovementDao().insert(
                         StockMovementEntity(
                             id = movementId,
                             productId = product.id,
-                            quantityDelta = quantity.stripTrailingZeros().toPlainString(),
+                            quantityDelta = baseQuantity.stripTrailingZeros().toPlainString(),
                             unitCostSnapshot = unitCostSnapshot,
                             currencyCode = cleanCurrency,
                             sourceType = "PURCHASE_INVOICE",
@@ -231,12 +240,14 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                     invoiceId = invoiceId,
                     productId = product.id,
                     productNameSnapshot = product.name,
-                    unitSnapshot = product.baseUnit,
+                    unitSnapshot = selectedUnit.unitName,
                     quantity = quantityText,
                     unitCostSnapshot = unitCostSnapshot,
                     unitPriceSnapshot = unitPrice.stripTrailingZeros().toPlainString(),
                     discount = lineDiscount.stripTrailingZeros().toPlainString(),
-                    lineTotal = lineTotal.stripTrailingZeros().toPlainString()
+                    lineTotal = lineTotal.stripTrailingZeros().toPlainString(),
+                    unitFactorSnapshot = unitFactor.stripTrailingZeros().toPlainString(),
+                    baseQuantity = baseQuantity.stripTrailingZeros().toPlainString()
                 )
             }
 

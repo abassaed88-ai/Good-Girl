@@ -29,6 +29,21 @@ interface ProductDao {
 }
 
 @Dao
+interface ProductUnitDao {
+    @Query("SELECT * FROM product_units WHERE productId = :productId ORDER BY isBaseUnit DESC, unitName COLLATE NOCASE")
+    fun observeForProduct(productId: String): Flow<List<ProductUnitEntity>>
+
+    @Query("SELECT * FROM product_units WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): ProductUnitEntity?
+
+    @Query("SELECT * FROM product_units WHERE productId = :productId AND unitName = :unitName LIMIT 1")
+    suspend fun findByName(productId: String, unitName: String): ProductUnitEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(unit: ProductUnitEntity)
+}
+
+@Dao
 interface CategoryDao {
     @Query("SELECT * FROM categories ORDER BY name COLLATE NOCASE")
     fun observeAll(): Flow<List<CategoryEntity>>

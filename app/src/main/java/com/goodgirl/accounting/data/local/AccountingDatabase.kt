@@ -11,17 +11,19 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         CategoryEntity::class,
         ProductEntity::class,
+        ProductUnitEntity::class,
         PartyEntity::class,
         InvoiceEntity::class,
         InvoiceLineEntity::class,
         StockMovementEntity::class,
         LedgerEntryEntity::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 abstract class AccountingDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
+    abstract fun productUnitDao(): ProductUnitDao
     abstract fun categoryDao(): CategoryDao
     abstract fun partyDao(): PartyDao
     abstract fun invoiceDao(): InvoiceDao
@@ -48,6 +50,22 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS product_units (id TEXT NOT NULL, productId TEXT NOT NULL, unitName TEXT NOT NULL, baseFactor TEXT NOT NULL, isBaseUnit INTEGER NOT NULL, PRIMARY KEY(id))"
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS index_product_units_productId ON product_units(productId)")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_product_units_productId_unitName ON product_units(productId, unitName)")
+                database.execSQL("ALTER TABLE invoice_lines ADD COLUMN unitFactorSnapshot TEXT NOT NULL DEFAULT '1'")
+                database.execSQL("ALTER TABLE invoice_lines ADD COLUMN baseQuantity TEXT NOT NULL DEFAULT '1'")
+                database.execSQL("UPDATE invoice_lines SET baseQuantity = quantity")
+                database.execSQL(
+                    "INSERT INTO product_units(id, productId, unitName, baseFactor, isBaseUnit) SELECT 'base-' || id, id, baseUnit, '1', 1 FROM products"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AccountingDatabase? = null
 
@@ -57,7 +75,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).build().also { INSTANCE = it }
             }
     }
 }
