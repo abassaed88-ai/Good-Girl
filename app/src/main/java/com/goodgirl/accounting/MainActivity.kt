@@ -69,6 +69,7 @@ import com.goodgirl.accounting.domain.PartyBalanceCalculator
 import com.goodgirl.accounting.domain.ProductInputRules
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
@@ -172,6 +173,63 @@ private fun DashboardScreen(
     onOpenReports: () -> Unit,
     onOpenBackup: () -> Unit
 ) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
+    val ledgerEntries by database.ledgerDao().observeAll().collectAsState(initial = emptyList())
+    val customers by database.partyDao().observeByKind("CUSTOMER").collectAsState(initial = emptyList())
+    val suppliers by database.partyDao().observeByKind("SUPPLIER").collectAsState(initial = emptyList())
+
+    val todayStart = remember {
+        Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+    }
+    val tomorrowStart = remember(todayStart) {
+        Calendar.getInstance().apply {
+            timeInMillis = todayStart
+            add(Calendar.DAY_OF_MONTH, 1)
+        }.timeInMillis
+    }
+    val todaySales = remember(invoices, todayStart, tomorrowStart) {
+        invoices.filter {
+            it.status == "POSTED" && it.kind == "SALE" && it.issuedAt >= todayStart && it.issuedAt < tomorrowStart
+        }.groupBy { it.currencyCode }.mapValues { (_, rows) ->
+            rows.fold(BigDecimal.ZERO) { total, invoice -> total.add(invoice.total.toBigDecimal()) }
+        }
+    }
+    val todayReceipts = remember(ledgerEntries, todayStart, tomorrowStart) {
+        ledgerEntries.filter {
+            it.entryType == "CASH_IN" && it.occurredAt >= todayStart && it.occurredAt < tomorrowStart
+        }.groupBy { it.currencyCode }.mapValues { (_, rows) ->
+            rows.fold(BigDecimal.ZERO) { total, entry -> total.add(entry.amount.toBigDecimal()) }
+        }
+    }
+    val customerBalances = remember(customers, ledgerEntries) {
+        val totals = mutableMapOf<String, BigDecimal>()
+        customers.forEach { party ->
+            PartyBalanceCalculator.calculate("CUSTOMER", ledgerEntries.filter { it.partyId == party.id })
+                .forEach { (currency, amount) ->
+                    totals[currency] = (totals[currency] ?: BigDecimal.ZERO).add(amount)
+                }
+        }
+        totals
+    }
+    val supplierBalances = remember(suppliers, ledgerEntries) {
+        val totals = mutableMapOf<String, BigDecimal>()
+        suppliers.forEach { party ->
+            PartyBalanceCalculator.calculate("SUPPLIER", ledgerEntries.filter { it.partyId == party.id })
+                .forEach { (currency, amount) ->
+                    totals[currency] = (totals[currency] ?: BigDecimal.ZERO).add(amount)
+                }
+        }
+        totals
+    }
+    val postedInvoiceCount = remember(invoices) { invoices.count { it.status == "POSTED" } }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -202,15 +260,21 @@ private fun DashboardScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SummaryCard("مبيعات اليوم", "0", "ل.س", BrandBlue, Modifier.weight(1f))
-            SummaryCard("مقبوضات اليوم", "0", "ل.س", SoftGreen, Modifier.weight(1f))
+            SummaryCard("مبيعات اليوم", formatCurrencyTotals(todaySales), "حسب العملة", BrandBlue, Modifier.weight(1f))
+            SummaryCard("مقبوضات اليوم", formatCurrencyTotals(todayReceipts), "حركات قبض الصندوق", SoftGreen, Modifier.weight(1f))
         }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            SummaryCard("ديون مستحقة", "0", "ل.س", SoftRed, Modifier.weight(1f))
-            SummaryCard("عدد الفواتير", "0", "فاتورة", SoftPurple, Modifier.weight(1f))
+            SummaryCard("أرصدة العملاء", formatCurrencyTotals(customerBalances), "مستحق لنا", SoftRed, Modifier.weight(1f))
+            SummaryCard("أرصدة الموردين", formatCurrencyTotals(supplierBalances), "مستحق علينا", SoftPurple, Modifier.weight(1f))
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            SummaryCard("الفواتير المرحلة", postedInvoiceCount.toString(), "فاتورة", BrandBlue, Modifier.weight(1f))
         }
 
         Text("الأقسام الرئيسية", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
@@ -1987,6 +2051,13 @@ private fun ProductListItem(
     }
 }
 
+private fun formatCurrencyTotals(values: Map<String, BigDecimal>): String {
+    if (values.isEmpty()) return "0"
+    return values.toSortedMap().entries.joinToString("\n") { (currency, amount) ->
+        amount.stripTrailingZeros().toPlainString() + " " + currency
+    }
+}
+
 @Composable
 private fun SummaryCard(
     title: String,
@@ -2006,7 +2077,7 @@ private fun SummaryCard(
             verticalArrangement = Arrangement.spacedBy(7.dp)
         ) {
             Text(title, color = Color(0xFF64748B), fontSize = 12.sp)
-            Text(value, color = Ink, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+            Text(value, color = Ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 3)
             Text(unit, color = accent, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
     }
