@@ -10,8 +10,8 @@ class PartyStatementPdfExporterTest {
     fun customerStatementShowsMovementAndRunningBalanceWithoutCurrencyMixing() {
         val party = PartyEntity("p1", "عميل تجريبي", "CUSTOMER", phone = "0990000000")
         val entries = listOf(
-            LedgerEntryEntity("e1", "p1", "RECEIVABLE", "100", "SYP", "1", "INVOICE", "i1", 1000L, "فاتورة"),
-            LedgerEntryEntity("e2", "p1", "RECEIVABLE_PAYMENT", "25", "SYP", "1", "PAYMENT", "x1", 2000L, "دفعة"),
+            LedgerEntryEntity("e1", "p1", "RECEIVABLE", "100", "SYP", "1", "INVOICE", "i1", 1000L, "فاتورة", createdAt = 1000L),
+            LedgerEntryEntity("e2", "p1", "RECEIVABLE_PAYMENT", "25", "SYP", "1", "PAYMENT", "x1", 2000L, "دفعة", createdAt = 2000L),
             LedgerEntryEntity("e3", "p1", "RECEIVABLE", "10", "USD", "15000", "INVOICE", "i2", 3000L, "")
         )
         val content = PartyStatementPdfExporter.buildContent(party, entries, 4000L)
