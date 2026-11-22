@@ -1,6 +1,8 @@
 package com.goodgirl.accounting
 
 import android.os.Bundle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -46,6 +48,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.goodgirl.accounting.data.AccountingBackupManager
 import com.goodgirl.accounting.data.CashTransactionRepository
 import com.goodgirl.accounting.data.CategoryRepository
 import com.goodgirl.accounting.data.InvoiceLineDraft
@@ -110,6 +113,7 @@ private fun GoodGirlApp() {
             when (activePage) {
                 "cash" -> CashManagementScreen(onBack = { activePage = "dashboard" })
                 "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
+                "backup" -> BackupManagementScreen(onBack = { activePage = "dashboard" })
                 "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
                 "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
                 "products" -> ProductManagementScreen(
@@ -150,7 +154,8 @@ private fun GoodGirlApp() {
                     onOpenProducts = { activePage = "products" },
                     onOpenParties = { activePage = "parties" },
                     onOpenCash = { activePage = "cash" },
-                    onOpenReports = { activePage = "reports" }
+                    onOpenReports = { activePage = "reports" },
+                    onOpenBackup = { activePage = "backup" }
                 )
             }
         }
@@ -164,7 +169,8 @@ private fun DashboardScreen(
     onOpenProducts: () -> Unit,
     onOpenParties: () -> Unit,
     onOpenCash: () -> Unit,
-    onOpenReports: () -> Unit
+    onOpenReports: () -> Unit,
+    onOpenBackup: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -216,7 +222,8 @@ private fun DashboardScreen(
             "الحسابات والديون",
             "الصندوق والمصروفات",
             "التقارير والأرباح",
-            "العملات وأسعار الصرف"
+            "العملات وأسعار الصرف",
+            "النسخ الاحتياطي والاستعادة"
         )
         sections.forEachIndexed { index, title ->
             SectionRow(
@@ -229,6 +236,7 @@ private fun DashboardScreen(
                     3 -> onOpenParties
                     5 -> onOpenCash
                     6 -> onOpenReports
+                    8 -> onOpenBackup
                     else -> null
                 }
             )
@@ -244,6 +252,128 @@ private fun DashboardScreen(
 }
 
 
+
+@Composable
+private fun BackupManagementScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val manager = remember(context, database) { AccountingBackupManager(context, database) }
+    val scope = rememberCoroutineScope()
+    var isBusy by remember { mutableStateOf(false) }
+    var confirmRestore by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isBusy = true
+                message = null
+                try {
+                    val result = manager.exportBackup(uri)
+                    message = "تم إنشاء النسخة الاحتياطية بنجاح. عدد السجلات: " + result.recordCount
+                } catch (error: Exception) {
+                    message = error.message ?: "تعذر إنشاء النسخة الاحتياطية"
+                } finally {
+                    isBusy = false
+                }
+            }
+        }
+    }
+
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isBusy = true
+                message = null
+                try {
+                    val result = manager.restoreBackup(uri)
+                    message = "تمت استعادة النسخة بنجاح. عدد السجلات المستعادة: " + result.recordCount
+                    confirmRestore = false
+                } catch (error: Exception) {
+                    message = error.message ?: "تعذرت استعادة النسخة الاحتياطية"
+                } finally {
+                    isBusy = false
+                }
+            }
+        }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
+        Text("النسخ الاحتياطي والاستعادة", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("إنشاء نسخة احتياطية", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(
+                    "يحفظ المنتجات والمخزون والوحدات والعملاء والموردين والفواتير وكشوف الحساب وحركات الصندوق في ملف واحد.",
+                    color = Color(0xFF64748B),
+                    fontSize = 13.sp
+                )
+                Button(
+                    onClick = {
+                        val stamp = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                        exportLauncher.launch("GoodGirl_Backup_" + stamp + ".json")
+                    },
+                    enabled = !isBusy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("إنشاء وحفظ نسخة احتياطية")
+                }
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("استعادة نسخة احتياطية", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(
+                    "الاستعادة تستبدل البيانات الحالية بالكامل ببيانات الملف المختار، ولا يمكن التراجع عنها من داخل التطبيق.",
+                    color = Color(0xFFB42332),
+                    fontSize = 13.sp
+                )
+                androidx.compose.material3.Checkbox(
+                    checked = confirmRestore,
+                    onCheckedChange = { confirmRestore = it },
+                    enabled = !isBusy
+                )
+                Text("أفهم أن الاستعادة ستحل محل جميع البيانات الحالية.")
+                Button(
+                    onClick = {
+                        restoreLauncher.launch(arrayOf("application/json", "text/json", "application/octet-stream", "*/*"))
+                    },
+                    enabled = !isBusy && confirmRestore,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("اختيار ملف واستعادة البيانات")
+                }
+            }
+        }
+        Text(
+            "احتفظ بملف النسخة في مكان آمن. قد يحتوي على بيانات العملاء والموردين والفواتير.",
+            color = Color(0xFF64748B),
+            fontSize = 12.sp
+        )
+        if (isBusy) {
+            Text("جارٍ تنفيذ العملية...", color = BrandBlue, fontWeight = FontWeight.SemiBold)
+        }
+        message?.let {
+            Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+        }
+    }
+}
 
 @Composable
 private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
