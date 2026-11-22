@@ -17,11 +17,9 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Exercises the 4 -> 5 migration against a real SQLite database with the
- * legacy v4 products and stock_movements table definitions.
- *
- * This deliberately tests the migration body directly. Room schema validation
- * remains a separate check and must not be inferred from this test.
+ * Tests the 4 -> 5 stock reconciliation against SQLite and Room's exported
+ * v4/v5 schemas. The Room helper test validates the complete resulting schema;
+ * focused SQLite cases cover precision, signed corrections, and rollback.
  */
 @RunWith(AndroidJUnit4::class)
 class AccountingDatabaseMigrationTest {
