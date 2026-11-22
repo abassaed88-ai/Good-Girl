@@ -3,6 +3,7 @@ package com.goodgirl.accounting.data
 import android.content.Context
 import android.net.Uri
 import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.data.local.ACCOUNTING_DATABASE_VERSION
 import com.goodgirl.accounting.data.local.CategoryEntity
 import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
@@ -252,7 +253,7 @@ class AccountingBackupManager(
         private const val BACKUP_FORMAT = "good-girl-accounting-backup"
         private const val BACKUP_FORMAT_VERSION = 1
         private const val APPLICATION_ID = "com.goodgirl.accounting"
-        private const val DATABASE_VERSION = 4
+        private const val DATABASE_VERSION = ACCOUNTING_DATABASE_VERSION
         private const val MAX_BACKUP_BYTES = 50 * 1024 * 1024
     }
 }
