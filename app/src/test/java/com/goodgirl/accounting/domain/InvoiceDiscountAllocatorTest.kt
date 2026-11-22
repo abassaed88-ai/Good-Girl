@@ -22,7 +22,7 @@ class InvoiceDiscountAllocatorTest {
             listOf(BigDecimal("1"), BigDecimal("1"), BigDecimal("1")),
             BigDecimal("1")
         )
-        assertEquals(BigDecimal("1"), result.fold(BigDecimal.ZERO, BigDecimal::add))
+        assertEquals(0, result.fold(BigDecimal.ZERO, BigDecimal::add).compareTo(BigDecimal("1")))
     }
 
     @Test
