@@ -51,6 +51,7 @@ import com.goodgirl.accounting.data.InvoiceLineDraft
 import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.ProductRepository
+import com.goodgirl.accounting.data.ProductUnitRepository
 import com.goodgirl.accounting.data.StockRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.PartyEntity
@@ -89,6 +90,7 @@ class MainActivity : ComponentActivity() {
 private fun GoodGirlApp() {
     var activePage by remember { mutableStateOf("dashboard") }
     var statementPartyId by remember { mutableStateOf<String?>(null) }
+    var unitsProductId by remember { mutableStateOf<String?>(null) }
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = BrandBlue,
@@ -105,7 +107,17 @@ private fun GoodGirlApp() {
                 "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
                 "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
                 "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
-                "products" -> ProductManagementScreen(onBack = { activePage = "dashboard" })
+                "products" -> ProductManagementScreen(
+                    onBack = { activePage = "dashboard" },
+                    onManageUnits = { productId ->
+                        unitsProductId = productId
+                        activePage = "product_units"
+                    }
+                )
+                "product_units" -> ProductUnitsScreen(
+                    productId = unitsProductId.orEmpty(),
+                    onBack = { activePage = "products" }
+                )
                 "parties" -> PartyManagementScreen(
                     onBack = { activePage = "dashboard" },
                     onOpenStatement = { partyId ->
@@ -231,6 +243,8 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     val draftLines = remember(kind) { mutableStateListOf<InvoiceLineDraft>() }
 
     var selectedProductId by remember { mutableStateOf<String?>(null) }
+    var selectedUnitName by remember { mutableStateOf<String?>(null) }
+    var unitMenuExpanded by remember { mutableStateOf(false) }
     var productMenuExpanded by remember { mutableStateOf(false) }
     var selectedPartyId by remember { mutableStateOf<String?>(null) }
     var partyMenuExpanded by remember { mutableStateOf(false) }
@@ -250,7 +264,12 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     var isSavingPayment by remember { mutableStateOf(false) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
 
+    val productUnits by database.productUnitDao()
+        .observeForProduct(selectedProductId ?: "")
+        .collectAsState(initial = emptyList())
     val selectedProduct = products.firstOrNull { it.id == selectedProductId }
+    val selectedUnit = productUnits.firstOrNull { it.unitName == selectedUnitName }
+        ?: productUnits.firstOrNull { it.isBaseUnit }
     val selectedParty = parties.firstOrNull { it.id == selectedPartyId }
     val screenTitle = if (kind == "SALE") "فاتورة بيع جديدة" else "فاتورة شراء جديدة"
     val unitPriceLabel = if (kind == "SALE") "سعر البيع للوحدة" else "كلفة الشراء للوحدة"
@@ -300,11 +319,11 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextButton(
                         enabled = draftLines.isEmpty(),
-                        onClick = { currencyCode = "SYP"; exchangeRate = "1"; selectedProductId = null }
+                        onClick = { currencyCode = "SYP"; exchangeRate = "1"; selectedProductId = null; selectedUnitName = null }
                     ) { Text(if (currencyCode == "SYP") "✓ الليرة السورية" else "الليرة السورية") }
                     TextButton(
                         enabled = draftLines.isEmpty(),
-                        onClick = { currencyCode = "USD"; if (exchangeRate == "1") exchangeRate = ""; selectedProductId = null }
+                        onClick = { currencyCode = "USD"; if (exchangeRate == "1") exchangeRate = ""; selectedProductId = null; selectedUnitName = null }
                     ) { Text(if (currencyCode == "USD") "✓ الدولار الأمريكي" else "الدولار الأمريكي") }
                 }
                 if (draftLines.isNotEmpty()) {
@@ -339,6 +358,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                                 text = { Text(product.name + " — المتوفر: " + product.stockQuantity + " " + product.baseUnit) },
                                 onClick = {
                                     selectedProductId = product.id
+                                    selectedUnitName = product.baseUnit
                                     unitPrice = if (kind == "SALE") product.salePrice else product.purchaseCost
                                     productMenuExpanded = false
                                 }
@@ -348,6 +368,28 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                 }
                 if (products.none { it.priceCurrencyCode == currencyCode }) {
                     Text("لا توجد مواد معرفة بهذه العملة. أضف مادة أو عدّل عملتها من شاشة المنتجات.", color = Color(0xFF64748B), fontSize = 12.sp)
+                }
+                if (selectedProduct != null) {
+                    Box {
+                        Button(onClick = { unitMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text("وحدة القياس: " + (selectedUnit?.unitName ?: selectedProduct.baseUnit))
+                        }
+                        DropdownMenu(expanded = unitMenuExpanded, onDismissRequest = { unitMenuExpanded = false }) {
+                            productUnits.forEach { unit ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text("1 " + unit.unitName + " = " + unit.baseFactor + " " + selectedProduct.baseUnit)
+                                    },
+                                    onClick = {
+                                        selectedUnitName = unit.unitName
+                                        val basePrice = (if (kind == "SALE") selectedProduct.salePrice else selectedProduct.purchaseCost).toBigDecimal()
+                                        unitPrice = basePrice.multiply(unit.baseFactor.toBigDecimal()).stripTrailingZeros().toPlainString()
+                                        unitMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
                 }
                 OutlinedTextField(quantity, { quantity = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الكمية") }, singleLine = true)
                 OutlinedTextField(unitPrice, { unitPrice = it }, modifier = Modifier.fillMaxWidth(), label = { Text(unitPriceLabel) }, singleLine = true)
@@ -365,7 +407,8 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                                     productId = product.id,
                                     quantity = cleanQuantity,
                                     unitPrice = cleanPrice,
-                                    discount = cleanDiscount
+                                    discount = cleanDiscount,
+                                    unitName = selectedUnit?.unitName ?: product.baseUnit
                                 )
                             )
                             quantity = "1"
@@ -393,7 +436,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                     ) {
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(productName, color = Ink, fontWeight = FontWeight.Bold)
-                            Text(line.quantity + " × " + line.unitPrice + " = " + net + " " + currencyCode, color = Color(0xFF64748B), fontSize = 12.sp)
+                            Text(line.quantity + " " + (line.unitName ?: "") + " × " + line.unitPrice + " = " + net + " " + currencyCode, color = Color(0xFF64748B), fontSize = 12.sp)
                         }
                         TextButton(onClick = { draftLines.removeAt(index) }) { Text("حذف") }
                     }
@@ -433,6 +476,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                                 paidAmount = "0"
                                 note = ""
                                 selectedProductId = null
+                                selectedUnitName = null
                                 selectedPartyId = null
                                 message = "تم ترحيل الفاتورة " + result.invoiceNumber + " — المتبقي: " + result.remaining + " " + currencyCode
                             } catch (error: Exception) {
@@ -1059,7 +1103,92 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
 }
 
 @Composable
-private fun ProductManagementScreen(onBack: () -> Unit) {
+private fun ProductUnitsScreen(productId: String, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val repository = remember(database) { ProductUnitRepository(database) }
+    val product by database.productDao().observeProduct(productId).collectAsState(initial = null)
+    val units by repository.observeUnits(productId).collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+
+    var unitName by remember { mutableStateOf("") }
+    var factor by remember { mutableStateOf("1") }
+    var message by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى المنتجات") }
+        Text("وحدات قياس المنتج", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        if (product == null) {
+            Text("المنتج غير موجود", color = Color(0xFFB42332))
+        } else {
+            Text(product?.name.orEmpty(), color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Text(
+                "وحدة الأساس: " + product?.baseUnit + " — معامل التحويل يحدد عدد وحدات الأساس في الوحدة الإضافية.",
+                color = Color(0xFF64748B),
+                fontSize = 13.sp
+            )
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("إضافة وحدة جديدة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                    OutlinedTextField(unitName, { unitName = it }, modifier = Modifier.fillMaxWidth(), label = { Text("اسم الوحدة الإضافية") }, singleLine = true)
+                    OutlinedTextField(factor, { factor = it }, modifier = Modifier.fillMaxWidth(), label = { Text("كم وحدة أساس تحتوي؟") }, singleLine = true)
+                    Text(
+                        "مثال: وحدة الأساس قطعة، والكرتونة تحتوي 12 قطعة؛ اكتب 12.",
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSaving = true
+                                message = null
+                                try {
+                                    repository.addAlternateUnit(productId, unitName, factor)
+                                    unitName = ""
+                                    factor = "1"
+                                    message = "تمت إضافة وحدة القياس"
+                                } catch (error: Exception) {
+                                    message = error.message ?: "تعذر إضافة الوحدة"
+                                } finally {
+                                    isSaving = false
+                                }
+                            }
+                        },
+                        enabled = !isSaving,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (isSaving) "جارٍ الحفظ..." else "إضافة الوحدة") }
+                    message?.let {
+                        Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                    }
+                }
+            }
+            Text("الوحدات المتاحة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+            units.forEach { unit ->
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(unit.unitName, color = Ink, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (unit.isBaseUnit) "وحدة الأساس" else "1 " + unit.unitName + " = " + unit.baseFactor + " " + product?.baseUnit,
+                            color = BrandBlue,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) -> Unit) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { ProductRepository(database) }
@@ -1323,7 +1452,8 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
                 ProductListItem(
                     product,
                     onEdit = { startEditing(product) },
-                    onStockAdjustment = { startStockAdjustment(product) }
+                    onStockAdjustment = { startStockAdjustment(product) },
+                    onManageUnits = { onManageUnits(product.id) }
                 )
             }
         }
@@ -1334,7 +1464,8 @@ private fun ProductManagementScreen(onBack: () -> Unit) {
 private fun ProductListItem(
     product: ProductEntity,
     onEdit: () -> Unit,
-    onStockAdjustment: () -> Unit
+    onStockAdjustment: () -> Unit,
+    onManageUnits: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1347,6 +1478,7 @@ private fun ProductListItem(
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                     TextButton(onClick = onEdit) { Text("تعديل") }
                     TextButton(onClick = onStockAdjustment) { Text("حركة مخزون") }
+                    TextButton(onClick = onManageUnits) { Text("الوحدات") }
                 }
             }
             if (product.sku.isNotBlank()) {
