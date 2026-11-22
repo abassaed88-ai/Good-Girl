@@ -122,6 +122,19 @@ class AccountingBackupManager(
         val invoiceLines = root.parseArray("invoiceLines") { it.toInvoiceLineEntity() }
         val movements = root.parseArray("stockMovements") { it.toStockMovementEntity() }
         val ledgerEntries = root.parseArray("ledgerEntries") { it.toLedgerEntryEntity() }
+
+        // Validate the complete snapshot before opening the destructive replacement transaction.
+        BackupIntegrityValidator.validate(
+            categories = categories,
+            products = products,
+            units = units,
+            parties = parties,
+            invoices = invoices,
+            invoiceLines = invoiceLines,
+            movements = movements,
+            ledgerEntries = ledgerEntries
+        )
+
         val totalRecords = categories.size + products.size + units.size + parties.size +
             invoices.size + invoiceLines.size + movements.size + ledgerEntries.size
         val exportedAt = root.getLong("exportedAt")
