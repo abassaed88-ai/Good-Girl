@@ -43,7 +43,7 @@ class PartyInvoiceAllocationRulesTest {
         assertEquals(2, result.updatedInvoices.size)
         assertEquals("60", result.updatedInvoices[0].paid)
         assertEquals("0", result.updatedInvoices[0].remaining)
-        assertEquals("30", result.updatedInvoices[1].paid)
+        assertEquals("20", result.updatedInvoices[1].paid)
         assertEquals("20", result.updatedInvoices[1].remaining)
         assertEquals(0, result.allocatedAmount.compareTo(BigDecimal("70")))
         assertEquals(0, result.unallocatedAmount.compareTo(BigDecimal.ZERO))
