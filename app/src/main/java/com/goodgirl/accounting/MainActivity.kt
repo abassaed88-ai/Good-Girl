@@ -1350,7 +1350,15 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                         )
                         OutlinedTextField(
                             paymentCurrency,
-                            { paymentCurrency = it.uppercase() },
+                            {
+                                paymentCurrency = it.uppercase()
+                                paymentRate = when (paymentCurrency) {
+                                    "SYP" -> "1"
+                                    "USD" -> context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+                                        .getString("usd_syp_rate", "1") ?: "1"
+                                    else -> paymentRate
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             label = { Text("العملة (SYP أو USD)") },
                             singleLine = true
