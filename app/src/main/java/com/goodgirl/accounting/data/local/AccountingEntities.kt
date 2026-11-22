@@ -1,5 +1,6 @@
 package com.goodgirl.accounting.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.PrimaryKey
@@ -28,7 +29,7 @@ data class ProductEntity(
     val baseUnit: String = "قطعة",
     val purchaseCost: String = "0",
     val salePrice: String = "0",
-    val priceCurrencyCode: String = "SYP",
+    @ColumnInfo(defaultValue = "'SYP'") val priceCurrencyCode: String = "SYP",
     val stockQuantity: String = "0",
     val lowStockThreshold: String = "0",
     val note: String = "",
@@ -47,7 +48,7 @@ data class PartyEntity(
     val address: String = "",
     val openingBalance: String = "0",
     val currencyCode: String = "SYP",
-    val openingExchangeRate: String = "1",
+    @ColumnInfo(defaultValue = "'1'") val openingExchangeRate: String = "1",
     val note: String = "",
     val createdAt: Long
 )
@@ -103,7 +104,7 @@ data class StockMovementEntity(
     /** Signed quantity: positive for stock-in, negative for stock-out. */
     val quantityDelta: String,
     val unitCostSnapshot: String,
-    val currencyCode: String = "SYP",
+    @ColumnInfo(defaultValue = "'SYP'") val currencyCode: String = "SYP",
     val sourceType: String,
     val sourceId: String,
     val occurredAt: Long,
