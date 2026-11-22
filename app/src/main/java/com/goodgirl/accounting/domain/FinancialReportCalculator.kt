@@ -100,23 +100,20 @@ object FinancialReportCalculator {
         val productTotals = mutableMapOf<Pair<String, String>, MutableList<BigDecimal>>()
         salesInvoices.forEach { invoice ->
             val invoiceLines = salesLines.filter { it.invoiceId == invoice.id }
-            val totalLineNet = invoiceLines.fold(BigDecimal.ZERO) { total, line ->
-                total.add(line.lineTotal.toBigDecimal())
-            }
             val lineDiscountSum = invoiceLines.fold(BigDecimal.ZERO) { total, line ->
                 total.add(line.discount.toBigDecimal())
             }
             val invoiceLevelDiscount = invoice.discount.toBigDecimal()
                 .subtract(lineDiscountSum)
                 .max(BigDecimal.ZERO)
+            val allocatedDiscounts = InvoiceDiscountAllocator.allocate(
+                invoiceLines.map { it.lineTotal.toBigDecimal() },
+                invoiceLevelDiscount
+            )
 
-            invoiceLines.forEach { line ->
+            invoiceLines.forEachIndexed { index, line ->
                 val lineNet = line.lineTotal.toBigDecimal()
-                val allocatedDiscount = if (totalLineNet.compareTo(BigDecimal.ZERO) > 0) {
-                    invoiceLevelDiscount.multiply(lineNet)
-                        .divide(totalLineNet, 8, RoundingMode.HALF_UP)
-                } else BigDecimal.ZERO
-                val revenue = lineNet.subtract(allocatedDiscount)
+                val revenue = lineNet.subtract(allocatedDiscounts[index])
                 val cost = line.baseQuantity.toBigDecimal().multiply(line.unitCostSnapshot.toBigDecimal())
                 val key = line.productNameSnapshot to invoice.currencyCode
                 val totals = productTotals.getOrPut(key) {
