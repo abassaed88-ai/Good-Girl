@@ -96,6 +96,13 @@ interface InvoiceDao {
     @Query("SELECT * FROM invoices WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): InvoiceEntity?
 
+    @Query("SELECT * FROM invoices WHERE partyId = :partyId AND kind = :kind AND currencyCode = :currencyCode AND status = 'POSTED' ORDER BY issuedAt ASC, createdAt ASC")
+    suspend fun getPostedForPartyAndCurrency(
+        partyId: String,
+        kind: String,
+        currencyCode: String
+    ): List<InvoiceEntity>
+
     @Update
     suspend fun updateInvoice(invoice: InvoiceEntity)
 
