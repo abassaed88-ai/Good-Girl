@@ -80,6 +80,31 @@ class FinancialReportCalculatorTest {
     }
 
     @Test
+    fun combinesLineAndInvoiceDiscountsAndExcludesDraftAndOutOfPeriodInvoices() {
+        val valid = invoice("sale-valid", "SALE", "80", "20")
+        val draft = invoice("sale-draft", "SALE", "80", "20").copy(status = "DRAFT")
+        val outsidePeriod = invoice("sale-outside", "SALE", "80", "20").copy(issuedAt = 201L)
+
+        val report = FinancialReportCalculator.calculate(
+            0L, 200L,
+            listOf(valid, draft, outsidePeriod),
+            listOf(
+                line("sale-valid", "1", "100", "40", "5"),
+                line("sale-draft", "1", "100", "40", "5"),
+                line("sale-outside", "1", "100", "40", "5")
+            ),
+            emptyList()
+        )
+
+        val summary = report.currencySummaries.single()
+        val product = report.products.single()
+        assertEquals("80", summary.sales.stripTrailingZeros().toPlainString())
+        assertEquals("80", product.revenue.stripTrailingZeros().toPlainString())
+        assertEquals("40", product.cost.stripTrailingZeros().toPlainString())
+        assertEquals("40", product.profit.stripTrailingZeros().toPlainString())
+    }
+
+    @Test
     fun keepsCurrenciesSeparate() {
         val report = FinancialReportCalculator.calculate(
             0L, 200L,
