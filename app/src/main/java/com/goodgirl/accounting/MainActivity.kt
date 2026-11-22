@@ -6,6 +6,7 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,6 +20,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -30,6 +33,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -42,12 +46,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.goodgirl.accounting.data.InvoiceLineDraft
+import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.ProductRepository
 import com.goodgirl.accounting.data.StockRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.domain.InvoicePostingRules
+import java.math.BigDecimal
 import kotlinx.coroutines.launch
 
 private val BrandBlue = Color(0xFF2878C8)
@@ -85,9 +93,13 @@ private fun GoodGirlApp() {
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
             when (activePage) {
+                "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
+                "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
                 "products" -> ProductManagementScreen(onBack = { activePage = "dashboard" })
                 "parties" -> PartyManagementScreen(onBack = { activePage = "dashboard" })
                 else -> DashboardScreen(
+                    onOpenSales = { activePage = "sales" },
+                    onOpenPurchases = { activePage = "purchases" },
                     onOpenProducts = { activePage = "products" },
                     onOpenParties = { activePage = "parties" }
                 )
@@ -97,7 +109,12 @@ private fun GoodGirlApp() {
 }
 
 @Composable
-private fun DashboardScreen(onOpenProducts: () -> Unit, onOpenParties: () -> Unit) {
+private fun DashboardScreen(
+    onOpenSales: () -> Unit,
+    onOpenPurchases: () -> Unit,
+    onOpenProducts: () -> Unit,
+    onOpenParties: () -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -155,6 +172,8 @@ private fun DashboardScreen(onOpenProducts: () -> Unit, onOpenParties: () -> Uni
                 number = index + 1,
                 title = title,
                 onClick = when (index) {
+                    0 -> onOpenSales
+                    1 -> onOpenPurchases
                     2 -> onOpenProducts
                     3 -> onOpenParties
                     else -> null
@@ -171,6 +190,235 @@ private fun DashboardScreen(onOpenProducts: () -> Unit, onOpenParties: () -> Uni
     }
 }
 
+
+
+@Composable
+private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val repository = remember(database) { InvoiceRepository(database) }
+    val products by database.productDao().observeActiveProducts().collectAsState(initial = emptyList())
+    val partyKind = if (kind == "SALE") "CUSTOMER" else "SUPPLIER"
+    val parties by database.partyDao().observeByKind(partyKind).collectAsState(initial = emptyList())
+    val invoices by repository.observeInvoices().collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+    val draftLines = remember(kind) { mutableStateListOf<InvoiceLineDraft>() }
+
+    var selectedProductId by remember { mutableStateOf<String?>(null) }
+    var productMenuExpanded by remember { mutableStateOf(false) }
+    var selectedPartyId by remember { mutableStateOf<String?>(null) }
+    var partyMenuExpanded by remember { mutableStateOf(false) }
+    var quantity by remember { mutableStateOf("1") }
+    var unitPrice by remember { mutableStateOf("0") }
+    var lineDiscount by remember { mutableStateOf("0") }
+    var invoiceDiscount by remember { mutableStateOf("0") }
+    var paidAmount by remember { mutableStateOf("0") }
+    var currencyCode by remember { mutableStateOf("SYP") }
+    var exchangeRate by remember { mutableStateOf("1") }
+    var note by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    val selectedProduct = products.firstOrNull { it.id == selectedProductId }
+    val selectedParty = parties.firstOrNull { it.id == selectedPartyId }
+    val screenTitle = if (kind == "SALE") "فاتورة بيع جديدة" else "فاتورة شراء جديدة"
+    val unitPriceLabel = if (kind == "SALE") "سعر البيع للوحدة" else "كلفة الشراء للوحدة"
+
+    val subtotal = draftLines.fold(BigDecimal.ZERO) { total, line ->
+        total.add(line.quantity.toBigDecimal().multiply(line.unitPrice.toBigDecimal()))
+    }
+    val lineDiscountTotal = draftLines.fold(BigDecimal.ZERO) { total, line ->
+        total.add(line.discount.toBigDecimal())
+    }
+    val enteredInvoiceDiscount = runCatching { BigDecimal(invoiceDiscount.trim()) }.getOrDefault(BigDecimal.ZERO)
+    val calculatedTotal = subtotal.subtract(lineDiscountTotal).subtract(enteredInvoiceDiscount).max(BigDecimal.ZERO)
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
+        Text(screenTitle, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        Text(
+            if (kind == "SALE") "اختيار المواد والكميات وتسجيل المقبوض والمتبقي" else "تسجيل المواد الواردة وتحديث كلفة المخزون",
+            color = Color(0xFF64748B),
+            fontSize = 13.sp
+        )
+
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("بيانات الفاتورة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                Box {
+                    Button(onClick = { partyMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(selectedParty?.name ?: if (kind == "SALE") "اختيار العميل (اختياري للنقدي)" else "اختيار المورد (اختياري للنقدي)")
+                    }
+                    DropdownMenu(expanded = partyMenuExpanded, onDismissRequest = { partyMenuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("بدون حساب — عملية نقدية") },
+                            onClick = { selectedPartyId = null; partyMenuExpanded = false }
+                        )
+                        parties.forEach { party ->
+                            DropdownMenuItem(
+                                text = { Text(party.name) },
+                                onClick = { selectedPartyId = party.id; partyMenuExpanded = false }
+                            )
+                        }
+                    }
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { currencyCode = "SYP"; exchangeRate = "1" }) { Text(if (currencyCode == "SYP") "✓ الليرة السورية" else "الليرة السورية") }
+                    TextButton(onClick = { currencyCode = "USD"; if (exchangeRate == "1") exchangeRate = "" }) { Text(if (currencyCode == "USD") "✓ الدولار الأمريكي" else "الدولار الأمريكي") }
+                }
+                if (currencyCode == "USD") {
+                    OutlinedTextField(
+                        exchangeRate,
+                        { exchangeRate = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("سعر صرف الدولار مقابل الليرة") },
+                        singleLine = true
+                    )
+                }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("إضافة مادة إلى الفاتورة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                Box {
+                    Button(onClick = { productMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(selectedProduct?.name ?: "اختيار المادة")
+                    }
+                    DropdownMenu(expanded = productMenuExpanded, onDismissRequest = { productMenuExpanded = false }) {
+                        products.forEach { product ->
+                            DropdownMenuItem(
+                                text = { Text(product.name + " — المتوفر: " + product.stockQuantity + " " + product.baseUnit) },
+                                onClick = {
+                                    selectedProductId = product.id
+                                    unitPrice = if (kind == "SALE") product.salePrice else product.purchaseCost
+                                    productMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(quantity, { quantity = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الكمية") }, singleLine = true)
+                OutlinedTextField(unitPrice, { unitPrice = it }, modifier = Modifier.fillMaxWidth(), label = { Text(unitPriceLabel) }, singleLine = true)
+                OutlinedTextField(lineDiscount, { lineDiscount = it }, modifier = Modifier.fillMaxWidth(), label = { Text("خصم المادة") }, singleLine = true)
+                Button(
+                    onClick = {
+                        try {
+                            val product = selectedProduct ?: throw IllegalArgumentException("اختر مادة أولاً")
+                            val cleanQuantity = InvoicePostingRules.normalizePositiveQuantity(quantity)
+                            val cleanPrice = InvoicePostingRules.normalizeNonNegativeAmount(unitPrice, unitPriceLabel)
+                            val cleanDiscount = InvoicePostingRules.normalizeNonNegativeAmount(lineDiscount, "خصم المادة")
+                            InvoicePostingRules.calculateLineTotal(cleanQuantity, cleanPrice, cleanDiscount)
+                            draftLines.add(
+                                InvoiceLineDraft(
+                                    productId = product.id,
+                                    quantity = cleanQuantity,
+                                    unitPrice = cleanPrice,
+                                    discount = cleanDiscount
+                                )
+                            )
+                            quantity = "1"
+                            lineDiscount = "0"
+                            message = null
+                        } catch (error: Exception) {
+                            message = error.message ?: "تعذر إضافة المادة"
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("إضافة إلى الفاتورة") }
+            }
+        }
+
+        if (draftLines.isNotEmpty()) {
+            Text("مواد الفاتورة (" + draftLines.size + ")", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+            draftLines.forEachIndexed { index, line ->
+                val productName = products.firstOrNull { it.id == line.productId }?.name ?: "مادة"
+                val net = InvoicePostingRules.calculateLineTotal(line.quantity, line.unitPrice, line.discount)
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(productName, color = Ink, fontWeight = FontWeight.Bold)
+                            Text(line.quantity + " × " + line.unitPrice + " = " + net + " " + currencyCode, color = Color(0xFF64748B), fontSize = 12.sp)
+                        }
+                        TextButton(onClick = { draftLines.removeAt(index) }) { Text("حذف") }
+                    }
+                }
+            }
+        }
+
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("ملخص الفاتورة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                Text("المجموع قبل الخصومات: " + subtotal.stripTrailingZeros().toPlainString() + " " + currencyCode, color = Ink)
+                Text("خصومات المواد: " + lineDiscountTotal.stripTrailingZeros().toPlainString(), color = Color(0xFF64748B), fontSize = 13.sp)
+                OutlinedTextField(invoiceDiscount, { invoiceDiscount = it }, modifier = Modifier.fillMaxWidth(), label = { Text("خصم إضافي على الفاتورة") }, singleLine = true)
+                Text("الإجمالي التقريبي: " + calculatedTotal.stripTrailingZeros().toPlainString() + " " + currencyCode, color = BrandBlue, fontWeight = FontWeight.Bold)
+                OutlinedTextField(paidAmount, { paidAmount = it }, modifier = Modifier.fillMaxWidth(), label = { Text("المبلغ المقبوض / المدفوع") }, singleLine = true)
+                OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth(), label = { Text("ملاحظات الفاتورة") }, minLines = 2)
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isSaving = true
+                            message = null
+                            try {
+                                val number = (if (kind == "SALE") "S-" else "P-") + System.currentTimeMillis().toString()
+                                val result = repository.postInvoice(
+                                    invoiceNumber = number,
+                                    kind = kind,
+                                    partyId = selectedPartyId,
+                                    currencyCode = currencyCode,
+                                    exchangeRateSnapshot = if (currencyCode == "SYP") "1" else exchangeRate,
+                                    lines = draftLines.toList(),
+                                    invoiceDiscount = invoiceDiscount,
+                                    paidAmount = paidAmount,
+                                    note = note
+                                )
+                                draftLines.clear()
+                                invoiceDiscount = "0"
+                                paidAmount = "0"
+                                note = ""
+                                selectedProductId = null
+                                selectedPartyId = null
+                                message = "تم ترحيل الفاتورة " + result.invoiceNumber + " — المتبقي: " + result.remaining + " " + currencyCode
+                            } catch (error: Exception) {
+                                message = error.message ?: "تعذر ترحيل الفاتورة"
+                            } finally {
+                                isSaving = false
+                            }
+                        }
+                    },
+                    enabled = !isSaving && draftLines.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isSaving) "جارٍ ترحيل الفاتورة..." else "حفظ وترحيل الفاتورة")
+                }
+                message?.let {
+                    Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                }
+            }
+        }
+
+        val recentInvoices = invoices.filter { it.kind == kind }.take(10)
+        Text("آخر الفواتير (" + recentInvoices.size + ")", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        recentInvoices.forEach { invoice ->
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(invoice.invoiceNumber, color = Ink, fontWeight = FontWeight.Bold)
+                    Text("الإجمالي: " + invoice.total + " " + invoice.currencyCode, color = BrandBlue, fontSize = 13.sp)
+                    Text("المدفوع: " + invoice.paid + " — المتبقي: " + invoice.remaining, color = Color(0xFF64748B), fontSize = 12.sp)
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun PartyManagementScreen(onBack: () -> Unit) {
