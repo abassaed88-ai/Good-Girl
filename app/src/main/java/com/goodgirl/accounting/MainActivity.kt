@@ -2466,22 +2466,25 @@ private fun ProductManagementScreen(
                                 isSavingStock = true
                                 stockMessage = null
                                 try {
-                                    val deltaToSave = if (stocktakeMode) {
-                                        StockInputRules.calculateCountDelta(
-                                            currentBalance = adjustingProduct.stockQuantity,
-                                            countedQuantity = countedQuantity
+                                    val noteToSave = (
+                                        (if (stocktakeMode) "جرد فعلي للمخزون" else "تسوية مخزون يدوية") +
+                                            if (adjustmentNote.isBlank()) "" else " — " + adjustmentNote.trim()
                                         )
-                                    } else {
-                                        StockInputRules.normalizeDelta(adjustmentDelta)
-                                    }
-                                    if (deltaToSave == "0") {
-                                        stockMessage = "تم التحقق من الجرد: الكمية مطابقة للرصيد المسجل، ولم تكن هناك حاجة إلى تسوية."
+                                    if (stocktakeMode) {
+                                        val result = stockRepository.reconcileStocktake(
+                                            productId = adjustingProduct.id,
+                                            countedQuantity = countedQuantity,
+                                            unitCost = adjustmentCost,
+                                            note = noteToSave
+                                        )
+                                        stockMessage = if (result.adjustmentDelta == "0") {
+                                            "تم التحقق من الجرد: الكمية مطابقة للرصيد المسجل، ولم تكن هناك حاجة إلى تسوية."
+                                        } else {
+                                            "تم حفظ الجرد وتسوية المخزون إلى " + result.resultingBalance
+                                        }
                                         adjustingProductId = null
                                     } else {
-                                        val noteToSave = (
-                                            (if (stocktakeMode) "جرد فعلي للمخزون" else "تسوية مخزون يدوية") +
-                                                if (adjustmentNote.isBlank()) "" else " — " + adjustmentNote.trim()
-                                            )
+                                        val deltaToSave = StockInputRules.normalizeDelta(adjustmentDelta)
                                         val newBalance = stockRepository.adjustStock(
                                             productId = adjustingProduct.id,
                                             quantityDelta = deltaToSave,
