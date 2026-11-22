@@ -1,0 +1,76 @@
+package com.goodgirl.accounting.data.local
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface ProductDao {
+    @Query("SELECT * FROM products WHERE isActive = 1 ORDER BY name COLLATE NOCASE")
+    fun observeActiveProducts(): Flow<List<ProductEntity>>
+
+    @Query("SELECT * FROM products WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): ProductEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(product: ProductEntity)
+
+    @Query("UPDATE products SET stockQuantity = :quantity, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun updateStock(id: String, quantity: String, updatedAt: Long)
+}
+
+@Dao
+interface CategoryDao {
+    @Query("SELECT * FROM categories ORDER BY name COLLATE NOCASE")
+    fun observeAll(): Flow<List<CategoryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(category: CategoryEntity)
+}
+
+@Dao
+interface PartyDao {
+    @Query("SELECT * FROM parties WHERE kind = :kind ORDER BY name COLLATE NOCASE")
+    fun observeByKind(kind: String): Flow<List<PartyEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(party: PartyEntity)
+}
+
+@Dao
+interface InvoiceDao {
+    @Query("SELECT * FROM invoices ORDER BY issuedAt DESC")
+    fun observeAll(): Flow<List<InvoiceEntity>>
+
+    @Query("SELECT * FROM invoice_lines WHERE invoiceId = :invoiceId ORDER BY id")
+    suspend fun getLines(invoiceId: String): List<InvoiceLineEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertInvoice(invoice: InvoiceEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertLines(lines: List<InvoiceLineEntity>)
+}
+
+@Dao
+interface StockMovementDao {
+    @Query("SELECT * FROM stock_movements WHERE productId = :productId ORDER BY occurredAt DESC")
+    fun observeForProduct(productId: String): Flow<List<StockMovementEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(movement: StockMovementEntity)
+}
+
+@Dao
+interface LedgerDao {
+    @Query("SELECT * FROM ledger_entries ORDER BY occurredAt DESC")
+    fun observeAll(): Flow<List<LedgerEntryEntity>>
+
+    @Query("SELECT * FROM ledger_entries WHERE partyId = :partyId ORDER BY occurredAt DESC")
+    fun observeForParty(partyId: String): Flow<List<LedgerEntryEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entry: LedgerEntryEntity)
+}
