@@ -74,6 +74,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
+import java.util.UUID
 
 private val BrandBlue = Color(0xFF2878C8)
 private val LightGray = Color(0xFFE9EEF4)
@@ -119,7 +120,7 @@ private fun GoodGirlApp() {
                 "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
                 "daily_sales" -> DailySalesScreen(
                     onBack = { activePage = "dashboard" },
-                    onAddSale = { activePage = "sales" }
+                    onOpenFullInvoice = { activePage = "sales" }
                 )
                 "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
                 "products" -> ProductManagementScreen(
@@ -2074,11 +2075,16 @@ private data class DailySaleRow(
 )
 
 @Composable
-private fun DailySalesScreen(onBack: () -> Unit, onAddSale: () -> Unit) {
+private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val repository = remember(database) { InvoiceRepository(database) }
     val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
     val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
+    val products by database.productDao().observeActiveProducts().collectAsState(initial = emptyList())
+    val customers by database.partyDao().observeByKind("CUSTOMER").collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+
     var selectedDay by remember {
         mutableStateOf(
             Calendar.getInstance().apply {
@@ -2089,6 +2095,40 @@ private fun DailySalesScreen(onBack: () -> Unit, onAddSale: () -> Unit) {
             }.timeInMillis
         )
     }
+    var selectedProductId by remember { mutableStateOf<String?>(null) }
+    var selectedUnitName by remember { mutableStateOf<String?>(null) }
+    var selectedPartyId by remember { mutableStateOf<String?>(null) }
+    var productMenuExpanded by remember { mutableStateOf(false) }
+    var unitMenuExpanded by remember { mutableStateOf(false) }
+    var partyMenuExpanded by remember { mutableStateOf(false) }
+    var quantity by remember { mutableStateOf("1") }
+    var salePrice by remember { mutableStateOf("0") }
+    var lineDiscount by remember { mutableStateOf("0") }
+    var exchangeRate by remember { mutableStateOf("") }
+    var paidAmount by remember { mutableStateOf("") }
+    var paidAmountTouched by remember { mutableStateOf(false) }
+    var note by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+
+    val productUnits by database.productUnitDao()
+        .observeForProduct(selectedProductId ?: "")
+        .collectAsState(initial = emptyList())
+    val selectedProduct = products.firstOrNull { it.id == selectedProductId }
+    val selectedUnit = productUnits.firstOrNull { it.unitName == selectedUnitName }
+        ?: productUnits.firstOrNull { it.isBaseUnit }
+
+    val enteredQuantity = runCatching { BigDecimal(quantity.trim()) }.getOrDefault(BigDecimal.ZERO)
+    val enteredPrice = runCatching { BigDecimal(salePrice.trim()) }.getOrDefault(BigDecimal.ZERO)
+    val enteredDiscount = runCatching { BigDecimal(lineDiscount.trim()) }.getOrDefault(BigDecimal.ZERO)
+    val previewGross = enteredQuantity.multiply(enteredPrice)
+    val previewSales = previewGross.subtract(enteredDiscount).max(BigDecimal.ZERO)
+    val unitFactor = runCatching { BigDecimal(selectedUnit?.baseFactor ?: "1") }.getOrDefault(BigDecimal.ONE)
+    val previewCost = enteredQuantity.multiply(unitFactor)
+        .multiply(runCatching { BigDecimal(selectedProduct?.purchaseCost ?: "0") }.getOrDefault(BigDecimal.ZERO))
+    val previewProfit = previewSales.subtract(previewCost)
+    val effectivePaidAmount = if (paidAmountTouched) paidAmount else previewSales.stripTrailingZeros().toPlainString()
+
     val dayBounds = remember(selectedDay) {
         val start = Calendar.getInstance().apply { timeInMillis = selectedDay }
         val end = (start.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 1) }
@@ -2169,7 +2209,17 @@ private fun DailySalesScreen(onBack: () -> Unit, onAddSale: () -> Unit) {
                     add(Calendar.DAY_OF_MONTH, -1)
                 }.timeInMillis
             }) { Text("اليوم السابق") }
-            Text(dayLabel, color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(dayLabel, color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                TextButton(onClick = {
+                    selectedDay = Calendar.getInstance().apply {
+                        set(Calendar.HOUR_OF_DAY, 0)
+                        set(Calendar.MINUTE, 0)
+                        set(Calendar.SECOND, 0)
+                        set(Calendar.MILLISECOND, 0)
+                    }.timeInMillis
+                }) { Text("العودة إلى اليوم") }
+            }
             TextButton(onClick = {
                 selectedDay = Calendar.getInstance().apply {
                     timeInMillis = selectedDay
@@ -2177,9 +2227,263 @@ private fun DailySalesScreen(onBack: () -> Unit, onAddSale: () -> Unit) {
                 }.timeInMillis
             }) { Text("اليوم التالي") }
         }
-        Button(onClick = onAddSale, modifier = Modifier.fillMaxWidth()) {
-            Text("إضافة مبيعة جديدة")
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.White)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                Text("إضافة مبيعة", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Box {
+                    Button(
+                        onClick = { productMenuExpanded = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(selectedProduct?.name ?: "اختيار المادة")
+                    }
+                    DropdownMenu(
+                        expanded = productMenuExpanded,
+                        onDismissRequest = { productMenuExpanded = false }
+                    ) {
+                        products.forEach { product ->
+                            DropdownMenuItem(
+                                text = { Text(product.name + " — المتوفر: " + product.stockQuantity + " " + product.baseUnit) },
+                                onClick = {
+                                    selectedProductId = product.id
+                                    selectedUnitName = product.baseUnit
+                                    salePrice = product.salePrice
+                                    lineDiscount = "0"
+                                    exchangeRate = if (product.priceCurrencyCode == "SYP") "1" else ""
+                                    paidAmountTouched = false
+                                    paidAmount = ""
+                                    productMenuExpanded = false
+                                    message = null
+                                }
+                            )
+                        }
+                    }
+                }
+
+                if (selectedProduct != null) {
+                    if (productUnits.isNotEmpty()) {
+                        Box {
+                            Button(
+                                onClick = { unitMenuExpanded = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("وحدة القياس: " + (selectedUnit?.unitName ?: selectedProduct.baseUnit))
+                            }
+                            DropdownMenu(
+                                expanded = unitMenuExpanded,
+                                onDismissRequest = { unitMenuExpanded = false }
+                            ) {
+                                productUnits.forEach { unit ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text("1 " + unit.unitName + " = " + unit.baseFactor + " " + selectedProduct.baseUnit)
+                                        },
+                                        onClick = {
+                                            selectedUnitName = unit.unitName
+                                            val factor = BigDecimal(unit.baseFactor)
+                                            salePrice = BigDecimal(selectedProduct.salePrice)
+                                                .multiply(factor)
+                                                .stripTrailingZeros()
+                                                .toPlainString()
+                                            unitMenuExpanded = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    Text(
+                        "عملة المادة: " + selectedProduct.priceCurrencyCode,
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp
+                    )
+                    OutlinedTextField(
+                        quantity,
+                        { quantity = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("الكمية المباعة") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        salePrice,
+                        { salePrice = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("سعر المبيع للوحدة") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        lineDiscount,
+                        { lineDiscount = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("خصم المبيعة (اختياري)") },
+                        singleLine = true
+                    )
+                    Text(
+                        "قيمة المبيع بعد الخصم: " + previewSales.stripTrailingZeros().toPlainString() +
+                            " " + selectedProduct.priceCurrencyCode,
+                        color = BrandBlue,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "الربح التقديري: " + previewProfit.stripTrailingZeros().toPlainString() +
+                            " " + selectedProduct.priceCurrencyCode,
+                        color = if (previewProfit >= BigDecimal.ZERO) Color(0xFF287A4B) else Color(0xFFB42332),
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (selectedProduct.priceCurrencyCode == "USD") {
+                        OutlinedTextField(
+                            exchangeRate,
+                            { exchangeRate = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("سعر صرف الدولار مقابل الليرة") },
+                            singleLine = true
+                        )
+                    }
+                    Box {
+                        Button(
+                            onClick = { partyMenuExpanded = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                customers.firstOrNull { it.id == selectedPartyId }?.name
+                                    ?: "اختيار عميل (اختياري للبيع النقدي)"
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = partyMenuExpanded,
+                            onDismissRequest = { partyMenuExpanded = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("بيع نقدي دون حساب عميل") },
+                                onClick = {
+                                    selectedPartyId = null
+                                    partyMenuExpanded = false
+                                }
+                            )
+                            customers.forEach { customer ->
+                                DropdownMenuItem(
+                                    text = { Text(customer.name) },
+                                    onClick = {
+                                        selectedPartyId = customer.id
+                                        partyMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        effectivePaidAmount,
+                        {
+                            paidAmount = it
+                            paidAmountTouched = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("المبلغ المقبوض") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        note,
+                        { note = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("ملاحظات المبيعة") },
+                        minLines = 2
+                    )
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSaving = true
+                                message = null
+                                try {
+                                    val product = selectedProduct
+                                        ?: throw IllegalArgumentException("اختر المادة أولاً")
+                                    val cleanQuantity = InvoicePostingRules.normalizePositiveQuantity(quantity)
+                                    val cleanPrice = InvoicePostingRules.normalizeNonNegativeAmount(salePrice, "سعر المبيع")
+                                    val cleanDiscount = InvoicePostingRules.normalizeNonNegativeAmount(lineDiscount, "خصم المبيعة")
+                                    val cleanPaid = InvoicePostingRules.normalizeNonNegativeAmount(
+                                        effectivePaidAmount,
+                                        "المبلغ المقبوض"
+                                    )
+                                    InvoicePostingRules.calculateLineTotal(cleanQuantity, cleanPrice, cleanDiscount)
+                                    val issuedAt = System.currentTimeMillis()
+                                    val invoiceNumber = "DS-" + issuedAt + "-" + UUID.randomUUID().toString().take(8)
+                                    val result = repository.postInvoice(
+                                        invoiceNumber = invoiceNumber,
+                                        kind = "SALE",
+                                        partyId = selectedPartyId,
+                                        currencyCode = product.priceCurrencyCode,
+                                        exchangeRateSnapshot = if (product.priceCurrencyCode == "SYP") "1" else exchangeRate,
+                                        lines = listOf(
+                                            InvoiceLineDraft(
+                                                productId = product.id,
+                                                quantity = cleanQuantity,
+                                                unitPrice = cleanPrice,
+                                                discount = cleanDiscount,
+                                                unitName = selectedUnit?.unitName ?: product.baseUnit
+                                            )
+                                        ),
+                                        paidAmount = cleanPaid,
+                                        issuedAt = issuedAt,
+                                        note = note.trim()
+                                    )
+                                    selectedDay = Calendar.getInstance().apply {
+                                        set(Calendar.HOUR_OF_DAY, 0)
+                                        set(Calendar.MINUTE, 0)
+                                        set(Calendar.SECOND, 0)
+                                        set(Calendar.MILLISECOND, 0)
+                                    }.timeInMillis
+                                    selectedProductId = null
+                                    selectedUnitName = null
+                                    selectedPartyId = null
+                                    quantity = "1"
+                                    salePrice = "0"
+                                    lineDiscount = "0"
+                                    exchangeRate = ""
+                                    paidAmount = ""
+                                    paidAmountTouched = false
+                                    note = ""
+                                    message = "تم تسجيل المبيعة " + result.invoiceNumber +
+                                        " — الإجمالي: " + result.total + " " + product.priceCurrencyCode
+                                } catch (error: Exception) {
+                                    message = error.message ?: "تعذر تسجيل المبيعة"
+                                } finally {
+                                    isSaving = false
+                                }
+                            }
+                        },
+                        enabled = !isSaving,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isSaving) "جارٍ تسجيل المبيعة..." else "حفظ المبيعة وتحديث المخزون")
+                    }
+                } else {
+                    Text(
+                        "اختر مادة لعرض سعرها وكلفتها والربح التقديري قبل الحفظ.",
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp
+                    )
+                }
+                message?.let {
+                    Text(
+                        it,
+                        color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
+                        fontSize = 13.sp
+                    )
+                }
+            }
         }
+
+        TextButton(onClick = onOpenFullInvoice) {
+            Text("فتح فاتورة بيع متعددة المواد")
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -2262,12 +2566,13 @@ private fun DailySalesScreen(onBack: () -> Unit, onAddSale: () -> Unit) {
             }
         }
         Text(
-            "هذه الصفحة تعرض المبيعات المرحلة من فواتير البيع؛ لا تنشئ قيوداً أو حركات مخزون إضافية.",
+            "كل مبيعة تُحفظ كفاتورة بيع عادية من سطر واحد؛ لذلك تُحدّث المخزون وكشف الحساب والصندوق والتقارير من مصدر واحد دون تكرار.",
             color = Color(0xFF64748B),
             fontSize = 12.sp
         )
     }
 }
+
 
 private fun formatCurrencyTotals(values: Map<String, BigDecimal>): String {
     if (values.isEmpty()) return "0"
