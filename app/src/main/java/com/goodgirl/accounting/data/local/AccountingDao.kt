@@ -63,6 +63,9 @@ interface InvoiceDao {
     @Query("SELECT * FROM invoice_lines WHERE invoiceId = :invoiceId ORDER BY id")
     suspend fun getLines(invoiceId: String): List<InvoiceLineEntity>
 
+    @Query("SELECT * FROM invoice_lines ORDER BY id")
+    fun observeAllLines(): Flow<List<InvoiceLineEntity>>
+
     @Query("SELECT * FROM invoices WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): InvoiceEntity?
 

@@ -56,6 +56,7 @@ import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.domain.CashTransactionRules
+import com.goodgirl.accounting.domain.FinancialReportCalculator
 import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
 import java.math.BigDecimal
@@ -101,6 +102,7 @@ private fun GoodGirlApp() {
         Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
             when (activePage) {
                 "cash" -> CashManagementScreen(onBack = { activePage = "dashboard" })
+                "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
                 "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
                 "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
                 "products" -> ProductManagementScreen(onBack = { activePage = "dashboard" })
@@ -120,7 +122,8 @@ private fun GoodGirlApp() {
                     onOpenPurchases = { activePage = "purchases" },
                     onOpenProducts = { activePage = "products" },
                     onOpenParties = { activePage = "parties" },
-                    onOpenCash = { activePage = "cash" }
+                    onOpenCash = { activePage = "cash" },
+                    onOpenReports = { activePage = "reports" }
                 )
             }
         }
@@ -133,7 +136,8 @@ private fun DashboardScreen(
     onOpenPurchases: () -> Unit,
     onOpenProducts: () -> Unit,
     onOpenParties: () -> Unit,
-    onOpenCash: () -> Unit
+    onOpenCash: () -> Unit,
+    onOpenReports: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -197,6 +201,7 @@ private fun DashboardScreen(
                     2 -> onOpenProducts
                     3 -> onOpenParties
                     5 -> onOpenCash
+                    6 -> onOpenReports
                     else -> null
                 }
             )
@@ -518,6 +523,130 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     }
 }
 
+
+@Composable
+private fun FinancialReportsScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
+    val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
+    val ledgerEntries by database.ledgerDao().observeAll().collectAsState(initial = emptyList())
+    var selectedPeriod by remember { mutableStateOf("TODAY") }
+
+    val now = System.currentTimeMillis()
+    val fromTime = remember(selectedPeriod) {
+        when (selectedPeriod) {
+            "TODAY" -> java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            "MONTH" -> java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.DAY_OF_MONTH, 1)
+                set(java.util.Calendar.HOUR_OF_DAY, 0)
+                set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0)
+                set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            else -> Long.MIN_VALUE
+        }
+    }
+    val report = remember(selectedPeriod, invoices, invoiceLines, ledgerEntries) {
+        FinancialReportCalculator.calculate(
+            fromInclusive = fromTime,
+            toInclusive = now,
+            invoices = invoices,
+            lines = invoiceLines,
+            ledgerEntries = ledgerEntries
+        )
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
+        Text("التقارير والأرباح", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(onClick = { selectedPeriod = "TODAY" }, enabled = selectedPeriod != "TODAY") { Text("اليوم") }
+            TextButton(onClick = { selectedPeriod = "MONTH" }, enabled = selectedPeriod != "MONTH") { Text("هذا الشهر") }
+            TextButton(onClick = { selectedPeriod = "ALL" }, enabled = selectedPeriod != "ALL") { Text("كل المدة") }
+        }
+        Text(
+            when (selectedPeriod) {
+                "TODAY" -> "نتائج اليوم حتى الآن"
+                "MONTH" -> "نتائج الشهر الحالي حتى الآن"
+                else -> "إجمالي النتائج منذ بدء التسجيل"
+            },
+            color = Color(0xFF64748B),
+            fontSize = 13.sp
+        )
+
+        if (report.currencySummaries.isEmpty()) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Text("لا توجد بيانات مالية ضمن الفترة المحددة.", modifier = Modifier.padding(18.dp), color = Color(0xFF64748B))
+            }
+        } else {
+            report.currencySummaries.forEach { summary ->
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("العملة: " + summary.currencyCode, color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                        ReportValueRow("مبيعات فواتير البيع", summary.sales, summary.currencyCode)
+                        ReportValueRow("مشتريات فواتير الشراء", summary.purchases, summary.currencyCode)
+                        ReportValueRow("تكلفة البضاعة المباعة", summary.costOfGoodsSold, summary.currencyCode)
+                        ReportValueRow("مجمل الربح", summary.grossProfit, summary.currencyCode, strong = true)
+                        ReportValueRow("إيرادات أخرى", summary.otherIncome, summary.currencyCode)
+                        ReportValueRow("المصروفات", summary.expenses, summary.currencyCode)
+                        androidx.compose.material3.Divider(color = LightGray)
+                        ReportValueRow("صافي الربح", summary.netProfit, summary.currencyCode, strong = true)
+                    }
+                }
+            }
+        }
+
+        Text("تحليل المبيعات حسب المادة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        if (report.products.isEmpty()) {
+            Text("لا توجد مبيعات مواد ضمن الفترة المحددة.", color = Color(0xFF64748B), fontSize = 13.sp)
+        } else {
+            report.products.take(20).forEach { product ->
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(product.productName, color = Ink, fontWeight = FontWeight.Bold)
+                        Text("الكمية المباعة: " + product.quantity.stripTrailingZeros().toPlainString(), color = Color(0xFF64748B), fontSize = 12.sp)
+                        Text("صافي المبيعات: " + product.revenue.stripTrailingZeros().toPlainString() + " " + product.currencyCode, color = BrandBlue, fontSize = 12.sp)
+                        Text("تكلفة البضاعة: " + product.cost.stripTrailingZeros().toPlainString() + " " + product.currencyCode, color = Color(0xFF64748B), fontSize = 12.sp)
+                        Text(
+                            "ربح المادة: " + product.profit.stripTrailingZeros().toPlainString() + " " + product.currencyCode,
+                            color = if (product.profit >= BigDecimal.ZERO) Color(0xFF287A4B) else Color(0xFFB42332),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+            }
+        }
+
+        Text(
+            "ملاحظة: الأرباح تحسب من فواتير البيع وتكلفة المواد المحفوظة وقت البيع، وتُعرض كل عملة مستقلة دون تحويل تلقائي.",
+            color = Color(0xFF64748B),
+            fontSize = 12.sp
+        )
+    }
+}
+
+@Composable
+private fun ReportValueRow(label: String, value: BigDecimal, currencyCode: String, strong: Boolean = false) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, color = if (strong) Ink else Color(0xFF64748B), fontWeight = if (strong) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
+        Text(
+            value.stripTrailingZeros().toPlainString() + " " + currencyCode,
+            color = if (strong) BrandBlue else Ink,
+            fontWeight = if (strong) FontWeight.Bold else FontWeight.Medium,
+            fontSize = 13.sp
+        )
+    }
+}
 
 @Composable
 private fun CashManagementScreen(onBack: () -> Unit) {
