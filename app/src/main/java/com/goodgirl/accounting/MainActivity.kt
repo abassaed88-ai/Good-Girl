@@ -1918,6 +1918,7 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
                     val sourceLabel = when (movement.sourceType) {
                         "OPENING_BALANCE" -> "رصيد افتتاحي"
                         "MANUAL_ADJUSTMENT" -> "تسوية مخزون يدوية"
+                        "STOCKTAKE_ADJUSTMENT" -> "تسوية ناتجة عن الجرد"
                         "SALE_INVOICE" -> "فاتورة بيع"
                         "PURCHASE_INVOICE" -> "فاتورة شراء"
                         else -> "حركة مخزون"
