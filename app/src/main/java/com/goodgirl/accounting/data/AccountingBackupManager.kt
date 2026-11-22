@@ -101,14 +101,14 @@ class AccountingBackupManager(
             "إصدار قاعدة البيانات في النسخة لا يتوافق مع إصدار التطبيق الحالي"
         }
 
-        val categories = root.arrayOf("categories") { it.toCategoryEntity() }
-        val products = root.arrayOf("products") { it.toProductEntity() }
-        val units = root.arrayOf("productUnits") { it.toProductUnitEntity() }
-        val parties = root.arrayOf("parties") { it.toPartyEntity() }
-        val invoices = root.arrayOf("invoices") { it.toInvoiceEntity() }
-        val invoiceLines = root.arrayOf("invoiceLines") { it.toInvoiceLineEntity() }
-        val movements = root.arrayOf("stockMovements") { it.toStockMovementEntity() }
-        val ledgerEntries = root.arrayOf("ledgerEntries") { it.toLedgerEntryEntity() }
+        val categories = root.parseArray("categories") { it.toCategoryEntity() }
+        val products = root.parseArray("products") { it.toProductEntity() }
+        val units = root.parseArray("productUnits") { it.toProductUnitEntity() }
+        val parties = root.parseArray("parties") { it.toPartyEntity() }
+        val invoices = root.parseArray("invoices") { it.toInvoiceEntity() }
+        val invoiceLines = root.parseArray("invoiceLines") { it.toInvoiceLineEntity() }
+        val movements = root.parseArray("stockMovements") { it.toStockMovementEntity() }
+        val ledgerEntries = root.parseArray("ledgerEntries") { it.toLedgerEntryEntity() }
         val totalRecords = categories.size + products.size + units.size + parties.size +
             invoices.size + invoiceLines.size + movements.size + ledgerEntries.size
         val exportedAt = root.getLong("exportedAt")
@@ -140,12 +140,7 @@ class AccountingBackupManager(
     private fun <T> List<T>.toJsonArray(serializer: (T) -> JSONObject): JSONArray =
         JSONArray().also { array -> forEach { array.put(serializer(it)) } }
 
-    private fun JSONObject.arrayOf(key: String, parser: (JSONObject) -> Any): List<Any> {
-        val array = getJSONArray(key)
-        return List(array.length()) { index -> parser(array.getJSONObject(index)) }
-    }
-
-    private inline fun <reified T> JSONObject.arrayOf(key: String, noinline parser: (JSONObject) -> T): List<T> {
+    private fun <T> JSONObject.parseArray(key: String, parser: (JSONObject) -> T): List<T> {
         val array = getJSONArray(key)
         return List(array.length()) { index -> parser(array.getJSONObject(index)) }
     }
