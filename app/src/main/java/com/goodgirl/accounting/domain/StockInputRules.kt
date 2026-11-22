@@ -53,6 +53,16 @@ object StockInputRules {
         return parsed.stripTrailingZeros().toPlainString()
     }
 
+    fun calculateCountDelta(currentBalance: String, countedQuantity: String): String {
+        val current = ProductInputRules.normalizeNonNegativeDecimal(
+            currentBalance, "الرصيد المسجل"
+        ).toBigDecimal()
+        val counted = ProductInputRules.normalizeNonNegativeDecimal(
+            countedQuantity, "الكمية الفعلية بعد الجرد"
+        ).toBigDecimal()
+        return counted.subtract(current).stripTrailingZeros().toPlainString()
+    }
+
     fun calculateNewBalance(currentBalance: String, delta: String): String {
         val current = ProductInputRules.normalizeNonNegativeDecimal(currentBalance, "الرصيد الحالي").toBigDecimal()
         val movement = normalizeDelta(delta).toBigDecimal()
