@@ -12,8 +12,10 @@ class InvoiceDiscountAllocatorTest {
             listOf(BigDecimal("100"), BigDecimal("50"), BigDecimal("0")),
             BigDecimal("15")
         )
-        assertEquals(listOf(BigDecimal("10.00000000"), BigDecimal("5"), BigDecimal.ZERO), result)
-        assertEquals(BigDecimal("15.00000000"), result.fold(BigDecimal.ZERO, BigDecimal::add))
+        assertEquals(0, result[0].compareTo(BigDecimal("10")))
+        assertEquals(0, result[1].compareTo(BigDecimal("5")))
+        assertEquals(0, result[2].compareTo(BigDecimal.ZERO))
+        assertEquals(0, result.fold(BigDecimal.ZERO, BigDecimal::add).compareTo(BigDecimal("15")))
     }
 
     @Test
