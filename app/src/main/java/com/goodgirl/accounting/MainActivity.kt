@@ -1509,8 +1509,7 @@ private fun ProductManagementScreen(
                     label = { Text("حد تنبيه انخفاض المخزون (0 لتعطيل التنبيه)") },
                     singleLine = true
                 )
-                if (editingId == null) {
-                } else {
+                if (editingId != null) {
                     val currentStock = products.firstOrNull { it.id == editingId }?.stockQuantity ?: "—"
                     Text("الرصيد الحالي: $currentStock — يُعدّل عبر حركات المخزون وليس من بطاقة المنتج.", color = Color(0xFF64748B), fontSize = 12.sp)
                 }
@@ -1699,6 +1698,14 @@ private fun ProductManagementScreen(
                 colors = CardDefaults.cardColors(containerColor = Color.White)
             ) {
                 Text("لا توجد منتجات مسجلة بعد. أضف أول منتج من النموذج أعلاه.", modifier = Modifier.padding(18.dp), color = Color(0xFF64748B))
+            }
+        } else if (visibleProducts.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White)
+            ) {
+                Text("لا توجد منتجات مطابقة لمعايير البحث أو التصفية.", modifier = Modifier.padding(18.dp), color = Color(0xFF64748B))
             }
         } else {
             visibleProducts.forEach { product ->
