@@ -47,6 +47,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.goodgirl.accounting.data.CashTransactionRepository
+import com.goodgirl.accounting.data.CategoryRepository
 import com.goodgirl.accounting.data.InvoiceLineDraft
 import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.PartyRepository
@@ -54,6 +55,7 @@ import com.goodgirl.accounting.data.ProductRepository
 import com.goodgirl.accounting.data.ProductUnitRepository
 import com.goodgirl.accounting.data.StockRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.data.local.CategoryEntity
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.domain.CashTransactionRules
@@ -112,8 +114,10 @@ private fun GoodGirlApp() {
                     onManageUnits = { productId ->
                         unitsProductId = productId
                         activePage = "product_units"
-                    }
+                    },
+                    onManageCategories = { activePage = "categories" }
                 )
+                "categories" -> ProductCategoriesScreen(onBack = { activePage = "products" })
                 "product_units" -> ProductUnitsScreen(
                     productId = unitsProductId.orEmpty(),
                     onBack = { activePage = "products" }
@@ -1103,6 +1107,93 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
 }
 
 @Composable
+private fun ProductCategoriesScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val repository = remember(database) { CategoryRepository(database) }
+    val categories by repository.observeCategories().collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+
+    var editingId by remember { mutableStateOf<String?>(null) }
+    var name by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var message by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+
+    fun clearForm() {
+        editingId = null
+        name = ""
+        note = ""
+    }
+
+    fun loadCategory(category: CategoryEntity) {
+        editingId = category.id
+        name = category.name
+        note = category.note
+        message = null
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى المنتجات") }
+        Text("تصنيفات المنتجات", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text(if (editingId == null) "إضافة تصنيف" else "تعديل التصنيف", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("اسم التصنيف *") }, singleLine = true)
+                OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth(), label = { Text("ملاحظات") }, minLines = 2)
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isSaving = true
+                            message = null
+                            try {
+                                repository.saveCategory(editingId, name, note)
+                                val wasEditing = editingId != null
+                                clearForm()
+                                message = if (wasEditing) "تم تحديث التصنيف" else "تمت إضافة التصنيف"
+                            } catch (error: Exception) {
+                                message = error.message ?: "تعذر حفظ التصنيف"
+                            } finally {
+                                isSaving = false
+                            }
+                        }
+                    },
+                    enabled = !isSaving,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (isSaving) "جارٍ الحفظ..." else if (editingId == null) "إضافة التصنيف" else "حفظ التعديلات")
+                }
+                if (editingId != null) {
+                    TextButton(onClick = { clearForm(); message = null }) { Text("إلغاء التعديل") }
+                }
+                message?.let {
+                    Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                }
+            }
+        }
+        Text("التصنيفات المسجلة (${categories.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        if (categories.isEmpty()) {
+            Text("لم تتم إضافة تصنيفات بعد. يمكنك ترك المنتجات دون تصنيف.", color = Color(0xFF64748B), fontSize = 13.sp)
+        } else {
+            categories.forEach { category ->
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Row(modifier = Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(category.name, color = Ink, fontWeight = FontWeight.Bold)
+                            if (category.note.isNotBlank()) Text(category.note, color = Color(0xFF64748B), fontSize = 12.sp)
+                        }
+                        TextButton(onClick = { loadCategory(category) }) { Text("تعديل") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProductUnitsScreen(productId: String, onBack: () -> Unit) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
@@ -1188,14 +1279,21 @@ private fun ProductUnitsScreen(productId: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) -> Unit) {
+private fun ProductManagementScreen(
+    onBack: () -> Unit,
+    onManageUnits: (String) -> Unit,
+    onManageCategories: () -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { ProductRepository(database) }
     val stockRepository = remember(database) { StockRepository(database) }
     val products by repository.observeProducts().collectAsState(initial = emptyList())
+    val categories by database.categoryDao().observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
+    var selectedCategoryId by remember { mutableStateOf<String?>(null) }
+    var categoryMenuExpanded by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
     var sku by remember { mutableStateOf("") }
     var unit by remember { mutableStateOf("قطعة") }
@@ -1216,6 +1314,7 @@ private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) 
 
     fun resetForm() {
         editingId = null
+        selectedCategoryId = null
         name = ""
         sku = ""
         unit = "قطعة"
@@ -1230,6 +1329,7 @@ private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) 
         adjustingProductId = null
         stockMessage = null
         editingId = product.id
+        selectedCategoryId = product.categoryId
         name = product.name
         sku = product.sku
         unit = product.baseUnit
@@ -1259,6 +1359,7 @@ private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) 
         TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
         Text("المنتجات والمخزون", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
         Text("إضافة المواد وحفظ أرصدتها على الهاتف دون الحاجة إلى الإنترنت", color = Color(0xFF64748B), fontSize = 13.sp)
+        TextButton(onClick = onManageCategories) { Text("إدارة تصنيفات المنتجات") }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -1272,7 +1373,24 @@ private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) 
                 Text(if (editingId == null) "إضافة منتج جديد" else "تعديل بيانات المنتج", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Ink)
                 OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("اسم المنتج *") }, singleLine = true)
                 OutlinedTextField(sku, { sku = it }, modifier = Modifier.fillMaxWidth(), label = { Text("رمز المنتج (اختياري)") }, singleLine = true)
-                OutlinedTextField(unit, { unit = it }, modifier = Modifier.fillMaxWidth(), label = { Text("وحدة القياس") }, singleLine = true)
+                Box {
+                    Button(onClick = { categoryMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                        Text(categories.firstOrNull { it.id == selectedCategoryId }?.name ?: "بدون تصنيف")
+                    }
+                    DropdownMenu(expanded = categoryMenuExpanded, onDismissRequest = { categoryMenuExpanded = false }) {
+                        DropdownMenuItem(
+                            text = { Text("بدون تصنيف") },
+                            onClick = { selectedCategoryId = null; categoryMenuExpanded = false }
+                        )
+                        categories.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text(category.name) },
+                                onClick = { selectedCategoryId = category.id; categoryMenuExpanded = false }
+                            )
+                        }
+                    }
+                }
+                OutlinedTextField(unit, { unit = it }, modifier = Modifier.fillMaxWidth(), label = { Text("وحدة القياس الأساسية") }, singleLine = true)
                 OutlinedTextField(purchaseCost, { purchaseCost = it }, modifier = Modifier.fillMaxWidth(), label = { Text("كلفة الوحدة") }, singleLine = true)
                 OutlinedTextField(salePrice, { salePrice = it }, modifier = Modifier.fillMaxWidth(), label = { Text("سعر البيع") }, singleLine = true)
                 Text("عملة الكلفة وسعر البيع", color = Color(0xFF64748B), fontSize = 12.sp)
@@ -1316,7 +1434,8 @@ private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) 
                                         purchaseCost = purchaseCost,
                                         salePrice = salePrice,
                                         note = note,
-                                        priceCurrencyCode = priceCurrencyCode
+                                        priceCurrencyCode = priceCurrencyCode,
+                                        categoryId = selectedCategoryId
                                     )
                                     check(updated) { "تعذر العثور على المنتج لتحديثه" }
                                 } else {
@@ -1328,7 +1447,8 @@ private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) 
                                         salePrice = salePrice,
                                         openingStock = openingStock,
                                         note = note,
-                                        priceCurrencyCode = priceCurrencyCode
+                                        priceCurrencyCode = priceCurrencyCode,
+                                        categoryId = selectedCategoryId
                                     )
                                 }
                                 resetForm()
@@ -1451,6 +1571,7 @@ private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) 
             products.forEach { product ->
                 ProductListItem(
                     product,
+                    categoryName = categories.firstOrNull { it.id == product.categoryId }?.name,
                     onEdit = { startEditing(product) },
                     onStockAdjustment = { startStockAdjustment(product) },
                     onManageUnits = { onManageUnits(product.id) }
@@ -1463,6 +1584,7 @@ private fun ProductManagementScreen(onBack: () -> Unit, onManageUnits: (String) 
 @Composable
 private fun ProductListItem(
     product: ProductEntity,
+    categoryName: String?,
     onEdit: () -> Unit,
     onStockAdjustment: () -> Unit,
     onManageUnits: () -> Unit
@@ -1483,6 +1605,9 @@ private fun ProductListItem(
             }
             if (product.sku.isNotBlank()) {
                 Text("الرمز: ${product.sku}", color = Color(0xFF64748B), fontSize = 12.sp)
+            }
+            if (!categoryName.isNullOrBlank()) {
+                Text("التصنيف: " + categoryName, color = Color(0xFF64748B), fontSize = 12.sp)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("الرصيد: ${product.stockQuantity} ${product.baseUnit}", color = BrandBlue, fontSize = 13.sp)

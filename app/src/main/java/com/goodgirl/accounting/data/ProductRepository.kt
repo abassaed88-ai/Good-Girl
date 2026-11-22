@@ -21,7 +21,8 @@ class ProductRepository(private val database: AccountingDatabase) {
         salePrice: String,
         openingStock: String,
         note: String,
-        priceCurrencyCode: String = "SYP"
+        priceCurrencyCode: String = "SYP",
+        categoryId: String? = null
     ) {
         val now = System.currentTimeMillis()
         val productId = UUID.randomUUID().toString()
@@ -34,6 +35,9 @@ class ProductRepository(private val database: AccountingDatabase) {
         val cleanCurrency = ProductInputRules.normalizeCurrencyCode(priceCurrencyCode)
 
         database.withTransaction {
+            if (categoryId != null) {
+                require(database.categoryDao().findById(categoryId) != null) { "التصنيف المحدد غير موجود" }
+            }
             database.productDao().insert(
                 ProductEntity(
                     id = productId,
@@ -43,6 +47,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                     purchaseCost = cleanCost,
                     salePrice = cleanPrice,
                     priceCurrencyCode = cleanCurrency,
+                    categoryId = categoryId,
                     stockQuantity = cleanStock,
                     note = note.trim(),
                     createdAt = now,
@@ -86,7 +91,8 @@ class ProductRepository(private val database: AccountingDatabase) {
         purchaseCost: String,
         salePrice: String,
         note: String,
-        priceCurrencyCode: String = "SYP"
+        priceCurrencyCode: String = "SYP",
+        categoryId: String? = null
     ): Boolean {
         val cleanName = ProductInputRules.requireName(name)
         val cleanUnit = unit.trim().ifEmpty { "قطعة" }
@@ -96,6 +102,9 @@ class ProductRepository(private val database: AccountingDatabase) {
         var updated = false
 
         database.withTransaction {
+            if (categoryId != null) {
+                require(database.categoryDao().findById(categoryId) != null) { "التصنيف المحدد غير موجود" }
+            }
             val current = database.productDao().findById(id)
             if (current != null && current.isActive) {
                 val currentStock = current.stockQuantity.toBigDecimal()
@@ -113,6 +122,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                         purchaseCost = cleanCost,
                         salePrice = cleanPrice,
                         priceCurrencyCode = cleanCurrency,
+                        categoryId = categoryId,
                         note = note.trim(),
                         updatedAt = System.currentTimeMillis()
                     )

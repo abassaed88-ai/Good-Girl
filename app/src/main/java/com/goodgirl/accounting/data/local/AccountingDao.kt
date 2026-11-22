@@ -51,8 +51,17 @@ interface CategoryDao {
     @Query("SELECT * FROM categories ORDER BY name COLLATE NOCASE")
     fun observeAll(): Flow<List<CategoryEntity>>
 
+    @Query("SELECT * FROM categories WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): CategoryEntity?
+
+    @Query("SELECT * FROM categories WHERE name = :name LIMIT 1")
+    suspend fun findByName(name: String): CategoryEntity?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(category: CategoryEntity)
+
+    @Update
+    suspend fun update(category: CategoryEntity)
 }
 
 @Dao
