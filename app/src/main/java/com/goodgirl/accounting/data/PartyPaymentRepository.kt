@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
+import com.goodgirl.accounting.domain.PartyInvoiceAllocationRules
 import com.goodgirl.accounting.domain.PartyPaymentRules
 import java.util.UUID
 
@@ -49,6 +50,18 @@ class PartyPaymentRepository(private val database: AccountingDatabase) {
             )
 
             val isCustomer = values.partyKind == "CUSTOMER"
+            val invoiceKind = if (isCustomer) "SALE" else "PURCHASE"
+            val openInvoices = database.invoiceDao().getPostedForPartyAndCurrency(
+                partyId = partyId,
+                kind = invoiceKind,
+                currencyCode = values.currencyCode
+            )
+            val allocation = PartyInvoiceAllocationRules.allocate(
+                values.amount.toBigDecimal(),
+                openInvoices
+            )
+            allocation.updatedInvoices.forEach { database.invoiceDao().updateInvoice(it) }
+
             val partyEntryType = if (isCustomer) "RECEIVABLE_PAYMENT" else "PAYABLE_PAYMENT"
             val cashEntryType = if (isCustomer) "CASH_IN" else "CASH_OUT"
 
