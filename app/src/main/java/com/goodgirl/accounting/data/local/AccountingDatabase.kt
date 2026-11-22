@@ -78,14 +78,13 @@ abstract class AccountingDatabase : RoomDatabase() {
         private val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.query(
-                    "SELECT id, stockQuantity, purchaseCost, priceCurrencyCode, createdAt FROM products"
+                    "SELECT id, stockQuantity, purchaseCost, priceCurrencyCode FROM products"
                 ).use { products ->
                     while (products.moveToNext()) {
                         val productId = products.getString(0)
                         val currentBalance = products.getString(1)
                         val purchaseCost = products.getString(2)
                         val currencyCode = products.getString(3)
-                        val createdAt = products.getLong(4)
                         val movementDeltas = mutableListOf<String>()
 
                         database.query(
@@ -115,7 +114,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                                     currencyCode,
                                     "MIGRATION_RECONCILIATION",
                                     productId,
-                                    createdAt,
+                                    System.currentTimeMillis(),
                                     "تسوية رصيد تاريخي عند تحديث قاعدة البيانات"
                                 )
                             )
