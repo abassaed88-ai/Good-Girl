@@ -46,6 +46,7 @@ data class PartyEntity(
     val address: String = "",
     val openingBalance: String = "0",
     val currencyCode: String = "SYP",
+    val openingExchangeRate: String = "1",
     val note: String = "",
     val createdAt: Long
 )

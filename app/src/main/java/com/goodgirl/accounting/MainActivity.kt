@@ -55,7 +55,11 @@ import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.domain.InvoicePostingRules
+import com.goodgirl.accounting.domain.PartyBalanceCalculator
 import java.math.BigDecimal
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 private val BrandBlue = Color(0xFF2878C8)
@@ -81,6 +85,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun GoodGirlApp() {
     var activePage by remember { mutableStateOf("dashboard") }
+    var statementPartyId by remember { mutableStateOf<String?>(null) }
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = BrandBlue,
@@ -96,7 +101,17 @@ private fun GoodGirlApp() {
                 "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
                 "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
                 "products" -> ProductManagementScreen(onBack = { activePage = "dashboard" })
-                "parties" -> PartyManagementScreen(onBack = { activePage = "dashboard" })
+                "parties" -> PartyManagementScreen(
+                    onBack = { activePage = "dashboard" },
+                    onOpenStatement = { partyId ->
+                        statementPartyId = partyId
+                        activePage = "statement"
+                    }
+                )
+                "statement" -> PartyStatementScreen(
+                    partyId = statementPartyId.orEmpty(),
+                    onBack = { activePage = "parties" }
+                )
                 else -> DashboardScreen(
                     onOpenSales = { activePage = "sales" },
                     onOpenPurchases = { activePage = "purchases" },
@@ -481,16 +496,112 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     }
 }
 
+
 @Composable
-private fun PartyManagementScreen(onBack: () -> Unit) {
+private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val repository = remember(database) { PartyRepository(database) }
+    val party by repository.observeParty(partyId).collectAsState(initial = null)
+    val entries by database.ledgerDao().observeForParty(partyId).collectAsState(initial = emptyList())
+
+    val statementEntries = remember(entries, party?.kind) {
+        val relevantTypes = if (party?.kind == "CUSTOMER") {
+            setOf("RECEIVABLE", "RECEIVABLE_PAYMENT")
+        } else {
+            setOf("PAYABLE", "PAYABLE_PAYMENT")
+        }
+        entries.filter { it.entryType in relevantTypes }.sortedBy { it.occurredAt }
+    }
+    val runningRows = remember(statementEntries, party?.kind) {
+        val balances = mutableMapOf<String, BigDecimal>()
+        statementEntries.map { entry ->
+            val previous = balances[entry.currencyCode] ?: BigDecimal.ZERO
+            val amount = entry.amount.toBigDecimal()
+            val increases = if (party?.kind == "CUSTOMER") {
+                entry.entryType == "RECEIVABLE"
+            } else {
+                entry.entryType == "PAYABLE"
+            }
+            val updated = if (increases) previous.add(amount) else previous.subtract(amount)
+            balances[entry.currencyCode] = updated
+            Triple(entry, updated, increases)
+        }.reversed()
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى الحسابات") }
+        Text("كشف الحساب", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        if (party == null) {
+            Text("الحساب غير موجود", color = Color(0xFFB42332))
+        } else {
+            Text(party?.name.orEmpty(), color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            val balances = PartyBalanceCalculator.calculate(party?.kind.orEmpty(), entries)
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(if (party?.kind == "CUSTOMER") "المبالغ المستحقة لنا" else "المبالغ المستحقة علينا", color = Color(0xFF64748B), fontSize = 13.sp)
+                    if (balances.isEmpty()) {
+                        Text("لا يوجد رصيد مستحق", color = Color(0xFF287A4B), fontWeight = FontWeight.Bold)
+                    } else {
+                        balances.forEach { (currency, amount) ->
+                            Text(amount.stripTrailingZeros().toPlainString() + " " + currency, color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        }
+                    }
+                }
+            }
+            Text("الحركات المالية", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+            if (runningRows.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Text("لا توجد حركات مالية لهذا الحساب بعد.", modifier = Modifier.padding(18.dp), color = Color(0xFF64748B))
+                }
+            } else {
+                runningRows.forEach { (entry, balanceAfter, increases) ->
+                    val dateText = remember(entry.occurredAt) {
+                        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(entry.occurredAt))
+                    }
+                    val title = when (entry.entryType) {
+                        "RECEIVABLE" -> "فاتورة بيع / زيادة مستحق"
+                        "RECEIVABLE_PAYMENT" -> "تحصيل / تخفيض المستحق"
+                        "PAYABLE" -> "فاتورة شراء / زيادة مستحق"
+                        "PAYABLE_PAYMENT" -> "دفعة مورد / تخفيض المستحق"
+                        else -> entry.entryType
+                    }
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(title, color = Ink, fontWeight = FontWeight.Bold)
+                            Text(dateText, color = Color(0xFF64748B), fontSize = 11.sp)
+                            Text(
+                                (if (increases) "+" else "-") + entry.amount + " " + entry.currencyCode,
+                                color = if (increases) Color(0xFFB42332) else Color(0xFF287A4B),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text("الرصيد بعد الحركة: " + balanceAfter.stripTrailingZeros().toPlainString() + " " + entry.currencyCode, color = BrandBlue, fontSize = 12.sp)
+                            if (entry.note.isNotBlank()) Text(entry.note, color = Color(0xFF64748B), fontSize = 12.sp)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) -> Unit) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { PartyRepository(database) }
     var selectedKind by remember { mutableStateOf("CUSTOMER") }
     val parties by repository.observeParties(selectedKind).collectAsState(initial = emptyList())
+    val ledgerEntries by database.ledgerDao().observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
     var editingId by remember { mutableStateOf<String?>(null) }
+    var openingBalance by remember { mutableStateOf("0") }
+    var openingCurrency by remember { mutableStateOf("SYP") }
+    var openingExchangeRate by remember { mutableStateOf("1") }
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
@@ -500,6 +611,9 @@ private fun PartyManagementScreen(onBack: () -> Unit) {
 
     fun clearForm() {
         editingId = null
+        openingBalance = "0"
+        openingCurrency = "SYP"
+        openingExchangeRate = "1"
         name = ""
         phone = ""
         address = ""
@@ -508,6 +622,9 @@ private fun PartyManagementScreen(onBack: () -> Unit) {
 
     fun loadParty(party: PartyEntity) {
         editingId = party.id
+        openingBalance = party.openingBalance
+        openingCurrency = party.currencyCode
+        openingExchangeRate = party.openingExchangeRate
         name = party.name
         phone = party.phone
         address = party.address
@@ -553,6 +670,26 @@ private fun PartyManagementScreen(onBack: () -> Unit) {
                 OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الاسم *") }, singleLine = true)
                 OutlinedTextField(phone, { phone = it }, modifier = Modifier.fillMaxWidth(), label = { Text("رقم الهاتف") }, singleLine = true)
                 OutlinedTextField(address, { address = it }, modifier = Modifier.fillMaxWidth(), label = { Text("العنوان") }, singleLine = true)
+                if (editingId == null) {
+                    OutlinedTextField(openingBalance, { openingBalance = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الرصيد الافتتاحي (اختياري)") }, singleLine = true)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { openingCurrency = "SYP"; openingExchangeRate = "1" }) {
+                            Text(if (openingCurrency == "SYP") "✓ ليرة سورية" else "ليرة سورية")
+                        }
+                        TextButton(onClick = { openingCurrency = "USD"; openingExchangeRate = "" }) {
+                            Text(if (openingCurrency == "USD") "✓ دولار أمريكي" else "دولار أمريكي")
+                        }
+                    }
+                    if (openingCurrency == "USD") {
+                        OutlinedTextField(openingExchangeRate, { openingExchangeRate = it }, modifier = Modifier.fillMaxWidth(), label = { Text("سعر صرف الدولار عند تسجيل الرصيد") }, singleLine = true)
+                    }
+                } else {
+                    Text(
+                        "الرصيد الافتتاحي محفوظ بسجله ولا يتغير من شاشة بيانات الحساب.",
+                        color = Color(0xFF64748B),
+                        fontSize = 12.sp
+                    )
+                }
                 OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth(), label = { Text("ملاحظات") }, minLines = 2)
                 Button(
                     onClick = {
@@ -567,7 +704,10 @@ private fun PartyManagementScreen(onBack: () -> Unit) {
                                     name = name,
                                     phone = phone,
                                     address = address,
-                                    note = note
+                                    note = note,
+                                    openingBalance = openingBalance,
+                                    currencyCode = openingCurrency,
+                                    openingExchangeRate = openingExchangeRate
                                 )
                                 clearForm()
                                 message = if (wasEditing) "تم تحديث البيانات" else "تم حفظ البيانات"
@@ -612,6 +752,12 @@ private fun PartyManagementScreen(onBack: () -> Unit) {
                         }
                         if (party.phone.isNotBlank()) Text("الهاتف: " + party.phone, color = Color(0xFF64748B), fontSize = 12.sp)
                         if (party.address.isNotBlank()) Text("العنوان: " + party.address, color = Color(0xFF64748B), fontSize = 12.sp)
+                        val balances = PartyBalanceCalculator.calculate(party.kind, ledgerEntries.filter { it.partyId == party.id })
+                        balances.forEach { (currency, balance) ->
+                            val label = if (party.kind == "CUSTOMER") "مستحق لنا" else "مستحق علينا"
+                            Text(label + ": " + balance.stripTrailingZeros().toPlainString() + " " + currency, color = BrandBlue, fontSize = 12.sp)
+                        }
+                        TextButton(onClick = { onOpenStatement(party.id) }) { Text("كشف الحساب") }
                         if (party.note.isNotBlank()) Text("ملاحظة: " + party.note, color = Color(0xFF64748B), fontSize = 12.sp)
                     }
                 }

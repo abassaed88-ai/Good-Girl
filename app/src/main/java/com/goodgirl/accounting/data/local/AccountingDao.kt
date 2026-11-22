@@ -45,6 +45,9 @@ interface PartyDao {
     @Query("SELECT * FROM parties WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): PartyEntity?
 
+    @Query("SELECT * FROM parties WHERE id = :id LIMIT 1")
+    fun observeById(id: String): Flow<PartyEntity?>
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(party: PartyEntity)
 

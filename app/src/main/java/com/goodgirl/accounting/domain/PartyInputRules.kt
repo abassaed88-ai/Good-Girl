@@ -13,4 +13,10 @@ object PartyInputRules {
         require(kind == "CUSTOMER" || kind == "SUPPLIER") { "نوع جهة التعامل غير صحيح" }
         return kind
     }
+
+    fun normalizeOpeningCurrency(value: String): String {
+        val currency = value.trim().uppercase()
+        require(currency == "SYP" || currency == "USD") { "عملة الرصيد الافتتاحي غير مدعومة" }
+        return currency
+    }
 }
