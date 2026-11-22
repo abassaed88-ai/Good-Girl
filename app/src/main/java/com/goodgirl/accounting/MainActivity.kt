@@ -93,6 +93,7 @@ private fun GoodGirlApp() {
     var activePage by remember { mutableStateOf("dashboard") }
     var statementPartyId by remember { mutableStateOf<String?>(null) }
     var unitsProductId by remember { mutableStateOf<String?>(null) }
+    var historyProductId by remember { mutableStateOf<String?>(null) }
     MaterialTheme(
         colorScheme = lightColorScheme(
             primary = BrandBlue,
@@ -115,11 +116,19 @@ private fun GoodGirlApp() {
                         unitsProductId = productId
                         activePage = "product_units"
                     },
-                    onManageCategories = { activePage = "categories" }
+                    onManageCategories = { activePage = "categories" },
+                    onViewHistory = { productId ->
+                        historyProductId = productId
+                        activePage = "stock_history"
+                    }
                 )
                 "categories" -> ProductCategoriesScreen(onBack = { activePage = "products" })
                 "product_units" -> ProductUnitsScreen(
                     productId = unitsProductId.orEmpty(),
+                    onBack = { activePage = "products" }
+                )
+                "stock_history" -> StockHistoryScreen(
+                    productId = historyProductId.orEmpty(),
                     onBack = { activePage = "products" }
                 )
                 "parties" -> PartyManagementScreen(
@@ -1107,6 +1116,80 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
 }
 
 @Composable
+private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val product by database.productDao().observeProduct(productId).collectAsState(initial = null)
+    val movements by database.stockMovementDao().observeForProduct(productId).collectAsState(initial = emptyList())
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى المنتجات") }
+        Text("سجل حركة المخزون", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
+        if (product == null) {
+            Text("المنتج غير موجود", color = Color(0xFFB42332))
+        } else {
+            Text(product?.name.orEmpty(), color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                    Text("الرصيد الحالي", color = Color(0xFF64748B), fontSize = 12.sp)
+                    Text(
+                        product?.stockQuantity + " " + product?.baseUnit,
+                        color = BrandBlue,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp
+                    )
+                }
+            }
+            Text("عدد الحركات: ${movements.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+            if (movements.isEmpty()) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Text("لا توجد حركات مسجلة لهذا المنتج بعد.", modifier = Modifier.padding(18.dp), color = Color(0xFF64748B))
+                }
+            } else {
+                movements.forEach { movement ->
+                    val isIncrease = movement.quantityDelta.toBigDecimal() > BigDecimal.ZERO
+                    val quantity = movement.quantityDelta.toBigDecimal().abs().stripTrailingZeros().toPlainString()
+                    val date = remember(movement.occurredAt) {
+                        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(movement.occurredAt))
+                    }
+                    val sourceLabel = when (movement.sourceType) {
+                        "OPENING_BALANCE" -> "رصيد افتتاحي"
+                        "MANUAL_ADJUSTMENT" -> "تسوية مخزون يدوية"
+                        "SALE_INVOICE" -> "فاتورة بيع"
+                        "PURCHASE_INVOICE" -> "فاتورة شراء"
+                        else -> "حركة مخزون"
+                    }
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(sourceLabel, color = Ink, fontWeight = FontWeight.Bold)
+                                Text(
+                                    (if (isIncrease) "+" else "-") + quantity + " " + (product?.baseUnit ?: ""),
+                                    color = if (isIncrease) Color(0xFF287A4B) else Color(0xFFB42332),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Text(date, color = Color(0xFF64748B), fontSize = 11.sp)
+                            Text(
+                                "كلفة وحدة الأساس: " + movement.unitCostSnapshot + " " + movement.currencyCode,
+                                color = Color(0xFF64748B),
+                                fontSize = 12.sp
+                            )
+                            if (movement.note.isNotBlank()) {
+                                Text(movement.note, color = Color(0xFF64748B), fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun ProductCategoriesScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
@@ -1282,7 +1365,8 @@ private fun ProductUnitsScreen(productId: String, onBack: () -> Unit) {
 private fun ProductManagementScreen(
     onBack: () -> Unit,
     onManageUnits: (String) -> Unit,
-    onManageCategories: () -> Unit
+    onManageCategories: () -> Unit,
+    onViewHistory: (String) -> Unit
 ) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
@@ -1574,7 +1658,8 @@ private fun ProductManagementScreen(
                     categoryName = categories.firstOrNull { it.id == product.categoryId }?.name,
                     onEdit = { startEditing(product) },
                     onStockAdjustment = { startStockAdjustment(product) },
-                    onManageUnits = { onManageUnits(product.id) }
+                    onManageUnits = { onManageUnits(product.id) },
+                    onViewHistory = { onViewHistory(product.id) }
                 )
             }
         }
@@ -1587,7 +1672,8 @@ private fun ProductListItem(
     categoryName: String?,
     onEdit: () -> Unit,
     onStockAdjustment: () -> Unit,
-    onManageUnits: () -> Unit
+    onManageUnits: () -> Unit,
+    onViewHistory: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1601,6 +1687,7 @@ private fun ProductListItem(
                     TextButton(onClick = onEdit) { Text("تعديل") }
                     TextButton(onClick = onStockAdjustment) { Text("حركة مخزون") }
                     TextButton(onClick = onManageUnits) { Text("الوحدات") }
+                    TextButton(onClick = onViewHistory) { Text("السجل") }
                 }
             }
             if (product.sku.isNotBlank()) {
