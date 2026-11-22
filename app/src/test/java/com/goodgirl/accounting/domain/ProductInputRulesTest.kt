@@ -30,6 +30,14 @@ class ProductInputRulesTest {
     }
 
     @Test
+    fun detectsLowStockOnlyWhenThresholdIsSet() {
+        assertEquals(true, ProductInputRules.isLowStock("3", "5"))
+        assertEquals(true, ProductInputRules.isLowStock("5", "5"))
+        assertEquals(false, ProductInputRules.isLowStock("6", "5"))
+        assertEquals(false, ProductInputRules.isLowStock("0", "0"))
+    }
+
+    @Test
     fun acceptsSupportedCurrencies() {
         assertEquals("SYP", ProductInputRules.normalizeCurrencyCode("syp"))
         assertEquals("USD", ProductInputRules.normalizeCurrencyCode("USD"))

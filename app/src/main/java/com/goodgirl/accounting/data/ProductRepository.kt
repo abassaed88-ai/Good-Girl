@@ -22,7 +22,8 @@ class ProductRepository(private val database: AccountingDatabase) {
         openingStock: String,
         note: String,
         priceCurrencyCode: String = "SYP",
-        categoryId: String? = null
+        categoryId: String? = null,
+        lowStockThreshold: String = "0"
     ) {
         val now = System.currentTimeMillis()
         val productId = UUID.randomUUID().toString()
@@ -31,6 +32,7 @@ class ProductRepository(private val database: AccountingDatabase) {
         val cleanCost = ProductInputRules.normalizeNonNegativeDecimal(purchaseCost, "كلفة الشراء")
         val cleanPrice = ProductInputRules.normalizeNonNegativeDecimal(salePrice, "سعر البيع")
         val cleanStock = ProductInputRules.normalizeNonNegativeDecimal(openingStock, "الرصيد الافتتاحي")
+        val cleanThreshold = ProductInputRules.normalizeNonNegativeDecimal(lowStockThreshold, "حد تنبيه المخزون")
         val cleanSku = sku.trim()
         val cleanCurrency = ProductInputRules.normalizeCurrencyCode(priceCurrencyCode)
 
@@ -49,6 +51,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                     priceCurrencyCode = cleanCurrency,
                     categoryId = categoryId,
                     stockQuantity = cleanStock,
+                    lowStockThreshold = cleanThreshold,
                     note = note.trim(),
                     createdAt = now,
                     updatedAt = now
@@ -92,13 +95,15 @@ class ProductRepository(private val database: AccountingDatabase) {
         salePrice: String,
         note: String,
         priceCurrencyCode: String = "SYP",
-        categoryId: String? = null
+        categoryId: String? = null,
+        lowStockThreshold: String = "0"
     ): Boolean {
         val cleanName = ProductInputRules.requireName(name)
         val cleanUnit = unit.trim().ifEmpty { "قطعة" }
         val cleanCost = ProductInputRules.normalizeNonNegativeDecimal(purchaseCost, "كلفة الشراء")
         val cleanPrice = ProductInputRules.normalizeNonNegativeDecimal(salePrice, "سعر البيع")
         val cleanCurrency = ProductInputRules.normalizeCurrencyCode(priceCurrencyCode)
+        val cleanThreshold = ProductInputRules.normalizeNonNegativeDecimal(lowStockThreshold, "حد تنبيه المخزون")
         var updated = false
 
         database.withTransaction {
@@ -123,6 +128,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                         salePrice = cleanPrice,
                         priceCurrencyCode = cleanCurrency,
                         categoryId = categoryId,
+                        lowStockThreshold = cleanThreshold,
                         note = note.trim(),
                         updatedAt = System.currentTimeMillis()
                     )

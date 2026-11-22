@@ -62,6 +62,7 @@ import com.goodgirl.accounting.domain.CashTransactionRules
 import com.goodgirl.accounting.domain.FinancialReportCalculator
 import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
+import com.goodgirl.accounting.domain.ProductInputRules
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -1385,6 +1386,9 @@ private fun ProductManagementScreen(
     var salePrice by remember { mutableStateOf("0") }
     var priceCurrencyCode by remember { mutableStateOf("SYP") }
     var openingStock by remember { mutableStateOf("0") }
+    var lowStockThreshold by remember { mutableStateOf("0") }
+    var searchQuery by remember { mutableStateOf("") }
+    var showLowStockOnly by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
@@ -1406,6 +1410,7 @@ private fun ProductManagementScreen(
         salePrice = "0"
         priceCurrencyCode = "SYP"
         openingStock = "0"
+        lowStockThreshold = "0"
         note = ""
     }
 
@@ -1420,6 +1425,7 @@ private fun ProductManagementScreen(
         purchaseCost = product.purchaseCost
         salePrice = product.salePrice
         priceCurrencyCode = product.priceCurrencyCode
+        lowStockThreshold = product.lowStockThreshold
         note = product.note
         message = null
     }
@@ -1495,6 +1501,15 @@ private fun ProductManagementScreen(
                 }
                 if (editingId == null) {
                     OutlinedTextField(openingStock, { openingStock = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الرصيد الافتتاحي") }, singleLine = true)
+                }
+                OutlinedTextField(
+                    lowStockThreshold,
+                    { lowStockThreshold = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("حد تنبيه انخفاض المخزون (0 لتعطيل التنبيه)") },
+                    singleLine = true
+                )
+                if (editingId == null) {
                 } else {
                     val currentStock = products.firstOrNull { it.id == editingId }?.stockQuantity ?: "—"
                     Text("الرصيد الحالي: $currentStock — يُعدّل عبر حركات المخزون وليس من بطاقة المنتج.", color = Color(0xFF64748B), fontSize = 12.sp)
@@ -1519,7 +1534,8 @@ private fun ProductManagementScreen(
                                         salePrice = salePrice,
                                         note = note,
                                         priceCurrencyCode = priceCurrencyCode,
-                                        categoryId = selectedCategoryId
+                                        categoryId = selectedCategoryId,
+                                        lowStockThreshold = lowStockThreshold
                                     )
                                     check(updated) { "تعذر العثور على المنتج لتحديثه" }
                                 } else {
@@ -1532,7 +1548,8 @@ private fun ProductManagementScreen(
                                         openingStock = openingStock,
                                         note = note,
                                         priceCurrencyCode = priceCurrencyCode,
-                                        categoryId = selectedCategoryId
+                                        categoryId = selectedCategoryId,
+                                        lowStockThreshold = lowStockThreshold
                                     )
                                 }
                                 resetForm()
@@ -1642,7 +1659,39 @@ private fun ProductManagementScreen(
             )
         }
 
+        val lowStockProducts = products.filter {
+            ProductInputRules.isLowStock(it.stockQuantity, it.lowStockThreshold)
+        }
         Text("قائمة المنتجات (${products.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+        if (lowStockProducts.isNotEmpty()) {
+            Text(
+                "مواد منخفضة المخزون: " + lowStockProducts.size,
+                color = Color(0xFFB42332),
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp
+            )
+        }
+        OutlinedTextField(
+            searchQuery,
+            { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("بحث باسم المنتج أو الرمز أو التصنيف") },
+            singleLine = true
+        )
+        TextButton(onClick = { showLowStockOnly = !showLowStockOnly }) {
+            Text(if (showLowStockOnly) "عرض جميع المنتجات" else "عرض المواد منخفضة المخزون فقط")
+        }
+        val normalizedSearch = searchQuery.trim().lowercase()
+        val visibleProducts = products.filter { product ->
+            val categoryName = categories.firstOrNull { it.id == product.categoryId }?.name.orEmpty()
+            val matchesSearch = normalizedSearch.isBlank() ||
+                product.name.lowercase().contains(normalizedSearch) ||
+                product.sku.lowercase().contains(normalizedSearch) ||
+                categoryName.lowercase().contains(normalizedSearch)
+            val matchesStock = !showLowStockOnly ||
+                ProductInputRules.isLowStock(product.stockQuantity, product.lowStockThreshold)
+            matchesSearch && matchesStock
+        }
         if (products.isEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -1652,10 +1701,11 @@ private fun ProductManagementScreen(
                 Text("لا توجد منتجات مسجلة بعد. أضف أول منتج من النموذج أعلاه.", modifier = Modifier.padding(18.dp), color = Color(0xFF64748B))
             }
         } else {
-            products.forEach { product ->
+            visibleProducts.forEach { product ->
                 ProductListItem(
                     product,
                     categoryName = categories.firstOrNull { it.id == product.categoryId }?.name,
+                    isLowStock = ProductInputRules.isLowStock(product.stockQuantity, product.lowStockThreshold),
                     onEdit = { startEditing(product) },
                     onStockAdjustment = { startStockAdjustment(product) },
                     onManageUnits = { onManageUnits(product.id) },
@@ -1670,6 +1720,7 @@ private fun ProductManagementScreen(
 private fun ProductListItem(
     product: ProductEntity,
     categoryName: String?,
+    isLowStock: Boolean,
     onEdit: () -> Unit,
     onStockAdjustment: () -> Unit,
     onManageUnits: () -> Unit,
@@ -1695,6 +1746,9 @@ private fun ProductListItem(
             }
             if (!categoryName.isNullOrBlank()) {
                 Text("التصنيف: " + categoryName, color = Color(0xFF64748B), fontSize = 12.sp)
+            }
+            if (isLowStock) {
+                Text("تنبيه: المخزون منخفض", color = Color(0xFFB42332), fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("الرصيد: ${product.stockQuantity} ${product.baseUnit}", color = BrandBlue, fontSize = 13.sp)

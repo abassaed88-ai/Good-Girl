@@ -19,6 +19,12 @@ object ProductInputRules {
         return parsed.stripTrailingZeros().toPlainString()
     }
 
+    fun isLowStock(quantity: String, threshold: String): Boolean {
+        val current = normalizeNonNegativeDecimal(quantity, "الرصيد").toBigDecimal()
+        val limit = normalizeNonNegativeDecimal(threshold, "حد تنبيه المخزون").toBigDecimal()
+        return limit > java.math.BigDecimal.ZERO && current <= limit
+    }
+
     fun requireName(value: String): String {
         val normalized = value.trim()
         require(normalized.isNotEmpty()) { "اسم المنتج مطلوب" }
