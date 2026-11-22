@@ -1003,35 +1003,6 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
     var selectedPeriod by remember { mutableStateOf("TODAY") }
     var isExportingReport by remember { mutableStateOf(false) }
     var reportExportMessage by remember { mutableStateOf<String?>(null) }
-    val reportPdfLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/pdf")
-    ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                isExportingReport = true
-                reportExportMessage = null
-                try {
-                    val label = when (selectedPeriod) {
-                        "TODAY" -> "اليوم"
-                        "MONTH" -> "هذا الشهر"
-                        else -> "كل المدة"
-                    }
-                    FinancialReportPdfExporter.write(
-                        context = context,
-                        destination = uri,
-                        report = report,
-                        periodLabel = label
-                    )
-                    reportExportMessage = "تم حفظ تقرير PDF بنجاح."
-                } catch (error: Exception) {
-                    reportExportMessage = error.message ?: "تعذر إنشاء تقرير PDF"
-                } finally {
-                    isExportingReport = false
-                }
-            }
-        }
-    }
-
     val now = System.currentTimeMillis()
     val fromTime = remember(selectedPeriod) {
         when (selectedPeriod) {
@@ -1059,6 +1030,35 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
             lines = invoiceLines,
             ledgerEntries = ledgerEntries
         )
+    }
+
+    val reportPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isExportingReport = true
+                reportExportMessage = null
+                try {
+                    val label = when (selectedPeriod) {
+                        "TODAY" -> "اليوم"
+                        "MONTH" -> "هذا الشهر"
+                        else -> "كل المدة"
+                    }
+                    FinancialReportPdfExporter.write(
+                        context = context,
+                        destination = uri,
+                        report = report,
+                        periodLabel = label
+                    )
+                    reportExportMessage = "تم حفظ تقرير PDF بنجاح."
+                } catch (error: Exception) {
+                    reportExportMessage = error.message ?: "تعذر إنشاء تقرير PDF"
+                } finally {
+                    isExportingReport = false
+                }
+            }
+        }
     }
 
     Column(
