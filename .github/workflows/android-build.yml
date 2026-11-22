@@ -18,7 +18,7 @@ jobs:
   build:
     name: Build and test Android app
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Checkout source
@@ -37,6 +37,16 @@ jobs:
 
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --no-daemon
+
+      - name: Run database migration instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          script: gradle :app:connectedDebugAndroidTest --no-daemon
 
       - name: Build debug APK
         run: gradle :app:assembleDebug --no-daemon
