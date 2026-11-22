@@ -1,5 +1,6 @@
 package com.goodgirl.accounting.data.local
 
+import androidx.room.testing.MigrationTestHelper
 import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
@@ -11,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -23,6 +25,42 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class AccountingDatabaseMigrationTest {
+
+    @get:Rule
+    val roomMigrationHelper = MigrationTestHelper(
+        InstrumentationRegistry.getInstrumentation(),
+        AccountingDatabase::class.java
+    )
+
+    @Test
+    fun roomMigrationValidatesCompleteVersionFiveSchemaAndPreservesHistory() {
+        val databaseName = "room-migration-v4-v5.db"
+        val legacy = roomMigrationHelper.createDatabase(databaseName, 4)
+        try {
+            insertProduct(legacy, "room-product", "8.75", "12.50", "USD")
+            insertMovement(legacy, "room-old-movement", "room-product", "2.5")
+        } finally {
+            legacy.close()
+        }
+
+        val migrated = roomMigrationHelper.runMigrationsAndValidate(
+            databaseName,
+            5,
+            true,
+            AccountingDatabase.MIGRATION_4_5
+        )
+        try {
+            assertDecimalEquals("8.75", movementTotal(migrated, "room-product"))
+            assertEquals("6.25", adjustmentFor(migrated, "room-product"))
+            assertEquals("2.5", quantityForMovement(migrated, "room-old-movement"))
+            assertEquals(1, databaseCount(migrated, "products"))
+            assertEquals(2, databaseCount(migrated, "stock_movements"))
+        } finally {
+            migrated.close()
+            InstrumentationRegistry.getInstrumentation()
+                .targetContext.deleteDatabase(databaseName)
+        }
+    }
 
     @Test
     fun migrationReconcilesBalancesWithoutChangingExistingMovementRows() {
