@@ -212,4 +212,55 @@ class ExchangeRateHistoryCorrectionTest {
             database.close()
         }
     }
+
+
+    @Test
+    fun correctingCurrentRateUpdatesDefaultForNewOperations() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            AccountingDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            database.exchangeRateHistoryDao().insert(
+                ExchangeRateHistoryEntity(
+                    "rate-current", "USD/SYP", "15000", 100L, 100L, "USER"
+                )
+            )
+            database.invoiceDao().insertInvoice(
+                InvoiceEntity(
+                    id = "invoice-current", invoiceNumber = "S-CURRENT", kind = "SALE",
+                    currencyCode = "USD", exchangeRateSnapshot = "15000",
+                    subtotal = "25", discount = "0", total = "25", paid = "25",
+                    remaining = "0", status = "POSTED", issuedAt = 150L, createdAt = 150L
+                )
+            )
+            context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+                .edit().putString("usd_syp_rate", "15000").commit()
+
+            val preview = previewExchangeRateCorrection(database, "rate-current", "15200")
+            assertEquals(1, preview.invoiceCount)
+
+            val result = applyExchangeRateCorrection(
+                context = context,
+                database = database,
+                historyId = "rate-current",
+                proposedRate = "15200",
+                reason = "تصحيح السعر الافتراضي الحالي"
+            )
+            assertTrue(result.currentRateUpdated)
+            assertEquals(
+                "15200",
+                context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+                    .getString("usd_syp_rate", null)
+            )
+            assertEquals("15200", database.exchangeRateHistoryDao().findById("rate-current")!!.rate)
+            val invoice = database.invoiceDao().findById("invoice-current")!!
+            assertEquals("15200", invoice.exchangeRateSnapshot)
+            assertEquals("25", invoice.total)
+            assertEquals("25", invoice.paid)
+        } finally {
+            database.close()
+        }
+    }
 }
