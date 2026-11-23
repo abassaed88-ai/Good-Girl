@@ -287,3 +287,64 @@ interface JournalLineDao {
     @Query("DELETE FROM journal_lines")
     suspend fun deleteAll()
 }
+
+
+@Dao
+interface ExchangeRateHistoryDao {
+    @Query("SELECT * FROM exchange_rate_history WHERE isArchived = 0 ORDER BY effectiveAt DESC, recordedAt DESC")
+    fun observeAll(): Flow<List<ExchangeRateHistoryEntity>>
+
+    @Query("SELECT * FROM exchange_rate_history ORDER BY effectiveAt, recordedAt")
+    suspend fun getAll(): List<ExchangeRateHistoryEntity>
+
+    @Query("SELECT * FROM exchange_rate_history WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): ExchangeRateHistoryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entry: ExchangeRateHistoryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(entries: List<ExchangeRateHistoryEntity>)
+
+    @Update
+    suspend fun update(entry: ExchangeRateHistoryEntity)
+
+    @Query("UPDATE exchange_rate_history SET isArchived = 1 WHERE id = :id")
+    suspend fun archive(id: String)
+
+    @Query("DELETE FROM exchange_rate_history")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface ExchangeRateAuditDao {
+    @Query("SELECT * FROM exchange_rate_audits ORDER BY correctedAt DESC, id DESC")
+    suspend fun getAll(): List<ExchangeRateAuditEntity>
+
+    @Query("SELECT * FROM exchange_rate_audits WHERE historyId = :historyId ORDER BY correctedAt DESC")
+    suspend fun getForHistory(historyId: String): List<ExchangeRateAuditEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entry: ExchangeRateAuditEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(entries: List<ExchangeRateAuditEntity>)
+
+    @Query("DELETE FROM exchange_rate_audits")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface ExchangeRateCorrectionItemDao {
+    @Query("SELECT * FROM exchange_rate_correction_items ORDER BY auditId, recordType, recordId")
+    suspend fun getAll(): List<ExchangeRateCorrectionItemEntity>
+
+    @Query("SELECT * FROM exchange_rate_correction_items WHERE auditId = :auditId ORDER BY recordType, recordId")
+    suspend fun getForAudit(auditId: String): List<ExchangeRateCorrectionItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(items: List<ExchangeRateCorrectionItemEntity>)
+
+    @Query("DELETE FROM exchange_rate_correction_items")
+    suspend fun deleteAll()
+}

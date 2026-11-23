@@ -10,7 +10,7 @@ import com.goodgirl.accounting.domain.StockMovementReconciliation
 import java.math.BigDecimal
 import java.util.UUID
 
-const val ACCOUNTING_DATABASE_VERSION = 6
+const val ACCOUNTING_DATABASE_VERSION = 7
 
 private data class MigrationCurrencyBalances(
     var cash: BigDecimal = BigDecimal.ZERO,
@@ -40,7 +40,10 @@ private data class MigrationOpeningLine(
         LedgerEntryEntity::class,
         AccountEntity::class,
         JournalEntryEntity::class,
-        JournalLineEntity::class
+        JournalLineEntity::class,
+        ExchangeRateHistoryEntity::class,
+        ExchangeRateAuditEntity::class,
+        ExchangeRateCorrectionItemEntity::class
     ],
     version = ACCOUNTING_DATABASE_VERSION,
     exportSchema = true
@@ -56,6 +59,9 @@ abstract class AccountingDatabase : RoomDatabase() {
     abstract fun accountDao(): AccountDao
     abstract fun journalEntryDao(): JournalEntryDao
     abstract fun journalLineDao(): JournalLineDao
+    abstract fun exchangeRateHistoryDao(): ExchangeRateHistoryDao
+    abstract fun exchangeRateAuditDao(): ExchangeRateAuditDao
+    abstract fun exchangeRateCorrectionItemDao(): ExchangeRateCorrectionItemDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -387,6 +393,64 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
+
+        /**
+         * Adds durable exchange-rate history and its audit trail. It deliberately
+         * does not update any invoice, ledger, journal, stock, or balance amounts.
+         */
+        internal val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS exchange_rate_history (" +
+                        "id TEXT NOT NULL, currencyPair TEXT NOT NULL, rate TEXT NOT NULL, " +
+                        "effectiveAt INTEGER NOT NULL, recordedAt INTEGER NOT NULL, " +
+                        "source TEXT NOT NULL, isArchived INTEGER NOT NULL, PRIMARY KEY(id))"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_exchange_rate_history_currencyPair_effectiveAt " +
+                        "ON exchange_rate_history(currencyPair, effectiveAt)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_exchange_rate_history_recordedAt " +
+                        "ON exchange_rate_history(recordedAt)"
+                )
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS exchange_rate_audits (" +
+                        "id TEXT NOT NULL, historyId TEXT NOT NULL, eventType TEXT NOT NULL, " +
+                        "oldRate TEXT NOT NULL, newRate TEXT NOT NULL, reason TEXT NOT NULL, " +
+                        "correctedAt INTEGER NOT NULL, affectedInvoiceCount INTEGER NOT NULL, " +
+                        "affectedLedgerCount INTEGER NOT NULL, affectedJournalCount INTEGER NOT NULL, " +
+                        "financialAmountsChanged INTEGER NOT NULL, PRIMARY KEY(id), " +
+                        "FOREIGN KEY(historyId) REFERENCES exchange_rate_history(id) " +
+                        "ON UPDATE NO ACTION ON DELETE RESTRICT)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_exchange_rate_audits_historyId " +
+                        "ON exchange_rate_audits(historyId)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_exchange_rate_audits_correctedAt " +
+                        "ON exchange_rate_audits(correctedAt)"
+                )
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS exchange_rate_correction_items (" +
+                        "id TEXT NOT NULL, auditId TEXT NOT NULL, recordType TEXT NOT NULL, " +
+                        "recordId TEXT NOT NULL, sourceType TEXT NOT NULL, sourceId TEXT NOT NULL, " +
+                        "oldRate TEXT NOT NULL, newRate TEXT NOT NULL, PRIMARY KEY(id), " +
+                        "FOREIGN KEY(auditId) REFERENCES exchange_rate_audits(id) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_exchange_rate_correction_items_auditId " +
+                        "ON exchange_rate_correction_items(auditId)"
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_exchange_rate_correction_items_auditId_recordType_recordId " +
+                        "ON exchange_rate_correction_items(auditId, recordType, recordId)"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AccountingDatabase? = null
 
@@ -396,7 +460,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { INSTANCE = it }
             }
     }
 }

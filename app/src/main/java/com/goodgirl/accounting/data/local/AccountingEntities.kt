@@ -214,3 +214,63 @@ data class JournalLineEntity(
     val credit: String,
     val memo: String
 )
+
+
+@Entity(tableName = "exchange_rate_history", indices = [
+    Index(value = ["currencyPair", "effectiveAt"]), Index("recordedAt")
+])
+data class ExchangeRateHistoryEntity(
+    @PrimaryKey val id: String,
+    val currencyPair: String,
+    val rate: String,
+    val effectiveAt: Long,
+    val recordedAt: Long,
+    val source: String,
+    val isArchived: Boolean = false
+)
+
+@Entity(tableName = "exchange_rate_audits", foreignKeys = [
+    ForeignKey(
+        entity = ExchangeRateHistoryEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["historyId"],
+        onDelete = ForeignKey.RESTRICT
+    )
+], indices = [Index("historyId"), Index("correctedAt")])
+data class ExchangeRateAuditEntity(
+    @PrimaryKey val id: String,
+    val historyId: String,
+    /** RATE_IMPORTED, RATE_SET, RATE_CORRECTION, or RATE_ARCHIVED. */
+    val eventType: String,
+    val oldRate: String,
+    val newRate: String,
+    val reason: String,
+    val correctedAt: Long,
+    val affectedInvoiceCount: Int = 0,
+    val affectedLedgerCount: Int = 0,
+    val affectedJournalCount: Int = 0,
+    val financialAmountsChanged: Boolean = false
+)
+
+@Entity(tableName = "exchange_rate_correction_items", foreignKeys = [
+    ForeignKey(
+        entity = ExchangeRateAuditEntity::class,
+        parentColumns = ["id"],
+        childColumns = ["auditId"],
+        onDelete = ForeignKey.CASCADE
+    )
+], indices = [
+    Index("auditId"),
+    Index(value = ["auditId", "recordType", "recordId"], unique = true)
+])
+data class ExchangeRateCorrectionItemEntity(
+    @PrimaryKey val id: String,
+    val auditId: String,
+    /** INVOICE, LEDGER, or JOURNAL. */
+    val recordType: String,
+    val recordId: String,
+    val sourceType: String,
+    val sourceId: String,
+    val oldRate: String,
+    val newRate: String
+)
