@@ -22,7 +22,8 @@ import java.math.BigDecimal
 
 data class AccountingBackupResult(
     val recordCount: Int,
-    val exportedAt: Long
+    val exportedAt: Long,
+    val wasLegacyUnencrypted: Boolean = false
 )
 
 /**
@@ -33,7 +34,7 @@ class AccountingBackupManager(
     private val context: Context,
     private val database: AccountingDatabase
 ) {
-    suspend fun exportBackup(destination: Uri): AccountingBackupResult = withContext(Dispatchers.IO) {
+    suspend fun exportBackup(destination: Uri, password: CharArray): AccountingBackupResult = withContext(Dispatchers.IO) {
         val exportedAt = System.currentTimeMillis()
         val settingsPreferences = context.getSharedPreferences("good_girl_settings", Context.MODE_PRIVATE)
         val savedRate = settingsPreferences.getString("usd_syp_rate", "1") ?: "1"
@@ -76,17 +77,30 @@ class AccountingBackupManager(
                 )
         }
 
-        val bytes = snapshot.first.toString().toByteArray(Charsets.UTF_8)
-        val output = context.contentResolver.openOutputStream(destination, "wt")
-            ?: throw IllegalStateException("تعذر فتح ملف النسخة الاحتياطية للكتابة")
-        output.use { it.write(bytes); it.flush() }
-        AccountingBackupResult(snapshot.second, exportedAt)
+        val plaintext = snapshot.first.toString().toByteArray(Charsets.UTF_8)
+        try {
+            val encrypted = EncryptedBackupCodec.encrypt(plaintext, password)
+            try {
+                val output = context.contentResolver.openOutputStream(destination, "wt")
+                    ?: throw IllegalStateException("تعذر فتح ملف النسخة الاحتياطية للكتابة")
+                output.use { it.write(encrypted); it.flush() }
+                AccountingBackupResult(snapshot.second, exportedAt)
+            } finally {
+                encrypted.fill(0)
+            }
+        } finally {
+            plaintext.fill(0)
+            password.fill('\u0000')
+        }
     }
 
-    suspend fun restoreBackup(source: Uri): AccountingBackupResult = withContext(Dispatchers.IO) {
+    suspend fun restoreBackup(
+        source: Uri,
+        password: CharArray = charArrayOf()
+    ): AccountingBackupResult = withContext(Dispatchers.IO) {
         val input = context.contentResolver.openInputStream(source)
             ?: throw IllegalStateException("تعذر فتح ملف النسخة الاحتياطية")
-        val bytes = input.use { stream ->
+        val encodedBytes = input.use { stream ->
             val output = ByteArrayOutputStream()
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             var total = 0
@@ -94,17 +108,40 @@ class AccountingBackupManager(
                 val read = stream.read(buffer)
                 if (read < 0) break
                 total += read
-                require(total <= MAX_BACKUP_BYTES) { "حجم ملف النسخة الاحتياطية أكبر من الحد المسموح" }
+                require(total <= MAX_ENCRYPTED_BACKUP_BYTES) {
+                    "حجم ملف النسخة الاحتياطية أكبر من الحد المسموح"
+                }
                 output.write(buffer, 0, read)
             }
             output.toByteArray()
         }
-        require(bytes.isNotEmpty()) { "ملف النسخة الاحتياطية فارغ" }
+        require(encodedBytes.isNotEmpty()) { "ملف النسخة الاحتياطية فارغ" }
+
+        val wasLegacyUnencrypted = !EncryptedBackupCodec.isEncrypted(encodedBytes)
+        val plaintext = try {
+            if (wasLegacyUnencrypted) {
+                password.fill('\u0000')
+                require(isLegacyJson(encodedBytes)) {
+                    "ملف النسخة الاحتياطية غير معروف أو تالف"
+                }
+                encodedBytes.copyOf()
+            } else {
+                EncryptedBackupCodec.decrypt(encodedBytes, password)
+            }
+        } finally {
+            encodedBytes.fill(0)
+            password.fill('\u0000')
+        }
+        require(plaintext.size <= MAX_BACKUP_BYTES) {
+            "حجم محتوى النسخة الاحتياطية أكبر من الحد المسموح"
+        }
 
         val root = try {
-            JSONObject(String(bytes, Charsets.UTF_8))
+            JSONObject(String(plaintext, Charsets.UTF_8))
         } catch (error: Exception) {
             throw IllegalArgumentException("ملف النسخة الاحتياطية تالف أو غير صالح", error)
+        } finally {
+            plaintext.fill(0)
         }
         require(root.getString("format") == BACKUP_FORMAT) { "الملف المحدد ليس نسخة احتياطية لتطبيق Good Girl" }
         val formatVersion = root.getInt("formatVersion")
@@ -188,7 +225,18 @@ class AccountingBackupManager(
             .putStringSet("usd_syp_rate_history", restoredRateHistory)
             .apply()
 
-        AccountingBackupResult(totalRecords, exportedAt)
+        AccountingBackupResult(
+            recordCount = totalRecords,
+            exportedAt = exportedAt,
+            wasLegacyUnencrypted = wasLegacyUnencrypted
+        )
+    }
+
+    private fun isLegacyJson(bytes: ByteArray): Boolean {
+        val firstContentByte = bytes.firstOrNull { byte ->
+            !(byte.toInt() and 0xff).toChar().isWhitespace()
+        } ?: return false
+        return firstContentByte == '{'.code.toByte()
     }
 
     private fun <T> List<T>.toJsonArray(serializer: (T) -> JSONObject): JSONArray =
@@ -308,5 +356,7 @@ class AccountingBackupManager(
         private const val APPLICATION_ID = "com.goodgirl.accounting"
         private const val DATABASE_VERSION = ACCOUNTING_DATABASE_VERSION
         private const val MAX_BACKUP_BYTES = 50 * 1024 * 1024
+        private const val MAX_ENCRYPTED_BACKUP_BYTES =
+            MAX_BACKUP_BYTES + EncryptedBackupCodec.ENVELOPE_OVERHEAD
     }
 }
