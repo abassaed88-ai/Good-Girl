@@ -56,6 +56,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.goodgirl.accounting.data.AccountingBackupManager
 import com.goodgirl.accounting.data.ExchangeRateHistoryRepository
+import com.goodgirl.accounting.data.ExchangeRateCorrectionPreview
+import com.goodgirl.accounting.data.previewExchangeRateCorrection
+import com.goodgirl.accounting.data.applyExchangeRateCorrection
+import com.goodgirl.accounting.data.archiveExchangeRate
 import com.goodgirl.accounting.data.CashTransactionRepository
 import com.goodgirl.accounting.data.CategoryRepository
 import com.goodgirl.accounting.data.InvoiceLineDraft
@@ -682,6 +686,20 @@ private fun SettingsScreen(
     }
     val rateHistory by database.exchangeRateHistoryDao().observeAll().collectAsState(initial = emptyList())
     var message by remember { mutableStateOf<String?>(null) }
+    var selectedCorrectionRateId by remember { mutableStateOf<String?>(null) }
+    var correctionRate by remember { mutableStateOf("") }
+    var correctionReason by remember { mutableStateOf("") }
+    var correctionPreview by remember { mutableStateOf<ExchangeRateCorrectionPreview?>(null) }
+    var correctionMessage by remember { mutableStateOf<String?>(null) }
+    var isPreviewingCorrection by remember { mutableStateOf(false) }
+    var isApplyingCorrection by remember { mutableStateOf(false) }
+    var confirmCorrection by remember { mutableStateOf(false) }
+    var pendingArchiveRateId by remember { mutableStateOf<String?>(null) }
+    var archiveMessage by remember { mutableStateOf<String?>(null) }
+    val latestRateId = rateHistory.maxWithOrNull(
+        compareBy<com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity> { it.effectiveAt }
+            .thenBy { it.recordedAt }
+    )?.id
 
     LaunchedEffect(database) {
         runCatching {
@@ -803,26 +821,248 @@ private fun SettingsScreen(
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = CardSurface)
         ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("سجل تعديلات سعر الصرف", color = Ink, fontWeight = FontWeight.Bold)
                 if (rateHistory.isEmpty()) {
                     Text("لا يوجد سجل تعديلات حتى الآن.", color = MutedText, fontSize = 12.sp)
                 } else {
-                    rateHistory.take(10).forEach { item ->
-                        val timestamp = item.effectiveAt
-                        val rate = item.rate
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(rate + " ل.س / USD", color = BrandBlue, fontWeight = FontWeight.SemiBold)
-                            Text(
-                                if (timestamp > 0L) SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(timestamp)) else "",
-                                color = MutedText,
-                                fontSize = 11.sp
-                            )
+                    rateHistory.forEach { item ->
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    item.rate + " ل.س / USD" + if (item.id == latestRateId) " — الحالي" else "",
+                                    color = BrandBlue,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    if (item.effectiveAt > 0L) SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(item.effectiveAt)) else "",
+                                    color = MutedText,
+                                    fontSize = 11.sp
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                TextButton(onClick = {
+                                    selectedCorrectionRateId = item.id
+                                    correctionRate = item.rate
+                                    correctionReason = ""
+                                    correctionPreview = null
+                                    correctionMessage = null
+                                    confirmCorrection = false
+                                }) {
+                                    Text("تصحيح هذا السعر")
+                                }
+                                if (item.id != latestRateId) {
+                                    TextButton(onClick = {
+                                        pendingArchiveRateId = item.id
+                                        archiveMessage = null
+                                    }) {
+                                        Text("أرشفة")
+                                    }
+                                }
+                            }
                         }
+                        Divider(color = LightGray.copy(alpha = 0.8f))
+                    }
+                }
+                archiveMessage?.let {
+                    Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 12.sp)
+                }
+            }
+        }
+        selectedCorrectionRateId?.let { selectedId ->
+            val selectedRate = rateHistory.firstOrNull { it.id == selectedId }
+            if (selectedRate != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                        Text("تصحيح سعر تاريخي", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                        Text("السعر المسجل: " + selectedRate.rate + " ل.س / USD", color = MutedText, fontSize = 12.sp)
+                        OutlinedTextField(
+                            value = correctionRate,
+                            onValueChange = {
+                                correctionRate = it
+                                correctionPreview = null
+                                confirmCorrection = false
+                                correctionMessage = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("السعر الصحيح الجديد") },
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = correctionReason,
+                            onValueChange = {
+                                correctionReason = it
+                                correctionMessage = null
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("سبب التصحيح (مطلوب للتدقيق)") },
+                            minLines = 2
+                        )
+                        Button(
+                            enabled = !isPreviewingCorrection && !isApplyingCorrection,
+                            onClick = {
+                                scope.launch {
+                                    isPreviewingCorrection = true
+                                    correctionPreview = null
+                                    confirmCorrection = false
+                                    correctionMessage = null
+                                    try {
+                                        correctionPreview = previewExchangeRateCorrection(
+                                            database = database,
+                                            historyId = selectedId,
+                                            proposedRate = correctionRate
+                                        )
+                                    } catch (error: Exception) {
+                                        correctionMessage = error.message ?: "تعذرت معاينة العمليات"
+                                    } finally {
+                                        isPreviewingCorrection = false
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isPreviewingCorrection) "جارٍ إعداد المعاينة..." else "معاينة العمليات المتأثرة")
+                        }
+                        correctionPreview?.let { preview ->
+                            Divider(color = LightGray)
+                            Text(
+                                "الفترة: " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(preview.effectiveFrom)) +
+                                    (preview.effectiveUntilExclusive?.let {
+                                        " حتى " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(it))
+                                    } ?: " — حتى آخر سجل"),
+                                color = MutedText,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                "الفواتير: " + preview.invoiceCount +
+                                    " | حركات الحساب: " + preview.ledgerCount +
+                                    " | قيود اليومية: " + preview.journalCount,
+                                color = BrandBlue,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (preview.records.isEmpty()) {
+                                Text("لا توجد عمليات تحمل السعر القديم ضمن هذه الفترة.", color = MutedText, fontSize = 12.sp)
+                            } else {
+                                preview.records.take(25).forEach { target ->
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(target.displayName + " — " + target.amountSummary, color = Ink, fontSize = 12.sp)
+                                        Text(
+                                            target.recordType + " | " + target.sourceType + " / " + target.sourceId,
+                                            color = MutedText,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                                if (preview.records.size > 25) {
+                                    Text("تم إظهار أول 25 عملية من أصل " + preview.records.size, color = MutedText, fontSize = 11.sp)
+                                }
+                            }
+                            Text(
+                                "التصحيح يغيّر لقطة سعر الصرف المرجعية فقط. لن تتغير المبالغ أو إجماليات الفواتير أو أرصدة الحسابات أو أرباح المبيعات.",
+                                color = MutedText,
+                                fontSize = 12.sp
+                            )
+                            Button(
+                                enabled = !isApplyingCorrection && correctionReason.trim().isNotEmpty(),
+                                onClick = { confirmCorrection = true },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("متابعة لتأكيد التصحيح")
+                            }
+                        }
+                        if (confirmCorrection && correctionPreview != null) {
+                            Text(
+                                "تأكيد نهائي: سيتم تحديث " + correctionPreview!!.records.size +
+                                    " لقطة سعر مرتبطة بالسعر القديم، وتسجيل العملية في سجل التدقيق. لن تتغير أي مبالغ مالية.",
+                                color = Ink,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp
+                            )
+                            Button(
+                                enabled = !isApplyingCorrection,
+                                onClick = {
+                                    scope.launch {
+                                        isApplyingCorrection = true
+                                        correctionMessage = null
+                                        try {
+                                            val result = applyExchangeRateCorrection(
+                                                context = context,
+                                                database = database,
+                                                historyId = selectedId,
+                                                proposedRate = correctionRate,
+                                                reason = correctionReason
+                                            )
+                                            if (result.currentRateUpdated) {
+                                                exchangeRate = preferences.getString("usd_syp_rate", correctionRate) ?: correctionRate
+                                                lastUpdated = preferences.getLong("usd_syp_rate_updated_at", System.currentTimeMillis())
+                                            }
+                                            correctionMessage =
+                                                "تم التصحيح وتسجيله. الفواتير: " + result.updatedInvoiceCount +
+                                                "، حركات الحساب: " + result.updatedLedgerCount +
+                                                "، قيود اليومية: " + result.updatedJournalCount +
+                                                ". لم تتغير المبالغ المالية."
+                                            selectedCorrectionRateId = null
+                                            correctionPreview = null
+                                            confirmCorrection = false
+                                        } catch (error: Exception) {
+                                            correctionMessage = error.message ?: "تعذر تطبيق التصحيح"
+                                        } finally {
+                                            isApplyingCorrection = false
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(if (isApplyingCorrection) "جارٍ تنفيذ التصحيح..." else "تأكيد التصحيح وتسجيل التدقيق")
+                            }
+                            TextButton(onClick = { confirmCorrection = false }) { Text("إلغاء التأكيد") }
+                        }
+                        correctionMessage?.let {
+                            Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 12.sp)
+                        }
+                        TextButton(onClick = {
+                            selectedCorrectionRateId = null
+                            correctionPreview = null
+                            confirmCorrection = false
+                        }) { Text("إغلاق") }
+                    }
+                }
+            }
+        }
+        pendingArchiveRateId?.let { archiveId ->
+            val archiveRate = rateHistory.firstOrNull { it.id == archiveId }
+            if (archiveRate != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("تأكيد أرشفة السعر " + archiveRate.rate, color = Ink, fontWeight = FontWeight.Bold)
+                        Text("سيبقى السجل محفوظاً في قاعدة البيانات والنسخ الاحتياطية، ولن تُحذف الحركات السابقة.", color = MutedText, fontSize = 12.sp)
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        archiveExchangeRate(database, archiveId, "أرشفة يدوية من إعدادات أسعار الصرف")
+                                        archiveMessage = "تمت أرشفة سجل السعر دون حذف أثره المحاسبي."
+                                        pendingArchiveRateId = null
+                                    } catch (error: Exception) {
+                                        archiveMessage = error.message ?: "تعذرت أرشفة السعر"
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("تأكيد الأرشفة") }
+                        TextButton(onClick = { pendingArchiveRateId = null }) { Text("إلغاء") }
                     }
                 }
             }
