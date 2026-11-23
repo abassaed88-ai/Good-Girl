@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.domain.JournalLineDraft
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -67,9 +68,7 @@ class JournalRepositoryIntegrationTest {
                     )
                 }
             }
-            assertEquals(1, database.journalEntryDao().observeAll().let { flow ->
-                kotlinx.coroutines.flow.first(flow).size
-            })
+            assertEquals(1, repository.observeEntries().first().size)
         } finally {
             database.close()
         }
@@ -100,7 +99,7 @@ class JournalRepositoryIntegrationTest {
                     )
                 }
             }
-            assertTrue(kotlinx.coroutines.flow.first(repository.observeEntries()).isEmpty())
+            assertTrue(repository.observeEntries().first().isEmpty())
         } finally {
             database.close()
         }

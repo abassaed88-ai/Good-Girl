@@ -52,7 +52,7 @@ jobs:
           mkdir -p app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase
           cp legacy-v4/app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json
 
-      - name: Generate current v5 Room schema
+      - name: Generate current Room schema
         run: gradle :app:kaptDebugKotlin --no-daemon
 
       - name: Upload Room schema snapshots
@@ -127,7 +127,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/5.json
+          git add app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/*.json
           if git diff --cached --quiet; then
             echo "Room schemas are already current."
           else
