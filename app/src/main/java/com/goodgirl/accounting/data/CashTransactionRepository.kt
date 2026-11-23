@@ -60,6 +60,20 @@ class CashTransactionRepository(private val database: AccountingDatabase) {
                     note = cleanDescription
                 )
             )
+
+            // Keep the cash ledger, profit-and-loss classification, and general
+            // journal atomic: a failure in any one of them rolls back the whole
+            // manual cash transaction.
+            ManualCashJournalPoster.post(
+                database = database,
+                sourceId = transactionId,
+                kind = cleanKind,
+                amount = values.amount,
+                currencyCode = values.currencyCode,
+                exchangeRateSnapshot = values.exchangeRate,
+                occurredAt = now,
+                description = cleanDescription
+            )
         }
 
         return CashTransactionResult(
