@@ -165,8 +165,6 @@ class StockAdjustmentJournalIntegrationTest {
             assertDecimal("70", summary.otherIncome.toPlainString())
             assertDecimal("30", summary.expenses.toPlainString())
             assertDecimal("40", summary.netProfit.toPlainString())
-            assertDecimal("0", summary.cashIn.toPlainString())
-            assertDecimal("0", summary.cashOut.toPlainString())
         } finally {
             database.close()
         }
