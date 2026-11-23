@@ -87,7 +87,7 @@ object GeneralLedgerFinancialStatementsCalculator {
                     ?: throw IllegalArgumentException("يوجد سطر قيد مرتبط بحساب غير موجود")
                 val debit = amount(line.debit, "المدين")
                 val credit = amount(line.credit, "الدائن")
-                require(debit.signum() == 0 xor credit.signum() == 0) {
+                require((debit.signum() == 0) != (credit.signum() == 0)) {
                     "يجب أن يكون أحد طرفي سطر القيد صفراً فقط"
                 }
                 debitTotal = debitTotal.add(debit)
