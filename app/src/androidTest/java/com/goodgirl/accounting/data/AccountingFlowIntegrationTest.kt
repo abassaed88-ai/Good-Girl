@@ -143,7 +143,6 @@ class AccountingFlowIntegrationTest {
                 issuedAt = 1_000L
             )
             val firstInvoice = database.invoiceDao().getAllInvoices().single()
-            val firstLine = database.invoiceDao().getLines(firstInvoice.id).single()
 
             assertTrue(products.updateSalePrice(product.id, "17.50"))
 
@@ -167,11 +166,12 @@ class AccountingFlowIntegrationTest {
                 issuedAt = 2_000L
             )
 
-            val saleLines = database.invoiceDao().getAllLines()
-                .sortedBy { it.createdAt }
-            assertEquals(2, saleLines.size)
-            assertDecimal("15", saleLines[0].unitPriceSnapshot)
-            assertDecimal("17.5", saleLines[1].unitPriceSnapshot)
+            val saleInvoices = database.invoiceDao().getAllInvoices().sortedBy { it.issuedAt }
+            assertEquals(2, saleInvoices.size)
+            val firstSaleLine = database.invoiceDao().getLines(saleInvoices[0].id).single()
+            val secondSaleLine = database.invoiceDao().getLines(saleInvoices[1].id).single()
+            assertDecimal("15", firstSaleLine.unitPriceSnapshot)
+            assertDecimal("17.5", secondSaleLine.unitPriceSnapshot)
             assertDecimal("8", database.productDao().findById(product.id)!!.stockQuantity)
         } finally {
             database.close()
