@@ -122,7 +122,7 @@ class CashFlowStatementCalculatorTest {
         val statement = CashFlowStatementCalculator.calculate(
             periodStartInclusive = 1L,
             periodEndInclusive = 9L,
-            asOfInclusive = 9L,
+            asOfInclusive = 40L,
             cashAccountIds = setOf("SYS-1000"),
             entries = entries,
             lines = lines
