@@ -115,6 +115,49 @@ class JournalRepository(private val database: AccountingDatabase) {
         return entryId
     }
 
+    /**
+     * Creates an immutable opposite journal for an existing entry.
+     * The original entry and its lines are never modified or deleted.
+     * A source-keyed reversal can be posted only once.
+     */
+    suspend fun reverseJournalEntry(
+        originalEntryId: String,
+        reversalJournalNumber: String,
+        occurredAt: Long,
+        reason: String
+    ): String {
+        val original = database.journalEntryDao().findById(originalEntryId)
+            ?: throw IllegalArgumentException("القيد الأصلي غير موجود")
+        require(original.sourceType != "REVERSAL") {
+            "لا يمكن إنشاء قيد عكسي لقيد عكسي"
+        }
+        require(occurredAt >= original.occurredAt) {
+            "تاريخ القيد العكسي لا يجوز أن يسبق تاريخ القيد الأصلي"
+        }
+        val cleanReason = reason.trim()
+        require(cleanReason.isNotEmpty()) { "سبب عكس القيد مطلوب" }
+        val originalLines = database.journalLineDao().getForEntry(originalEntryId)
+        require(originalLines.isNotEmpty()) { "القيد الأصلي لا يحتوي على أسطر محاسبية" }
+
+        return postJournalEntry(
+            journalNumber = reversalJournalNumber,
+            sourceType = "REVERSAL",
+            sourceId = original.id,
+            currencyCode = original.currencyCode,
+            exchangeRateSnapshot = original.exchangeRateSnapshot,
+            occurredAt = occurredAt,
+            description = "قيد عكسي للقيد " + original.journalNumber + " — " + cleanReason,
+            lines = originalLines.map { line ->
+                JournalLineDraft(
+                    accountId = line.accountId,
+                    debit = line.credit,
+                    credit = line.debit,
+                    memo = "عكس: " + line.memo
+                )
+            }
+        )
+    }
+
     private fun systemAccount(
         id: String,
         code: String,
