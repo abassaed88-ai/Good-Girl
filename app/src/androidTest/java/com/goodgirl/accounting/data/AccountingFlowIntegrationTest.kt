@@ -115,6 +115,70 @@ class AccountingFlowIntegrationTest {
     }
 
     @Test
+    fun changingSalePriceAffectsFutureSalesWithoutRewritingHistoryOrStock() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+
+            products.addProduct(
+                sku = "PRICE-001",
+                name = "مادة تعديل السعر",
+                unit = "قطعة",
+                purchaseCost = "10",
+                salePrice = "15",
+                openingStock = "10",
+                note = "اختبار تحديث سعر البيع"
+            )
+            val product = database.productDao().getAll().single()
+
+            invoices.postInvoice(
+                invoiceNumber = "PRICE-SALE-1",
+                kind = "SALE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "1", "15")),
+                paidAmount = "15",
+                issuedAt = 1_000L
+            )
+            val firstInvoice = database.invoiceDao().getAllInvoices().single()
+            val firstLine = database.invoiceDao().getLines(firstInvoice.id).single()
+
+            assertTrue(products.updateSalePrice(product.id, "17.50"))
+
+            val updatedProduct = database.productDao().findById(product.id)!!
+            assertDecimal("17.5", updatedProduct.salePrice)
+            assertDecimal("10", updatedProduct.purchaseCost)
+            assertDecimal("9", updatedProduct.stockQuantity)
+
+            val historicalLine = database.invoiceDao().getLines(firstInvoice.id).single()
+            assertDecimal("15", historicalLine.unitPriceSnapshot)
+            assertDecimal("10", historicalLine.unitCostSnapshot)
+
+            invoices.postInvoice(
+                invoiceNumber = "PRICE-SALE-2",
+                kind = "SALE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "1", updatedProduct.salePrice)),
+                paidAmount = "17.5",
+                issuedAt = 2_000L
+            )
+
+            val saleLines = database.invoiceDao().getAllLines()
+                .sortedBy { it.createdAt }
+            assertEquals(2, saleLines.size)
+            assertDecimal("15", saleLines[0].unitPriceSnapshot)
+            assertDecimal("17.5", saleLines[1].unitPriceSnapshot)
+            assertDecimal("8", database.productDao().findById(product.id)!!.stockQuantity)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun rejectedSaleRollsBackWithoutChangingStockOrCreatingInvoice() = runBlocking {
         val database = newInMemoryDatabase()
         try {
