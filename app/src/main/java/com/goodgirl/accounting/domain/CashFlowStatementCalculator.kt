@@ -85,8 +85,11 @@ object CashFlowStatementCalculator {
         }
         val cutoff = minOf(periodEndInclusive, asOfInclusive)
         val eligibleEntries = entries.filter { it.occurredAt <= cutoff }
-        val migrationBoundary = eligibleEntries
-            .filter { it.sourceType == MIGRATION_OPENING }
+        // Look across the full database snapshot, not just the requested period:
+        // otherwise a report ending before migration could be mistaken for a
+        // complete historical statement with a zero opening balance.
+        val migrationBoundary = entries
+            .filter { it.sourceType == MIGRATION_OPENING && it.occurredAt <= asOfInclusive }
             .minOfOrNull { it.occurredAt }
 
         if (migrationBoundary != null && periodEndInclusive < migrationBoundary) {
@@ -111,11 +114,10 @@ object CashFlowStatementCalculator {
 
         val openingEntries = eligibleEntries.filter { entry ->
             entry.occurredAt < effectiveStart ||
-                (entry.sourceType == MIGRATION_OPENING && entry.occurredAt == effectiveStart)
+                (entry.sourceType == MIGRATION_OPENING && entry.occurredAt <= effectiveStart)
         }
         val periodEntries = eligibleEntries.filter { entry ->
-            entry.occurredAt >= effectiveStart &&
-                !(entry.sourceType == MIGRATION_OPENING && entry.occurredAt <= effectiveStart)
+            entry.occurredAt >= effectiveStart && entry.sourceType != MIGRATION_OPENING
         }
 
         val openingByCurrency = linkedMapOf<String, BigDecimal>()
