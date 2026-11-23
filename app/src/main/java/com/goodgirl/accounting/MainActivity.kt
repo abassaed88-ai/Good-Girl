@@ -70,6 +70,7 @@ import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.domain.CashTransactionRules
 import com.goodgirl.accounting.domain.FinancialReportCalculator
 import com.goodgirl.accounting.domain.TrialBalanceCalculator
+import com.goodgirl.accounting.domain.CashFlowStatementCalculator
 import com.goodgirl.accounting.domain.GeneralLedgerFinancialStatementsCalculator
 import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
@@ -1093,6 +1094,7 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
     var selectedPeriod by remember { mutableStateOf("TODAY") }
     var showTrialBalance by remember { mutableStateOf(false) }
     var showLedgerStatements by remember { mutableStateOf(true) }
+    var showCashFlow by remember { mutableStateOf(true) }
     var isExportingReport by remember { mutableStateOf(false) }
     var reportExportMessage by remember { mutableStateOf<String?>(null) }
     val now = System.currentTimeMillis()
@@ -1140,6 +1142,19 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
         }
     }
     val generalLedgerStatements = generalLedgerStatementsResult.getOrNull()
+    val cashFlowStatementResult = remember(journalEntries, journalLines, fromTime, now) {
+        runCatching {
+            CashFlowStatementCalculator.calculate(
+                periodStartInclusive = fromTime,
+                periodEndInclusive = now,
+                asOfInclusive = now,
+                cashAccountIds = setOf("SYS-1000"),
+                entries = journalEntries,
+                lines = journalLines
+            )
+        }
+    }
+    val cashFlowStatement = cashFlowStatementResult.getOrNull()
     val report = remember(selectedPeriod, invoices, invoiceLines, ledgerEntries) {
         FinancialReportCalculator.calculate(
             fromInclusive = fromTime,
@@ -1407,6 +1422,109 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
             }
             Text(
                 "هذه القوائم مستخرجة من قيود اليومية المرحلة. الأرصدة السابقة لترقية قاعدة البيانات تظهر كأرصدة افتتاحية، ولا تعيد بناء أرباح الفترات التاريخية السابقة للترقية.",
+                color = MutedText,
+                fontSize = 12.sp
+            )
+        }
+
+        TextButton(onClick = { showCashFlow = !showCashFlow }) {
+            Text(if (showCashFlow) "إخفاء قائمة التدفقات النقدية" else "عرض قائمة التدفقات النقدية")
+        }
+        if (showCashFlow) {
+            Text(
+                "قائمة التدفقات النقدية — من حركة الصندوق",
+                style = MaterialTheme.typography.titleLarge,
+                color = Ink,
+                fontWeight = FontWeight.Bold
+            )
+            val cashFlowError = cashFlowStatementResult.exceptionOrNull()
+            if (cashFlowError != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Text(
+                        "تعذر حساب التدفقات النقدية: " + (cashFlowError.message ?: "بيانات القيود غير سليمة"),
+                        modifier = Modifier.padding(16.dp),
+                        color = SoftRed
+                    )
+                }
+            } else if (cashFlowStatement == null || !cashFlowStatement.coverageAvailable) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Text(
+                        "لا يمكن إعداد تدفقات نقدية موثوقة لهذه الفترة؛ فهي تسبق تاريخ ترحيل الأرصدة الافتتاحية للمحاسبة العامة.",
+                        modifier = Modifier.padding(16.dp),
+                        color = SoftRed
+                    )
+                }
+            } else if (cashFlowStatement.statements.isEmpty()) {
+                Text("لا توجد حركات نقدية في دفتر الأستاذ خلال الفترة المحددة.", color = MutedText)
+            } else {
+                if (cashFlowStatement.historyTruncated) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = CardSurface)
+                    ) {
+                        Text(
+                            "تنبيه: لا يمكن إعادة بناء حركة الصندوق قبل ترقية المحاسبة العامة. يبدأ التقرير من تاريخ الرصيد الافتتاحي المرحّل: " +
+                                SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(cashFlowStatement.effectiveStartInclusive)),
+                            modifier = Modifier.padding(14.dp),
+                            color = SoftPurple,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+                cashFlowStatement.statements.forEach { statement ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("العملة: " + statement.currencyCode, color = BrandBlue, fontWeight = FontWeight.Bold)
+                            ReportValueRow("رصيد النقدية الافتتاحي", statement.openingCashBalance, statement.currencyCode, strong = true)
+                            statement.activities.forEach { activity ->
+                                val sectionLabel = when (activity.section) {
+                                    CashFlowStatementCalculator.OPERATING -> "الأنشطة التشغيلية"
+                                    CashFlowStatementCalculator.INVESTING -> "الأنشطة الاستثمارية"
+                                    CashFlowStatementCalculator.FINANCING -> "الأنشطة التمويلية"
+                                    else -> "حركات نقدية غير مصنفة"
+                                }
+                                Text(sectionLabel, color = Ink, fontWeight = FontWeight.SemiBold)
+                                ReportValueRow("المقبوضات", activity.cashInflows, statement.currencyCode)
+                                ReportValueRow("المدفوعات", activity.cashOutflows, statement.currencyCode)
+                                ReportValueRow("صافي النشاط", activity.netCashFlow, statement.currencyCode, strong = true)
+                                if (activity.section == CashFlowStatementCalculator.UNCLASSIFIED && activity.transactionCount > 0) {
+                                    Text(
+                                        "عدد الحركات التي تحتاج إلى تصنيف محاسبي: " + activity.transactionCount,
+                                        color = SoftPurple,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                            androidx.compose.material3.Divider(color = LightGray)
+                            ReportValueRow("صافي التغير في النقدية", statement.netCashChange, statement.currencyCode, strong = true)
+                            ReportValueRow("رصيد النقدية الختامي", statement.closingCashBalance, statement.currencyCode, strong = true)
+                            ReportValueRow("رصيد الصندوق الفعلي من الأستاذ", statement.actualClosingCashBalance, statement.currencyCode)
+                            val reconciled = statement.reconciliationDifference.compareTo(BigDecimal.ZERO) == 0
+                            Text(
+                                if (reconciled) "تمت مطابقة رصيد التدفقات مع حساب الصندوق" else
+                                    "فرق المطابقة: " + statement.reconciliationDifference.stripTrailingZeros().toPlainString() + " " + statement.currencyCode,
+                                color = if (reconciled) SoftGreen else SoftRed,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+            Text(
+                "يعرض التقرير فقط حساب الصندوق الحالي، ويصنّف مصادر البيع والشراء والتحصيلات والدفعات والإيراد والمصروف كأنشطة تشغيلية. القيود اليدوية غير المعروفة تظهر ضمن غير المصنفة ولا تُخفى.",
                 color = MutedText,
                 fontSize = 12.sp
             )
