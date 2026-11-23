@@ -102,6 +102,18 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 )
             )
 
+            SettlementJournalPoster.post(
+                database = database,
+                sourceType = if (isSale) "SALE_RECEIPT" else "PURCHASE_PAYMENT",
+                sourceId = paymentId,
+                partyKind = if (isSale) "CUSTOMER" else "SUPPLIER",
+                amount = cleanAmount,
+                currencyCode = invoice.currencyCode,
+                exchangeRateSnapshot = invoice.exchangeRateSnapshot,
+                occurredAt = occurredAt,
+                description = "تسوية دفعة الفاتورة ${invoice.invoiceNumber}"
+            )
+
             result = InvoicePaymentResult(
                 paymentId = paymentId,
                 invoiceNumber = invoice.invoiceNumber,
