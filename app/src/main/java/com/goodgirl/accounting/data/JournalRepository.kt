@@ -128,8 +128,8 @@ class JournalRepository(private val database: AccountingDatabase) {
     ): String {
         val original = database.journalEntryDao().findById(originalEntryId)
             ?: throw IllegalArgumentException("القيد الأصلي غير موجود")
-        require(original.sourceType != "REVERSAL") {
-            "لا يمكن إنشاء قيد عكسي لقيد عكسي"
+        require(original.sourceType == "MANUAL_JOURNAL") {
+            "العكس المباشر متاح حالياً للقيود اليدوية فقط؛ عكس الفواتير وحركات المخزون والتحصيل يتطلب مساراً مرتبطاً بالمستند الأصلي"
         }
         require(occurredAt >= original.occurredAt) {
             "تاريخ القيد العكسي لا يجوز أن يسبق تاريخ القيد الأصلي"
