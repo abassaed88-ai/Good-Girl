@@ -36,6 +36,7 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.goodgirl.accounting.data.AccountingBackupManager
+import com.goodgirl.accounting.data.ExchangeRateHistoryRepository
 import com.goodgirl.accounting.data.CashTransactionRepository
 import com.goodgirl.accounting.data.CategoryRepository
 import com.goodgirl.accounting.data.InvoiceLineDraft
@@ -667,6 +669,8 @@ private fun SettingsScreen(
     onDarkThemeChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val scope = rememberCoroutineScope()
     val preferences = remember(context) {
         context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
     }
@@ -676,10 +680,16 @@ private fun SettingsScreen(
     var lastUpdated by remember {
         mutableStateOf(preferences.getLong("usd_syp_rate_updated_at", 0L))
     }
-    var rateHistory by remember {
-        mutableStateOf(preferences.getStringSet("usd_syp_rate_history", emptySet())?.toList().orEmpty().sortedDescending())
-    }
+    val rateHistory by database.exchangeRateHistoryDao().observeAll().collectAsState(initial = emptyList())
     var message by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(database) {
+        runCatching {
+            ExchangeRateHistoryRepository.importLegacyPreferences(context, database)
+        }.onFailure {
+            message = it.message ?: "تعذر ترحيل سجل أسعار الصرف القديم"
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -759,18 +769,20 @@ private fun SettingsScreen(
                             message = "أدخل سعر صرف صحيحاً أكبر من صفر."
                         } else {
                             val cleanRate = normalized.stripTrailingZeros().toPlainString()
-                            val savedAt = System.currentTimeMillis()
-                            val historyEntry = savedAt.toString() + "|" + cleanRate
-                            val updatedHistory = (rateHistory + historyEntry).distinct().take(30)
-                            preferences.edit()
-                                .putString("usd_syp_rate", cleanRate)
-                                .putLong("usd_syp_rate_updated_at", savedAt)
-                                .putStringSet("usd_syp_rate_history", updatedHistory.toSet())
-                                .apply()
-                            exchangeRate = cleanRate
-                            lastUpdated = savedAt
-                            rateHistory = updatedHistory.sortedDescending()
-                            message = "تم حفظ سعر الصرف الجديد. سيُستخدم للفواتير الجديدة فقط."
+                            scope.launch {
+                                try {
+                                    val savedAt = ExchangeRateHistoryRepository.saveCurrentRate(
+                                        context = context,
+                                        database = database,
+                                        enteredRate = cleanRate
+                                    )
+                                    exchangeRate = cleanRate
+                                    lastUpdated = savedAt
+                                    message = "تم حفظ السعر في السجل الدائم. سيُستخدم للعمليات الجديدة فقط، دون تعديل العمليات السابقة."
+                                } catch (error: Exception) {
+                                    message = error.message ?: "تعذر حفظ سعر الصرف"
+                                }
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
@@ -797,9 +809,8 @@ private fun SettingsScreen(
                     Text("لا يوجد سجل تعديلات حتى الآن.", color = MutedText, fontSize = 12.sp)
                 } else {
                     rateHistory.take(10).forEach { item ->
-                        val parts = item.split("|", limit = 2)
-                        val timestamp = parts.firstOrNull()?.toLongOrNull() ?: 0L
-                        val rate = parts.getOrNull(1).orEmpty()
+                        val timestamp = item.effectiveAt
+                        val rate = item.rate
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,

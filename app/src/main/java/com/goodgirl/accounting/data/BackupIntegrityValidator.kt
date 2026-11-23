@@ -11,9 +11,6 @@ import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
-import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
-import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
-import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
 import java.math.BigDecimal
 
 /**
@@ -39,10 +36,7 @@ object BackupIntegrityValidator {
         ledgerEntries: List<LedgerEntryEntity>,
         accounts: List<AccountEntity> = emptyList(),
         journalEntries: List<JournalEntryEntity> = emptyList(),
-        journalLines: List<JournalLineEntity> = emptyList(),
-        exchangeRateHistory: List<ExchangeRateHistoryEntity> = emptyList(),
-        exchangeRateAudits: List<ExchangeRateAuditEntity> = emptyList(),
-        exchangeRateCorrectionItems: List<ExchangeRateCorrectionItemEntity> = emptyList()
+        journalLines: List<JournalLineEntity> = emptyList()
     ) {
         ensureUnique(categories.map { it.id }, "معرّفات التصنيفات")
         ensureUnique(products.map { it.id }, "معرّفات المنتجات")
@@ -59,18 +53,12 @@ object BackupIntegrityValidator {
         ensureUnique(journalEntries.map { it.journalNumber }, "أرقام قيود اليومية")
         ensureUnique(journalEntries.map { it.sourceType + "|" + it.sourceId }, "مصادر قيود اليومية")
         ensureUnique(journalLines.map { it.id }, "معرّفات أسطر قيود اليومية")
-        ensureUnique(exchangeRateHistory.map { it.id }, "معرّفات سجل أسعار الصرف")
-        ensureUnique(exchangeRateAudits.map { it.id }, "معرّفات سجل تدقيق أسعار الصرف")
-        ensureUnique(exchangeRateCorrectionItems.map { it.id }, "معرّفات تفاصيل تصحيحات أسعار الصرف")
-        ensureUnique(exchangeRateCorrectionItems.map { it.auditId + "|" + it.recordType + "|" + it.recordId }, "سجلات العمليات المصححة")
         ensureUnique(journalLines.map { it.journalEntryId + "|" + it.lineNumber }, "ترتيب أسطر قيود اليومية")
         ensureUnique(categories.map { it.name }, "أسماء التصنيفات")
 
         val categoryIds = categories.map { it.id }.toSet()
         val accountById = accounts.associateBy { it.id }
         val journalById = journalEntries.associateBy { it.id }
-        val rateHistoryById = exchangeRateHistory.associateBy { it.id }
-        val rateAuditsById = exchangeRateAudits.associateBy { it.id }
         val productById = products.associateBy { it.id }
         val partyById = parties.associateBy { it.id }
         val invoiceById = invoices.associateBy { it.id }
@@ -269,58 +257,6 @@ object BackupIntegrityValidator {
                 "يجب أن يحتوي سطر قيد اليومية على مدين أو دائن فقط"
             }
         }
-
-        exchangeRateHistory.forEach { rate ->
-            require(rate.currencyPair == "USD/SYP") { "زوج عملة سجل سعر الصرف غير مدعوم" }
-            positive(rate.rate, "سعر الصرف التاريخي")
-            require(rate.effectiveAt > 0L && rate.recordedAt > 0L && rate.source.isNotBlank()) {
-                "بيانات سجل سعر الصرف غير مكتملة"
-            }
-        }
-
-        exchangeRateAudits.forEach { audit ->
-            require(audit.historyId in rateHistoryById) {
-                "حدث تدقيق مرتبط بسجل سعر صرف غير موجود"
-            }
-            require(audit.eventType in setOf("RATE_IMPORTED", "RATE_SET", "RATE_CORRECTION", "RATE_ARCHIVED")) {
-                "نوع حدث تدقيق سعر الصرف غير معروف"
-            }
-            require(audit.reason.isNotBlank() && audit.correctedAt > 0L) {
-                "بيانات تدقيق سعر الصرف غير مكتملة"
-            }
-            require(audit.affectedInvoiceCount >= 0 && audit.affectedLedgerCount >= 0 &&
-                audit.affectedJournalCount >= 0
-            ) { "عدد العمليات المتأثرة في سجل التدقيق غير صالح" }
-            positive(audit.newRate, "سعر الصرف الجديد في سجل التدقيق")
-            if (audit.oldRate.isNotBlank()) positive(audit.oldRate, "سعر الصرف السابق في سجل التدقيق")
-            if (audit.eventType == "RATE_CORRECTION") {
-                require(audit.oldRate.isNotBlank() && audit.oldRate != audit.newRate) {
-                    "تفاصيل تصحيح سعر الصرف غير مكتملة"
-                }
-            }
-        }
-
-        val correctionItemsByAudit = exchangeRateCorrectionItems.groupBy { it.auditId }
-        exchangeRateCorrectionItems.forEach { item ->
-            require(item.auditId in rateAuditsById) { "تفصيل تصحيح مرتبط بسجل تدقيق غير موجود" }
-            require(item.recordType in setOf("INVOICE", "LEDGER", "JOURNAL")) {
-                "نوع العملية المرتبطة بتصحيح سعر الصرف غير مدعوم"
-            }
-            require(item.recordId.isNotBlank() && item.sourceType.isNotBlank() && item.sourceId.isNotBlank()) {
-                "مرجع العملية المصححة غير مكتمل"
-            }
-            positive(item.oldRate, "سعر الصرف السابق للعملية المصححة")
-            positive(item.newRate, "سعر الصرف الجديد للعملية المصححة")
-        }
-        exchangeRateAudits.forEach { audit ->
-            val items = correctionItemsByAudit[audit.id].orEmpty()
-            require(
-                audit.affectedInvoiceCount == items.count { it.recordType == "INVOICE" } &&
-                    audit.affectedLedgerCount == items.count { it.recordType == "LEDGER" } &&
-                    audit.affectedJournalCount == items.count { it.recordType == "JOURNAL" }
-            ) { "أعداد العمليات في سجل تدقيق سعر الصرف لا تطابق تفاصيله" }
-        }
-
         journalEntries.forEach { entry ->
             require(entry.journalNumber.isNotBlank() && entry.sourceType.isNotBlank() &&
                 entry.sourceId.isNotBlank() && entry.description.isNotBlank()

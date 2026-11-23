@@ -15,9 +15,6 @@ import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
-import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
-import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
-import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -49,7 +46,6 @@ class AccountingBackupManager(
 ) {
     suspend fun exportBackup(destination: Uri, password: CharArray): AccountingBackupResult = withContext(Dispatchers.IO) {
         try {
-        ExchangeRateHistoryRepository.importLegacyPreferences(context, database)
         val exportedAt = System.currentTimeMillis()
         val settingsPreferences = context.getSharedPreferences("good_girl_settings", Context.MODE_PRIVATE)
         val savedRate = settingsPreferences.getString("usd_syp_rate", "1") ?: "1"
@@ -69,9 +65,6 @@ class AccountingBackupManager(
             val journalLines = journalEntries.flatMap { entry ->
                 database.journalLineDao().getForEntry(entry.id)
             }
-            val exchangeRateHistory = database.exchangeRateHistoryDao().getAll()
-            val exchangeRateAudits = database.exchangeRateAuditDao().getAll()
-            val exchangeRateCorrectionItems = database.exchangeRateCorrectionItemDao().getAll()
 
             val json = JSONObject()
                 .put("format", BACKUP_FORMAT)
@@ -96,15 +89,11 @@ class AccountingBackupManager(
                 .put("accounts", accounts.toJsonArray { it.toBackupJson() })
                 .put("journalEntries", journalEntries.toJsonArray { it.toBackupJson() })
                 .put("journalLines", journalLines.toJsonArray { it.toBackupJson() })
-                .put("exchangeRateHistory", exchangeRateHistory.toJsonArray { it.toBackupJson() })
-                .put("exchangeRateAudits", exchangeRateAudits.toJsonArray { it.toBackupJson() })
-                .put("exchangeRateCorrectionItems", exchangeRateCorrectionItems.toJsonArray { it.toBackupJson() })
 
             json to (
                 categories.size + products.size + units.size + parties.size +
                     invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
-                    accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
-                    exchangeRateAudits.size + exchangeRateCorrectionItems.size
+                    accounts.size + journalEntries.size + journalLines.size
                 )
         }
 
@@ -204,9 +193,6 @@ class AccountingBackupManager(
         val accounts = root.parseOptionalArray("accounts") { it.toAccountEntity() }
         val journalEntries = root.parseOptionalArray("journalEntries") { it.toJournalEntryEntity() }
         val journalLines = root.parseOptionalArray("journalLines") { it.toJournalLineEntity() }
-        val exchangeRateHistory = root.parseOptionalArray("exchangeRateHistory") { it.toExchangeRateHistoryEntity() }
-        val exchangeRateAudits = root.parseOptionalArray("exchangeRateAudits") { it.toExchangeRateAuditEntity() }
-        val exchangeRateCorrectionItems = root.parseOptionalArray("exchangeRateCorrectionItems") { it.toExchangeRateCorrectionItemEntity() }
 
         // Validate the complete snapshot before opening the destructive replacement transaction.
         BackupIntegrityValidator.validate(
@@ -220,16 +206,12 @@ class AccountingBackupManager(
             ledgerEntries = ledgerEntries,
             accounts = accounts,
             journalEntries = journalEntries,
-            journalLines = journalLines,
-            exchangeRateHistory = exchangeRateHistory,
-            exchangeRateAudits = exchangeRateAudits,
-            exchangeRateCorrectionItems = exchangeRateCorrectionItems
+            journalLines = journalLines
         )
 
         val totalRecords = categories.size + products.size + units.size + parties.size +
             invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
-            accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
-            exchangeRateAudits.size + exchangeRateCorrectionItems.size
+            accounts.size + journalEntries.size + journalLines.size
         val exportedAt = root.getLong("exportedAt")
 
         val settingsObject = if (formatVersion >= 2) root.optJSONObject("settings") else null
@@ -256,9 +238,6 @@ class AccountingBackupManager(
 
         // The replacement is atomic: an invalid insert rolls back and preserves current data.
         database.withTransaction {
-            database.exchangeRateCorrectionItemDao().deleteAll()
-            database.exchangeRateAuditDao().deleteAll()
-            database.exchangeRateHistoryDao().deleteAll()
             database.journalLineDao().deleteAll()
             database.journalEntryDao().deleteAll()
             database.accountDao().deleteAll()
@@ -282,16 +261,12 @@ class AccountingBackupManager(
             database.accountDao().insertAll(accounts)
             database.journalEntryDao().insertAll(journalEntries)
             database.journalLineDao().insertAll(journalLines)
-            database.exchangeRateHistoryDao().insertAll(exchangeRateHistory)
-            database.exchangeRateAuditDao().insertAll(exchangeRateAudits)
-            database.exchangeRateCorrectionItemDao().insertAll(exchangeRateCorrectionItems)
         }
 
         context.getSharedPreferences("good_girl_settings", Context.MODE_PRIVATE).edit()
             .putString("usd_syp_rate", parsedRestoredRate!!.stripTrailingZeros().toPlainString())
             .putLong("usd_syp_rate_updated_at", restoredRateUpdatedAt)
             .putStringSet("usd_syp_rate_history", restoredRateHistory)
-            .putBoolean("usd_syp_rate_history_migrated_to_room", exchangeRateHistory.isNotEmpty())
             .apply()
 
         AccountingBackupResult(
@@ -382,23 +357,6 @@ class AccountingBackupManager(
         .put("id", id).put("journalEntryId", journalEntryId).put("lineNumber", lineNumber)
         .put("accountId", accountId).put("debit", debit).put("credit", credit).put("memo", memo)
 
-    private fun ExchangeRateHistoryEntity.toBackupJson() = JSONObject()
-        .put("id", id).put("currencyPair", currencyPair).put("rate", rate)
-        .put("effectiveAt", effectiveAt).put("recordedAt", recordedAt)
-        .put("source", source).put("isArchived", isArchived)
-
-    private fun ExchangeRateAuditEntity.toBackupJson() = JSONObject()
-        .put("id", id).put("historyId", historyId).put("eventType", eventType)
-        .put("oldRate", oldRate).put("newRate", newRate).put("reason", reason)
-        .put("correctedAt", correctedAt).put("affectedInvoiceCount", affectedInvoiceCount)
-        .put("affectedLedgerCount", affectedLedgerCount).put("affectedJournalCount", affectedJournalCount)
-        .put("financialAmountsChanged", financialAmountsChanged)
-
-    private fun ExchangeRateCorrectionItemEntity.toBackupJson() = JSONObject()
-        .put("id", id).put("auditId", auditId).put("recordType", recordType)
-        .put("recordId", recordId).put("sourceType", sourceType).put("sourceId", sourceId)
-        .put("oldRate", oldRate).put("newRate", newRate)
-
     private fun JSONObject.toCategoryEntity() = CategoryEntity(
         id = getString("id"), name = getString("name"), note = getString("note"), createdAt = getLong("createdAt")
     )
@@ -477,32 +435,12 @@ class AccountingBackupManager(
         debit = getString("debit"), credit = getString("credit"), memo = getString("memo")
     )
 
-    private fun JSONObject.toExchangeRateHistoryEntity() = ExchangeRateHistoryEntity(
-        id = getString("id"), currencyPair = getString("currencyPair"), rate = getString("rate"),
-        effectiveAt = getLong("effectiveAt"), recordedAt = getLong("recordedAt"),
-        source = getString("source"), isArchived = getBoolean("isArchived")
-    )
-
-    private fun JSONObject.toExchangeRateAuditEntity() = ExchangeRateAuditEntity(
-        id = getString("id"), historyId = getString("historyId"), eventType = getString("eventType"),
-        oldRate = getString("oldRate"), newRate = getString("newRate"), reason = getString("reason"),
-        correctedAt = getLong("correctedAt"), affectedInvoiceCount = getInt("affectedInvoiceCount"),
-        affectedLedgerCount = getInt("affectedLedgerCount"), affectedJournalCount = getInt("affectedJournalCount"),
-        financialAmountsChanged = getBoolean("financialAmountsChanged")
-    )
-
-    private fun JSONObject.toExchangeRateCorrectionItemEntity() = ExchangeRateCorrectionItemEntity(
-        id = getString("id"), auditId = getString("auditId"), recordType = getString("recordType"),
-        recordId = getString("recordId"), sourceType = getString("sourceType"),
-        sourceId = getString("sourceId"), oldRate = getString("oldRate"), newRate = getString("newRate")
-    )
-
     private fun JSONObject.nullableString(key: String): String? =
         if (isNull(key)) null else getString(key)
 
     companion object {
         private const val BACKUP_FORMAT = "good-girl-accounting-backup"
-        private const val BACKUP_FORMAT_VERSION = 4
+        private const val BACKUP_FORMAT_VERSION = 3
         private const val APPLICATION_ID = "com.goodgirl.accounting"
         private const val MIN_SUPPORTED_BACKUP_DATABASE_VERSION = 4
         private const val DATABASE_VERSION = ACCOUNTING_DATABASE_VERSION
