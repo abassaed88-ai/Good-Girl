@@ -233,7 +233,7 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
 
             private fun migrateExistingBalancesToOpeningJournals(database: SupportSQLiteDatabase) {
-                val balances = linkedMapOf<String, CurrencyBalances>()
+                val balances = linkedMapOf<String, MigrationCurrencyBalances>()
                 database.query(
                     "SELECT entryType, amount, currencyCode, exchangeRateSnapshot, occurredAt " +
                         "FROM ledger_entries ORDER BY occurredAt, id"
@@ -290,7 +290,7 @@ abstract class AccountingDatabase : RoomDatabase() {
 
                 val migrationTime = System.currentTimeMillis()
                 balances.toSortedMap().forEach { (currency, totals) ->
-                    val lines = mutableListOf<OpeningLine>()
+                    val lines = mutableListOf<MigrationOpeningLine>()
                     addAssetBalance(lines, "SYS-1000", totals.cash, "رصيد الصندوق المرحّل")
                     addAssetBalance(lines, "SYS-1100", totals.receivables, "صافي ذمم العملاء المرحّل")
                     addAssetBalance(lines, "SYS-1200", totals.inventory, "قيمة المخزون المرحّلة")
