@@ -1198,11 +1198,16 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
             enabled = !isExportingReport,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text(if (isExportingReport) "جارٍ تجهيز التقرير..." else "تصدير التقرير إلى PDF")
+            Text(if (isExportingReport) "جارٍ تجهيز التقرير..." else "تصدير تقرير المبيعات التفصيلي إلى PDF")
         }
         reportExportMessage?.let {
             Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
         }
+        Text(
+            "تصدير PDF الحالي خاص بتقرير الفواتير وتحليل المواد؛ قوائم دفتر الأستاذ العام المعروضة أدناه لم تُضمّن بعد في ملف PDF.",
+            color = MutedText,
+            fontSize = 11.sp
+        )
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TextButton(onClick = { selectedPeriod = "TODAY" }, enabled = selectedPeriod != "TODAY") { Text("اليوم") }
             TextButton(onClick = { selectedPeriod = "MONTH" }, enabled = selectedPeriod != "MONTH") { Text("هذا الشهر") }
