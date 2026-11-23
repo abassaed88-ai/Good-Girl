@@ -144,3 +144,73 @@ data class LedgerEntryEntity(
     val occurredAt: Long,
     val note: String = ""
 )
+
+
+@Entity(
+    tableName = "accounts",
+    indices = [Index(value = ["code"], unique = true)]
+)
+data class AccountEntity(
+    @PrimaryKey val id: String,
+    val code: String,
+    val name: String,
+    /** ASSET, LIABILITY, EQUITY, REVENUE, or EXPENSE. */
+    val accountType: String,
+    /** DEBIT or CREDIT. */
+    val normalSide: String,
+    val isSystem: Boolean,
+    val isActive: Boolean,
+    val createdAt: Long
+)
+
+@Entity(
+    tableName = "journal_entries",
+    indices = [
+        Index(value = ["journalNumber"], unique = true),
+        Index(value = ["sourceType", "sourceId"], unique = true),
+        Index(value = ["occurredAt"])
+    ]
+)
+data class JournalEntryEntity(
+    @PrimaryKey val id: String,
+    val journalNumber: String,
+    val sourceType: String,
+    val sourceId: String,
+    val currencyCode: String,
+    val exchangeRateSnapshot: String,
+    val occurredAt: Long,
+    val description: String,
+    val createdAt: Long
+)
+
+@Entity(
+    tableName = "journal_lines",
+    foreignKeys = [
+        ForeignKey(
+            entity = JournalEntryEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["journalEntryId"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = AccountEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["accountId"],
+            onDelete = ForeignKey.RESTRICT
+        )
+    ],
+    indices = [
+        Index(value = ["journalEntryId"]),
+        Index(value = ["accountId"]),
+        Index(value = ["journalEntryId", "lineNumber"], unique = true)
+    ]
+)
+data class JournalLineEntity(
+    @PrimaryKey val id: String,
+    val journalEntryId: String,
+    val lineNumber: Int,
+    val accountId: String,
+    val debit: String,
+    val credit: String,
+    val memo: String
+)
