@@ -452,7 +452,7 @@ private fun SettingsScreen(onBack: () -> Unit) {
                 message?.let {
                     Text(
                         it,
-                        color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
+                        color = if (it.startsWith("تم")) SoftGreen else SoftRed,
                         fontSize = 13.sp
                     )
                 }
@@ -461,7 +461,7 @@ private fun SettingsScreen(onBack: () -> Unit) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("سجل تعديلات سعر الصرف", color = Ink, fontWeight = FontWeight.Bold)
@@ -491,7 +491,7 @@ private fun SettingsScreen(onBack: () -> Unit) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("ملاحظات", color = Ink, fontWeight = FontWeight.Bold)
@@ -611,7 +611,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
             fontSize = 13.sp
         )
 
-        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("بيانات الفاتورة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
                 Box {
@@ -657,7 +657,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("إضافة مادة إلى الفاتورة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
                 Box {
@@ -744,7 +744,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
             draftLines.forEachIndexed { index, line ->
                 val productName = products.firstOrNull { it.id == line.productId }?.name ?: "مادة"
                 val net = InvoicePostingRules.calculateLineTotal(line.quantity, line.unitPrice, line.discount)
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -760,7 +760,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("ملخص الفاتورة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
                 Text("المجموع قبل الخصومات: " + subtotal.stripTrailingZeros().toPlainString() + " " + currencyCode, color = Ink)
@@ -808,7 +808,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                     Text(if (isSaving) "جارٍ ترحيل الفاتورة..." else "حفظ وترحيل الفاتورة")
                 }
                 message?.let {
-                    Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                    Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
                 }
             }
         }
@@ -816,7 +816,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
         val recentInvoices = invoices.filter { it.kind == kind }.take(10)
         Text("آخر الفواتير (" + recentInvoices.size + ")", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
         recentInvoices.forEach { invoice ->
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text(invoice.invoiceNumber, color = Ink, fontWeight = FontWeight.Bold)
                     Text("الإجمالي: " + invoice.total + " " + invoice.currencyCode, color = BrandBlue, fontSize = 13.sp)
@@ -843,7 +843,7 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
 
         val paymentInvoice = recentInvoices.firstOrNull { it.id == paymentInvoiceId }
         if (paymentInvoice != null) {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text(
                         (if (kind == "SALE") "قبض دفعة من " else "دفع دفعة إلى ") + paymentInvoice.invoiceNumber,
@@ -886,10 +886,10 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
             }
         }
         pdfMessage?.let {
-            Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+            Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
         }
         paymentMessage?.let {
-            Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+            Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
         }
     }
 }
@@ -986,7 +986,7 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
             Text(if (isExportingReport) "جارٍ تجهيز التقرير..." else "تصدير التقرير إلى PDF")
         }
         reportExportMessage?.let {
-            Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+            Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TextButton(onClick = { selectedPeriod = "TODAY" }, enabled = selectedPeriod != "TODAY") { Text("اليوم") }
@@ -1004,12 +1004,12 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
         )
 
         if (report.currencySummaries.isEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                 Text("لا توجد بيانات مالية ضمن الفترة المحددة.", modifier = Modifier.padding(18.dp), color = MutedText)
             }
         } else {
             report.currencySummaries.forEach { summary ->
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
                         Text("العملة: " + summary.currencyCode, color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                         ReportValueRow("مبيعات فواتير البيع", summary.sales, summary.currencyCode)
@@ -1030,7 +1030,7 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
             Text("لا توجد مبيعات مواد ضمن الفترة المحددة.", color = MutedText, fontSize = 13.sp)
         } else {
             report.products.take(20).forEach { product ->
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(product.productName, color = Ink, fontWeight = FontWeight.Bold)
                         Text("الكمية بوحدة الأساس: " + product.quantity.stripTrailingZeros().toPlainString(), color = MutedText, fontSize = 12.sp)
@@ -1038,7 +1038,7 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
                         Text("تكلفة البضاعة: " + product.cost.stripTrailingZeros().toPlainString() + " " + product.currencyCode, color = MutedText, fontSize = 12.sp)
                         Text(
                             "ربح المادة: " + product.profit.stripTrailingZeros().toPlainString() + " " + product.currencyCode,
-                            color = if (product.profit >= BigDecimal.ZERO) Color(0xFF287A4B) else Color(0xFFB42332),
+                            color = if (product.profit >= BigDecimal.ZERO) SoftGreen else SoftRed,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp
                         )
@@ -1112,7 +1112,7 @@ private fun CashManagementScreen(onBack: () -> Unit) {
         Text("الصندوق والمصروفات", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
         Text("تسجيل الإيرادات والمصروفات ومتابعة حركات القبض والصرف المسجلة", color = MutedText, fontSize = 13.sp)
 
-        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("حركة مالية جديدة", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Ink)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1165,7 +1165,7 @@ private fun CashManagementScreen(onBack: () -> Unit) {
                     Text(if (isSaving) "جارٍ الحفظ..." else if (selectedKind == "INCOME") "تسجيل الإيراد" else "تسجيل المصروف")
                 }
                 message?.let {
-                    Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                    Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
                 }
             }
         }
@@ -1176,11 +1176,11 @@ private fun CashManagementScreen(onBack: () -> Unit) {
         } else {
             totals.forEach { (currency, pair) ->
                 val net = pair.first.subtract(pair.second)
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(currency, color = BrandBlue, fontWeight = FontWeight.Bold)
-                        Text("إجمالي المقبوض: " + pair.first.stripTrailingZeros().toPlainString(), color = Color(0xFF287A4B), fontSize = 13.sp)
-                        Text("إجمالي المصروف: " + pair.second.stripTrailingZeros().toPlainString(), color = Color(0xFFB42332), fontSize = 13.sp)
+                        Text("إجمالي المقبوض: " + pair.first.stripTrailingZeros().toPlainString(), color = SoftGreen, fontSize = 13.sp)
+                        Text("إجمالي المصروف: " + pair.second.stripTrailingZeros().toPlainString(), color = SoftRed, fontSize = 13.sp)
                         Text("صافي الحركات: " + net.stripTrailingZeros().toPlainString(), color = Ink, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -1189,7 +1189,7 @@ private fun CashManagementScreen(onBack: () -> Unit) {
 
         Text("آخر حركات الصندوق", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
         if (cashMovements.isEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                 Text("لا توجد حركات بعد.", modifier = Modifier.padding(18.dp), color = MutedText)
             }
         } else {
@@ -1198,9 +1198,9 @@ private fun CashManagementScreen(onBack: () -> Unit) {
                 val date = remember(entry.occurredAt) {
                     SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(entry.occurredAt))
                 }
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(if (isIn) "قبض" else "صرف", color = if (isIn) Color(0xFF287A4B) else Color(0xFFB42332), fontWeight = FontWeight.Bold)
+                        Text(if (isIn) "قبض" else "صرف", color = if (isIn) SoftGreen else SoftRed, fontWeight = FontWeight.Bold)
                         Text(entry.amount + " " + entry.currencyCode, color = Ink, fontWeight = FontWeight.SemiBold)
                         Text(date, color = MutedText, fontSize = 11.sp)
                         if (entry.note.isNotBlank()) Text(entry.note, color = MutedText, fontSize = 12.sp)
@@ -1278,7 +1278,7 @@ private fun AccountsAndDebtsScreen(
             Card(
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
             ) {
                 Column(modifier = Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("ديون العملاء", color = MutedText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
@@ -1289,11 +1289,11 @@ private fun AccountsAndDebtsScreen(
             Card(
                 modifier = Modifier.weight(1f),
                 shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
             ) {
                 Column(modifier = Modifier.padding(13.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("ديون الموردين", color = MutedText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    Text(formatCurrencyTotals(supplierTotals), color = Color(0xFFB42332), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(formatCurrencyTotals(supplierTotals), color = SoftRed, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Text(supplierRows.size.toString() + " حساب له رصيد", color = MutedText, fontSize = 11.sp)
                 }
             }
@@ -1307,7 +1307,7 @@ private fun AccountsAndDebtsScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable { onOpenStatement(party.id) },
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(party.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -1333,14 +1333,14 @@ private fun AccountsAndDebtsScreen(
                 Card(
                     modifier = Modifier.fillMaxWidth().clickable { onOpenStatement(party.id) },
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Text(party.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         balances.forEach { (currency, amount) ->
                             Text(
                                 amount.stripTrailingZeros().toPlainString() + " " + currency,
-                                color = Color(0xFFB42332),
+                                color = SoftRed,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 13.sp
                             )
@@ -1429,15 +1429,15 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
         TextButton(onClick = onBack) { Text("العودة إلى الحسابات") }
         Text("كشف الحساب", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
         if (party == null) {
-            Text("الحساب غير موجود", color = Color(0xFFB42332))
+            Text("الحساب غير موجود", color = SoftRed)
         } else {
             Text(party?.name.orEmpty(), color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             val balances = PartyBalanceCalculator.calculate(party?.kind.orEmpty(), entries)
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(if (party?.kind == "CUSTOMER") "المبالغ المستحقة لنا" else "المبالغ المستحقة علينا", color = MutedText, fontSize = 13.sp)
                     if (balances.isEmpty()) {
-                        Text("لا يوجد رصيد مستحق", color = Color(0xFF287A4B), fontWeight = FontWeight.Bold)
+                        Text("لا يوجد رصيد مستحق", color = SoftGreen, fontWeight = FontWeight.Bold)
                     } else {
                         balances.forEach { (currency, amount) ->
                             Text(amount.stripTrailingZeros().toPlainString() + " " + currency, color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -1457,7 +1457,7 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                 Text(if (isExportingStatement) "جارٍ تجهيز كشف الحساب..." else "تصدير كشف الحساب PDF")
             }
             if (statementPdfMessage != null) {
-                Text(statementPdfMessage.orEmpty(), color = if (statementPdfMessage!!.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332))
+                Text(statementPdfMessage.orEmpty(), color = if (statementPdfMessage!!.startsWith("تم")) SoftGreen else SoftRed)
             }
             Button(onClick = {
                 showPaymentForm = !showPaymentForm
@@ -1473,7 +1473,7 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                 Text(if (party?.kind == "CUSTOMER") "تسجيل تحصيل مستقل" else "تسجيل دفعة مستقلة")
             }
             if (showPaymentForm) {
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("تسجيل حركة مالية للحساب", color = Ink, fontWeight = FontWeight.Bold)
                         OutlinedTextField(
@@ -1513,7 +1513,7 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                             minLines = 2
                         )
                         if (paymentMessage.isNotBlank()) {
-                            Text(paymentMessage, color = if (paymentMessage.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332))
+                            Text(paymentMessage, color = if (paymentMessage.startsWith("تم")) SoftGreen else SoftRed)
                         }
                         Button(
                             onClick = {
@@ -1550,7 +1550,7 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
             }
             Text("الحركات المالية", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
             if (runningRows.isEmpty()) {
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Text("لا توجد حركات مالية لهذا الحساب بعد.", modifier = Modifier.padding(18.dp), color = MutedText)
                 }
             } else {
@@ -1565,13 +1565,13 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                         "PAYABLE_PAYMENT" -> "دفعة مورد / تخفيض المستحق"
                         else -> entry.entryType
                     }
-                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Text(title, color = Ink, fontWeight = FontWeight.Bold)
                             Text(dateText, color = MutedText, fontSize = 11.sp)
                             Text(
                                 (if (increases) "+" else "-") + entry.amount + " " + entry.currencyCode,
-                                color = if (increases) Color(0xFFB42332) else Color(0xFF287A4B),
+                                color = if (increases) SoftRed else SoftGreen,
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text("الرصيد بعد الحركة: " + balanceAfter.stripTrailingZeros().toPlainString() + " " + entry.currencyCode, color = BrandBlue, fontSize = 12.sp)
@@ -1650,7 +1650,7 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
         ) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text(
@@ -1723,7 +1723,7 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
                     TextButton(onClick = { clearForm(); message = null }) { Text("إلغاء التعديل") }
                 }
                 message?.let {
-                    Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                    Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
                 }
             }
         }
@@ -1735,12 +1735,12 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
             color = Ink
         )
         if (parties.isEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                 Text("لا توجد سجلات بعد. أضف أول جهة تعامل من النموذج أعلاه.", modifier = Modifier.padding(18.dp), color = MutedText)
             }
         } else {
             parties.forEach { party ->
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text(party.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -1776,10 +1776,10 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
         TextButton(onClick = onBack) { Text("العودة إلى المنتجات") }
         Text("سجل حركة المخزون", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
         if (product == null) {
-            Text("المنتج غير موجود", color = Color(0xFFB42332))
+            Text("المنتج غير موجود", color = SoftRed)
         } else {
             Text(product?.name.orEmpty(), color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text("الرصيد الحالي", color = MutedText, fontSize = 12.sp)
                     Text(
@@ -1792,7 +1792,7 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
             }
             Text("عدد الحركات: ${movements.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
             if (movements.isEmpty()) {
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Text("لا توجد حركات مسجلة لهذا المنتج بعد.", modifier = Modifier.padding(18.dp), color = MutedText)
                 }
             } else {
@@ -1811,13 +1811,13 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
                         "PURCHASE_INVOICE" -> "فاتورة شراء"
                         else -> "حركة مخزون"
                     }
-                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(sourceLabel, color = Ink, fontWeight = FontWeight.Bold)
                                 Text(
                                     (if (isIncrease) "+" else "-") + quantity + " " + (product?.baseUnit ?: ""),
-                                    color = if (isIncrease) Color(0xFF287A4B) else Color(0xFFB42332),
+                                    color = if (isIncrease) SoftGreen else SoftRed,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -1871,7 +1871,7 @@ private fun ProductCategoriesScreen(onBack: () -> Unit) {
     ) {
         TextButton(onClick = onBack) { Text("العودة إلى المنتجات") }
         Text("تصنيفات المنتجات", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
-        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text(if (editingId == null) "إضافة تصنيف" else "تعديل التصنيف", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
                 OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("اسم التصنيف *") }, singleLine = true)
@@ -1902,7 +1902,7 @@ private fun ProductCategoriesScreen(onBack: () -> Unit) {
                     TextButton(onClick = { clearForm(); message = null }) { Text("إلغاء التعديل") }
                 }
                 message?.let {
-                    Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                    Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
                 }
             }
         }
@@ -1911,7 +1911,7 @@ private fun ProductCategoriesScreen(onBack: () -> Unit) {
             Text("لم تتم إضافة تصنيفات بعد. يمكنك ترك المنتجات دون تصنيف.", color = MutedText, fontSize = 13.sp)
         } else {
             categories.forEach { category ->
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Row(modifier = Modifier.fillMaxWidth().padding(14.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(category.name, color = Ink, fontWeight = FontWeight.Bold)
@@ -1946,7 +1946,7 @@ private fun ProductUnitsScreen(productId: String, onBack: () -> Unit) {
         TextButton(onClick = onBack) { Text("العودة إلى المنتجات") }
         Text("وحدات قياس المنتج", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
         if (product == null) {
-            Text("المنتج غير موجود", color = Color(0xFFB42332))
+            Text("المنتج غير موجود", color = SoftRed)
         } else {
             Text(product?.name.orEmpty(), color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             Text(
@@ -1957,7 +1957,7 @@ private fun ProductUnitsScreen(productId: String, onBack: () -> Unit) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
             ) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                     Text("إضافة وحدة جديدة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
@@ -1989,13 +1989,13 @@ private fun ProductUnitsScreen(productId: String, onBack: () -> Unit) {
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(if (isSaving) "جارٍ الحفظ..." else "إضافة الوحدة") }
                     message?.let {
-                        Text(it, color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332), fontSize = 13.sp)
+                        Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
                     }
                 }
             }
             Text("الوحدات المتاحة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
             units.forEach { unit ->
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = Color.White)) {
+                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(unit.unitName, color = Ink, fontWeight = FontWeight.Bold)
                         Text(
@@ -2106,7 +2106,7 @@ private fun ProductManagementScreen(
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -2236,7 +2236,7 @@ private fun ProductManagementScreen(
                 message?.let {
                     Text(
                         it,
-                        color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
+                        color = if (it.startsWith("تم")) SoftGreen else SoftRed,
                         fontSize = 13.sp
                     )
                 }
@@ -2261,7 +2261,7 @@ private fun ProductManagementScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
             ) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -2408,7 +2408,7 @@ private fun ProductManagementScreen(
         stockMessage?.let {
             Text(
                 it,
-                color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
+                color = if (it.startsWith("تم")) SoftGreen else SoftRed,
                 fontSize = 13.sp
             )
         }
@@ -2420,7 +2420,7 @@ private fun ProductManagementScreen(
         if (lowStockProducts.isNotEmpty()) {
             Text(
                 "مواد منخفضة المخزون: " + lowStockProducts.size,
-                color = Color(0xFFB42332),
+                color = SoftRed,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp
             )
@@ -2450,7 +2450,7 @@ private fun ProductManagementScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
             ) {
                 Text("لا توجد منتجات مسجلة بعد. أضف أول منتج من النموذج أعلاه.", modifier = Modifier.padding(18.dp), color = MutedText)
             }
@@ -2458,7 +2458,7 @@ private fun ProductManagementScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
             ) {
                 Text("لا توجد منتجات مطابقة لمعايير البحث أو التصفية.", modifier = Modifier.padding(18.dp), color = MutedText)
             }
@@ -2491,7 +2491,7 @@ private fun ProductListItem(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = CardSurface)
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2510,11 +2510,11 @@ private fun ProductListItem(
                 Text("التصنيف: " + categoryName, color = MutedText, fontSize = 12.sp)
             }
             if (isLowStock) {
-                Text("تنبيه: المخزون منخفض", color = Color(0xFFB42332), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                Text("تنبيه: المخزون منخفض", color = SoftRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("الرصيد: ${product.stockQuantity} ${product.baseUnit}", color = BrandBlue, fontSize = 13.sp)
-                Text("سعر البيع: ${product.salePrice} ${product.priceCurrencyCode}", color = Color(0xFF287A4B), fontSize = 13.sp)
+                Text("سعر البيع: ${product.salePrice} ${product.priceCurrencyCode}", color = SoftGreen, fontSize = 13.sp)
             }
             Text("الكلفة: ${product.purchaseCost} ${product.priceCurrencyCode}", color = MutedText, fontSize = 12.sp)
         }
@@ -2694,7 +2694,7 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
@@ -2798,7 +2798,7 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
                     Text(
                         "الربح التقديري: " + previewProfit.stripTrailingZeros().toPlainString() +
                             " " + selectedProduct.priceCurrencyCode,
-                        color = if (previewProfit >= BigDecimal.ZERO) Color(0xFF287A4B) else Color(0xFFB42332),
+                        color = if (previewProfit >= BigDecimal.ZERO) SoftGreen else SoftRed,
                         fontWeight = FontWeight.Bold
                     )
                     if (selectedProduct.priceCurrencyCode == "USD") {
@@ -2936,7 +2936,7 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
                 message?.let {
                     Text(
                         it,
-                        color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
+                        color = if (it.startsWith("تم")) SoftGreen else SoftRed,
                         fontSize = 13.sp
                     )
                 }
@@ -2975,7 +2975,7 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
         if (rows.isEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(containerColor = Color.White)
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
             ) {
                 Text(
                     "لا توجد مبيعات مرحلة في هذا اليوم.",
@@ -2988,7 +2988,7 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
                 ) {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(14.dp),
@@ -3010,7 +3010,7 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
                         Text(
                             "الربح: " + row.profit.stripTrailingZeros().toPlainString() +
                                 " " + row.currencyCode,
-                            color = if (row.profit >= BigDecimal.ZERO) Color(0xFF287A4B) else Color(0xFFB42332),
+                            color = if (row.profit >= BigDecimal.ZERO) SoftGreen else SoftRed,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
                         )
@@ -3055,7 +3055,7 @@ private fun SummaryCard(
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = CardSurface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
@@ -3076,7 +3076,7 @@ private fun SectionRow(number: Int, title: String, icon: String? = null, onClick
             .fillMaxWidth()
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+        colors = CardDefaults.cardColors(containerColor = CardSurface)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 15.dp),
