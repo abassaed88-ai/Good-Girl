@@ -240,17 +240,50 @@ class PartySettlementIntegrationTest {
             val updatedPurchase = database.invoiceDao().findById(purchase.invoiceId)!!
             assertDecimal("7", updatedPurchase.paid)
             assertDecimal("5", updatedPurchase.remaining)
+
+            // Verify the second payment path (directly against the purchase invoice)
+            // posts a separate, balanced journal and reduces the supplier balance.
+            invoices.recordPayment(
+                invoiceId = purchase.invoiceId,
+                amount = "2",
+                note = "دفعة مباشرة على فاتورة الشراء",
+                occurredAt = 2_000L
+            )
+            val afterDirectPayment = database.invoiceDao().findById(purchase.invoiceId)!!
+            assertDecimal("9", afterDirectPayment.paid)
+            assertDecimal("3", afterDirectPayment.remaining)
             assertDecimal(
-                "10",
+                "8",
                 PartyBalanceCalculator.calculate(
                     "SUPPLIER",
                     database.ledgerDao().getForParty(supplier.id)
                 ).getValue("SYP").toPlainString()
             )
 
-            val entries = database.ledgerDao().getAll()
+            val journals = database.journalEntryDao().getAll()
+            assertEquals(3, journals.size)
+            assertEquals(1, journals.count { it.sourceType == "SUPPLIER_PAYMENT" })
+            assertEquals(1, journals.count { it.sourceType == "PURCHASE_PAYMENT" })
+            journals.forEach { journal ->
+                val journalLines = database.journalLineDao().getForEntry(journal.id)
+                val debits = journalLines.fold(BigDecimal.ZERO) { sum, line -> sum + line.debit.toBigDecimal() }
+                val credits = journalLines.fold(BigDecimal.ZERO) { sum, line -> sum + line.credit.toBigDecimal() }
+                assertEquals(0, debits.compareTo(credits))
+            }
+            val supplierPaymentJournal = journals.single { it.sourceType == "SUPPLIER_PAYMENT" }
+            val supplierPaymentLines = database.journalLineDao().getForEntry(supplierPaymentJournal.id)
             assertDecimal(
                 "7",
+                supplierPaymentLines.fold(BigDecimal.ZERO) { sum, line -> sum + line.debit.toBigDecimal() }.toPlainString()
+            )
+            assertDecimal(
+                "7",
+                supplierPaymentLines.fold(BigDecimal.ZERO) { sum, line -> sum + line.credit.toBigDecimal() }.toPlainString()
+            )
+
+            val entries = database.ledgerDao().getAll()
+            assertDecimal(
+                "9",
                 entries.filter { it.entryType == "CASH_OUT" }
                     .fold(BigDecimal.ZERO) { sum, entry -> sum + entry.amount.toBigDecimal() }
                     .toPlainString()
