@@ -27,7 +27,7 @@ class JournalReversalIntegrationTest {
 
             val originalId = repository.postJournalEntry(
                 journalNumber = "JE-ORIGINAL-001",
-                sourceType = "TEST_MANUAL",
+                sourceType = "MANUAL_JOURNAL",
                 sourceId = "manual-001",
                 currencyCode = "SYP",
                 exchangeRateSnapshot = "1",
@@ -90,7 +90,7 @@ class JournalReversalIntegrationTest {
             val accounts = database.accountDao().getAll().associateBy { it.code }
             val originalId = repository.postJournalEntry(
                 journalNumber = "JE-ORIGINAL-002",
-                sourceType = "TEST_MANUAL",
+                sourceType = "MANUAL_JOURNAL",
                 sourceId = "manual-002",
                 currencyCode = "USD",
                 exchangeRateSnapshot = "15000",
@@ -145,7 +145,7 @@ class JournalReversalIntegrationTest {
             val accounts = database.accountDao().getAll().associateBy { it.code }
             val originalId = repository.postJournalEntry(
                 journalNumber = "JE-ORIGINAL-003",
-                sourceType = "TEST_MANUAL",
+                sourceType = "MANUAL_JOURNAL",
                 sourceId = "manual-003",
                 currencyCode = "SYP",
                 exchangeRateSnapshot = "1",
