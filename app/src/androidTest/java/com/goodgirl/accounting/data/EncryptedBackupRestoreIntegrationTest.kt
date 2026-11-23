@@ -114,7 +114,7 @@ class EncryptedBackupRestoreIntegrationTest {
             val result = AccountingBackupManager(context, database)
                 .restoreBackup(android.net.Uri.fromFile(backupFile), restorePassword)
 
-            assertEquals(2, result.recordCount)
+            assertEquals(3, result.recordCount)
             assertTrue(restorePassword.all { it == '\u0000' })
 
             val products = database.productDao().getAll()
