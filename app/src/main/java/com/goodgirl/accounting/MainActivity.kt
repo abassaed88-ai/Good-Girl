@@ -69,6 +69,7 @@ import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.domain.CashTransactionRules
 import com.goodgirl.accounting.domain.FinancialReportCalculator
+import com.goodgirl.accounting.domain.TrialBalanceCalculator
 import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
@@ -1047,11 +1048,26 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
     val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
     val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
     val ledgerEntries by database.ledgerDao().observeAll().collectAsState(initial = emptyList())
+    val accounts by database.accountDao().observeAll().collectAsState(initial = emptyList())
+    val journalEntries by database.journalEntryDao().observeAll().collectAsState(initial = emptyList())
+    val journalLines by database.journalLineDao().observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var selectedPeriod by remember { mutableStateOf("TODAY") }
+    var showTrialBalance by remember { mutableStateOf(false) }
     var isExportingReport by remember { mutableStateOf(false) }
     var reportExportMessage by remember { mutableStateOf<String?>(null) }
     val now = System.currentTimeMillis()
+    val trialBalanceResult = remember(accounts, journalEntries, journalLines, now) {
+        runCatching {
+            TrialBalanceCalculator.calculate(
+                asOfInclusive = now,
+                accounts = accounts,
+                entries = journalEntries,
+                lines = journalLines
+            )
+        }
+    }
+    val trialBalance = trialBalanceResult.getOrNull()
     val fromTime = remember(selectedPeriod) {
         when (selectedPeriod) {
             "TODAY" -> java.util.Calendar.getInstance().apply {
@@ -1147,6 +1163,86 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
             color = MutedText,
             fontSize = 13.sp
         )
+
+        TextButton(onClick = { showTrialBalance = !showTrialBalance }) {
+            Text(if (showTrialBalance) "إخفاء ميزان المراجعة" else "عرض ميزان المراجعة")
+        }
+        if (showTrialBalance) {
+            Text(
+                "ميزان المراجعة حتى " + SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(now)),
+                style = MaterialTheme.typography.titleLarge,
+                color = Ink,
+                fontWeight = FontWeight.Bold
+            )
+            val trialBalanceError = trialBalanceResult.exceptionOrNull()
+            if (trialBalanceError != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Text(
+                        "تعذر حساب ميزان المراجعة: " + (trialBalanceError.message ?: "بيانات القيود غير سليمة"),
+                        modifier = Modifier.padding(16.dp),
+                        color = SoftRed
+                    )
+                }
+            } else if (trialBalance == null || trialBalance.rows.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Text(
+                        "لا توجد قيود محاسبية مرحلة حتى الآن.",
+                        modifier = Modifier.padding(16.dp),
+                        color = MutedText
+                    )
+                }
+            } else {
+                trialBalance.currencySummaries.forEach { summary ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("ملخص العملة: " + summary.currencyCode, color = BrandBlue, fontWeight = FontWeight.Bold)
+                            ReportValueRow("إجمالي الحركات المدينة", summary.totalDebits, summary.currencyCode)
+                            ReportValueRow("إجمالي الحركات الدائنة", summary.totalCredits, summary.currencyCode)
+                            ReportValueRow("الأرصدة المدينة", summary.debitBalances, summary.currencyCode, strong = true)
+                            ReportValueRow("الأرصدة الدائنة", summary.creditBalances, summary.currencyCode, strong = true)
+                        }
+                    }
+                }
+                Text("تفاصيل الحسابات", color = Ink, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                trialBalance.rows.forEach { row ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(row.accountCode + " — " + row.accountName, color = Ink, fontWeight = FontWeight.Bold)
+                            Text("العملة: " + row.currencyCode + "   |   نوع الحساب: " + row.accountType, color = MutedText, fontSize = 12.sp)
+                            ReportValueRow("إجمالي مدين", row.totalDebit, row.currencyCode)
+                            ReportValueRow("إجمالي دائن", row.totalCredit, row.currencyCode)
+                            ReportValueRow("الرصيد المدين", row.debitBalance, row.currencyCode, strong = true)
+                            ReportValueRow("الرصيد الدائن", row.creditBalance, row.currencyCode, strong = true)
+                        }
+                    }
+                }
+                Text(
+                    "كل عملة معروضة بشكل مستقل. ميزان المراجعة مبني على قيود اليومية المرحلة فقط ولا يجمع الليرة والدولار.",
+                    color = MutedText,
+                    fontSize = 12.sp
+                )
+            }
+        }
 
         if (report.currencySummaries.isEmpty()) {
             Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
