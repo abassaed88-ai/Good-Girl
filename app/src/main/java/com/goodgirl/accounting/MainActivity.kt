@@ -30,7 +30,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -86,20 +86,23 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-private val BrandBlue = Color(0xFFE83E91)
-private val LightGray = Color(0xFF17141B)
-private val CardSurface = Color(0xFF25212A)
-private val SoftGreen = Color(0xFF78C9A0)
-private val SoftRed = Color(0xFFE58A9B)
-private val SoftPurple = Color(0xFFC09AE8)
-private val Ink = Color(0xFFF5EFF5)
-private val MutedText = Color(0xFFB8AEBB)
+private val BrandBlue = Color(0xFF438DA8)
+private val LightGray = Color(0xFFEAF3F7)
+private val CardSurface = Color(0xFFFFFFFF)
+private val SoftGreen = Color(0xFF34865A)
+private val SoftRed = Color(0xFFC34D5A)
+private val SoftPurple = Color(0xFF438DA8)
+private val Ink = Color(0xFF203744)
+private val MutedText = Color(0xFF607985)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(23, 20, 27)
-        window.navigationBarColor = android.graphics.Color.rgb(23, 20, 27)
+        window.statusBarColor = android.graphics.Color.rgb(234, 243, 247)
+        window.navigationBarColor = android.graphics.Color.rgb(234, 243, 247)
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+            window.decorView.systemUiVisibility = window.decorView.systemUiVisibility or android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+        }
         setContent {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 GoodGirlApp()
@@ -118,7 +121,7 @@ private fun GoodGirlApp() {
     var journalEntryDetailId by remember { mutableStateOf<String?>(null) }
     var accountLedgerId by remember { mutableStateOf<String?>(null) }
     MaterialTheme(
-        colorScheme = darkColorScheme(
+        colorScheme = lightColorScheme(
             primary = BrandBlue,
             secondary = SoftPurple,
             background = LightGray,
@@ -126,7 +129,7 @@ private fun GoodGirlApp() {
             onPrimary = Color.White,
             onSurface = Ink,
             onBackground = Ink,
-            surfaceVariant = Color(0xFF332C38),
+            surfaceVariant = Color(0xFFDCEAF0),
             onSurfaceVariant = MutedText
         )
     ) {
