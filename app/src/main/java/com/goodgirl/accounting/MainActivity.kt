@@ -26,13 +26,16 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Switch
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -86,14 +89,51 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-private val BrandBlue = Color(0xFF438DA8)
-private val LightGray = Color(0xFFEAF3F7)
-private val CardSurface = Color(0xFFFFFFFF)
-private val SoftGreen = Color(0xFF34865A)
-private val SoftRed = Color(0xFFC34D5A)
-private val SoftPurple = Color(0xFF438DA8)
-private val Ink = Color(0xFF203744)
-private val MutedText = Color(0xFF607985)
+private data class AppPalette(
+    val brandBlue: Color,
+    val background: Color,
+    val cardSurface: Color,
+    val softGreen: Color,
+    val softRed: Color,
+    val softPurple: Color,
+    val ink: Color,
+    val mutedText: Color,
+    val surfaceVariant: Color
+)
+
+private val LightPalette = AppPalette(
+    brandBlue = Color(0xFF438DA8),
+    background = Color(0xFFEAF3F7),
+    cardSurface = Color(0xFFFFFFFF),
+    softGreen = Color(0xFF34865A),
+    softRed = Color(0xFFC34D5A),
+    softPurple = Color(0xFF438DA8),
+    ink = Color(0xFF203744),
+    mutedText = Color(0xFF607985),
+    surfaceVariant = Color(0xFFDCEAF0)
+)
+
+private val DarkPalette = AppPalette(
+    brandBlue = Color(0xFF80C2DA),
+    background = Color(0xFF101A20),
+    cardSurface = Color(0xFF1B2930),
+    softGreen = Color(0xFF83D3A8),
+    softRed = Color(0xFFFF929A),
+    softPurple = Color(0xFF9BCFE2),
+    ink = Color(0xFFE7F0F4),
+    mutedText = Color(0xFFA9BDC6),
+    surfaceVariant = Color(0xFF2A3D46)
+)
+
+private var activePalette by mutableStateOf(LightPalette)
+private val BrandBlue get() = activePalette.brandBlue
+private val LightGray get() = activePalette.background
+private val CardSurface get() = activePalette.cardSurface
+private val SoftGreen get() = activePalette.softGreen
+private val SoftRed get() = activePalette.softRed
+private val SoftPurple get() = activePalette.softPurple
+private val Ink get() = activePalette.ink
+private val MutedText get() = activePalette.mutedText
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -113,6 +153,42 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 private fun GoodGirlApp() {
+    val context = LocalContext.current
+    val settingsPreferences = remember(context) {
+        context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+    }
+    var darkThemeEnabled by remember {
+        mutableStateOf(settingsPreferences.getBoolean("dark_theme_enabled", false))
+    }
+    val selectedPalette = if (darkThemeEnabled) DarkPalette else LightPalette
+    SideEffect {
+        activePalette = selectedPalette
+        (context as? MainActivity)?.window?.let { window ->
+            val systemBarColor = if (darkThemeEnabled) {
+                android.graphics.Color.rgb(16, 26, 32)
+            } else {
+                android.graphics.Color.rgb(234, 243, 247)
+            }
+            window.statusBarColor = systemBarColor
+            window.navigationBarColor = systemBarColor
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                val lightStatusFlag = android.view.View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
+                window.decorView.systemUiVisibility = if (darkThemeEnabled) {
+                    window.decorView.systemUiVisibility and lightStatusFlag.inv()
+                } else {
+                    window.decorView.systemUiVisibility or lightStatusFlag
+                }
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val lightNavigationFlag = android.view.View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+                window.decorView.systemUiVisibility = if (darkThemeEnabled) {
+                    window.decorView.systemUiVisibility and lightNavigationFlag.inv()
+                } else {
+                    window.decorView.systemUiVisibility or lightNavigationFlag
+                }
+            }
+        }
+    }
     var activePage by remember { mutableStateOf("dashboard") }
     var statementPartyId by remember { mutableStateOf<String?>(null) }
     var statementReturnPage by remember { mutableStateOf("parties") }
@@ -121,17 +197,31 @@ private fun GoodGirlApp() {
     var journalEntryDetailId by remember { mutableStateOf<String?>(null) }
     var accountLedgerId by remember { mutableStateOf<String?>(null) }
     MaterialTheme(
-        colorScheme = lightColorScheme(
-            primary = BrandBlue,
-            secondary = SoftPurple,
-            background = LightGray,
-            surface = CardSurface,
-            onPrimary = Color.White,
-            onSurface = Ink,
-            onBackground = Ink,
-            surfaceVariant = Color(0xFFDCEAF0),
-            onSurfaceVariant = MutedText
-        )
+        colorScheme = if (darkThemeEnabled) {
+            darkColorScheme(
+                primary = selectedPalette.brandBlue,
+                secondary = selectedPalette.softPurple,
+                background = selectedPalette.background,
+                surface = selectedPalette.cardSurface,
+                onPrimary = Color(0xFF10232C),
+                onSurface = selectedPalette.ink,
+                onBackground = selectedPalette.ink,
+                surfaceVariant = selectedPalette.surfaceVariant,
+                onSurfaceVariant = selectedPalette.mutedText
+            )
+        } else {
+            lightColorScheme(
+                primary = selectedPalette.brandBlue,
+                secondary = selectedPalette.softPurple,
+                background = selectedPalette.background,
+                surface = selectedPalette.cardSurface,
+                onPrimary = Color.White,
+                onSurface = selectedPalette.ink,
+                onBackground = selectedPalette.ink,
+                surfaceVariant = selectedPalette.surfaceVariant,
+                onSurfaceVariant = selectedPalette.mutedText
+            )
+        }
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -170,7 +260,14 @@ private fun GoodGirlApp() {
                 )
                 "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
                 "backup" -> BackupManagementScreen(onBack = { activePage = "dashboard" })
-                "settings" -> SettingsScreen(onBack = { activePage = "dashboard" })
+                "settings" -> SettingsScreen(
+                    onBack = { activePage = "dashboard" },
+                    isDarkTheme = darkThemeEnabled,
+                    onDarkThemeChanged = { enabled ->
+                        settingsPreferences.edit().putBoolean("dark_theme_enabled", enabled).apply()
+                        darkThemeEnabled = enabled
+                    }
+                )
                 "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
                 "daily_sales" -> DailySalesScreen(
                     onBack = { activePage = "dashboard" },
@@ -563,7 +660,11 @@ private fun ProductPriceManagementScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun SettingsScreen(onBack: () -> Unit) {
+private fun SettingsScreen(
+    onBack: () -> Unit,
+    isDarkTheme: Boolean,
+    onDarkThemeChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val preferences = remember(context) {
         context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
@@ -590,6 +691,30 @@ private fun SettingsScreen(onBack: () -> Unit) {
             fontWeight = FontWeight.Bold,
             color = Ink
         )
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.weight(1f)) {
+                    Text("المظهر", color = Ink, fontWeight = FontWeight.Bold)
+                    Text(
+                        if (isDarkTheme) "الوضع الداكن مفعّل" else "الوضع الفاتح مفعّل",
+                        color = MutedText,
+                        fontSize = 12.sp
+                    )
+                }
+                Switch(
+                    checked = isDarkTheme,
+                    onCheckedChange = onDarkThemeChanged
+                )
+            }
+        }
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
