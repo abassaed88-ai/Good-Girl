@@ -1801,6 +1801,7 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
                         "OPENING_BALANCE" -> "رصيد افتتاحي"
                         "MANUAL_ADJUSTMENT" -> "تسوية مخزون يدوية"
                         "STOCKTAKE_ADJUSTMENT" -> "تسوية ناتجة عن الجرد"
+                        "MIGRATION_RECONCILIATION" -> "تسوية رصيد تاريخية (تحديث التطبيق)"
                         "SALE_INVOICE" -> "فاتورة بيع"
                         "PURCHASE_INVOICE" -> "فاتورة شراء"
                         else -> "حركة مخزون"
