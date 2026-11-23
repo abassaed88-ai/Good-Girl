@@ -137,6 +137,44 @@ class JournalReversalIntegrationTest {
     }
 
     @Test
+    fun rejectsDirectReversalOfAutomatedSourceEntries() = runBlocking {
+        val database = newDatabase()
+        try {
+            val repository = JournalRepository(database)
+            repository.ensureSystemAccounts()
+            val accounts = database.accountDao().getAll().associateBy { it.code }
+            val invoiceEntryId = repository.postJournalEntry(
+                journalNumber = "JE-SALE-SOURCE-001",
+                sourceType = "SALE_INVOICE",
+                sourceId = "invoice-001",
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                occurredAt = 1_000L,
+                description = "قيد فاتورة بيع",
+                lines = listOf(
+                    JournalLineDraft(accounts.getValue("1000").id, debit = "20"),
+                    JournalLineDraft(accounts.getValue("4000").id, credit = "20")
+                )
+            )
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.reverseJournalEntry(
+                        originalEntryId = invoiceEntryId,
+                        reversalJournalNumber = "JE-SALE-REV-001",
+                        occurredAt = 2_000L,
+                        reason = "يجب استخدام مسار مرتبط بالفاتورة"
+                    )
+                }
+            }
+            assertEquals(1, repository.observeEntries().first().size)
+            assertTrue(database.journalEntryDao().findBySource("REVERSAL", invoiceEntryId) == null)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun rejectsReversalBeforeOriginalDateAndBlankReason() = runBlocking {
         val database = newDatabase()
         try {
