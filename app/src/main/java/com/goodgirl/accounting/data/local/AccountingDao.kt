@@ -328,6 +328,9 @@ interface ExchangeRateHistoryDao {
 @Dao
 interface ExchangeRateAuditDao {
     @Query("SELECT * FROM exchange_rate_audits ORDER BY correctedAt DESC, id DESC")
+    fun observeAll(): Flow<List<ExchangeRateAuditEntity>>
+
+    @Query("SELECT * FROM exchange_rate_audits ORDER BY correctedAt DESC, id DESC")
     suspend fun getAll(): List<ExchangeRateAuditEntity>
 
     @Query("SELECT * FROM exchange_rate_audits WHERE historyId = :historyId ORDER BY correctedAt DESC")

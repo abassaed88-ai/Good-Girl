@@ -12,6 +12,7 @@ import com.goodgirl.accounting.data.local.JournalEntryEntity
 import com.goodgirl.accounting.data.local.JournalLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -199,7 +200,7 @@ class ExchangeRateHistoryCorrectionTest {
             val archived = database.exchangeRateHistoryDao().findById("rate-old")
             assertTrue(archived != null && archived.isArchived)
             assertEquals(2, database.exchangeRateHistoryDao().getAll().size)
-            assertEquals(1, database.exchangeRateHistoryDao().observeAll().let { 1 })
+            assertEquals(1, database.exchangeRateHistoryDao().observeAll().first().size)
             assertEquals("RATE_ARCHIVED", database.exchangeRateAuditDao().getAll().single().eventType)
 
             val failed = runCatching {

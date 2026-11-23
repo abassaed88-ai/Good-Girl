@@ -685,6 +685,7 @@ private fun SettingsScreen(
         mutableStateOf(preferences.getLong("usd_syp_rate_updated_at", 0L))
     }
     val rateHistory by database.exchangeRateHistoryDao().observeAll().collectAsState(initial = emptyList())
+    val rateAudits by database.exchangeRateAuditDao().observeAll().collectAsState(initial = emptyList())
     var message by remember { mutableStateOf<String?>(null) }
     var selectedCorrectionRateId by remember { mutableStateOf<String?>(null) }
     var correctionRate by remember { mutableStateOf("") }
@@ -865,7 +866,7 @@ private fun SettingsScreen(
                                 }
                             }
                         }
-                        Divider(color = LightGray.copy(alpha = 0.8f))
+                        androidx.compose.material3.Divider(color = LightGray.copy(alpha = 0.8f))
                     }
                 }
                 archiveMessage?.let {
@@ -932,7 +933,7 @@ private fun SettingsScreen(
                             Text(if (isPreviewingCorrection) "جارٍ إعداد المعاينة..." else "معاينة العمليات المتأثرة")
                         }
                         correctionPreview?.let { preview ->
-                            Divider(color = LightGray)
+                            androidx.compose.material3.Divider(color = LightGray)
                             Text(
                                 "الفترة: " + SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(preview.effectiveFrom)) +
                                     (preview.effectiveUntilExclusive?.let {
@@ -1009,6 +1010,7 @@ private fun SettingsScreen(
                                                 "، حركات الحساب: " + result.updatedLedgerCount +
                                                 "، قيود اليومية: " + result.updatedJournalCount +
                                                 ". لم تتغير المبالغ المالية."
+                                            message = correctionMessage
                                             selectedCorrectionRateId = null
                                             correctionPreview = null
                                             confirmCorrection = false
@@ -1063,6 +1065,61 @@ private fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("تأكيد الأرشفة") }
                         TextButton(onClick = { pendingArchiveRateId = null }) { Text("إلغاء") }
+                    }
+                }
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                Text("سجل تدقيق أسعار الصرف", color = Ink, fontWeight = FontWeight.Bold)
+                if (rateAudits.isEmpty()) {
+                    Text("لا توجد أحداث تدقيق مسجلة حتى الآن.", color = MutedText, fontSize = 12.sp)
+                } else {
+                    rateAudits.take(20).forEach { audit ->
+                        Text(
+                            when (audit.eventType) {
+                                "RATE_IMPORTED" -> "استيراد سجل قديم"
+                                "RATE_SET" -> "اعتماد سعر جديد"
+                                "RATE_CORRECTION" -> "تصحيح سعر تاريخي"
+                                "RATE_ARCHIVED" -> "أرشفة سعر تاريخي"
+                                else -> audit.eventType
+                            },
+                            color = BrandBlue,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp
+                        )
+                        Text(
+                            "السعر السابق: " + audit.oldRate.ifBlank { "—" } +
+                                " | السعر الجديد: " + audit.newRate,
+                            color = Ink,
+                            fontSize = 12.sp
+                        )
+                        Text(
+                            SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(audit.correctedAt)),
+                            color = MutedText,
+                            fontSize = 11.sp
+                        )
+                        if (audit.affectedInvoiceCount + audit.affectedLedgerCount + audit.affectedJournalCount > 0) {
+                            Text(
+                                "عمليات مرتبطة — فواتير: " + audit.affectedInvoiceCount +
+                                    " | حركات: " + audit.affectedLedgerCount +
+                                    " | قيود: " + audit.affectedJournalCount,
+                                color = MutedText,
+                                fontSize = 11.sp
+                            )
+                        }
+                        Text(audit.reason, color = MutedText, fontSize = 12.sp)
+                        Text(
+                            if (audit.financialAmountsChanged) "تغيّرت القيم المالية ضمن عملية منفصلة موثقة."
+                            else "لم تتغير المبالغ أو الأرصدة المالية.",
+                            color = MutedText,
+                            fontSize = 11.sp
+                        )
+                        androidx.compose.material3.Divider(color = LightGray)
                     }
                 }
             }
