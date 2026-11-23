@@ -313,6 +313,9 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 )
             )
             database.invoiceDao().insertLines(storedLines)
+            val postedInvoice = database.invoiceDao().findById(invoiceId)
+                ?: error("تعذر استرجاع الفاتورة بعد ترحيلها")
+            InvoiceJournalPoster.post(database, postedInvoice, storedLines)
 
             if (amounts.remaining > BigDecimal.ZERO) {
                 database.ledgerDao().insert(

@@ -218,6 +218,78 @@ class AccountingFlowIntegrationTest {
         }
     }
 
+
+    @Test
+    fun saleAndPurchaseInvoicesCreateBalancedAutomaticJournalEntries() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+            products.addProduct(
+                sku = "JOURNAL-001",
+                name = "مادة القيود",
+                unit = "قطعة",
+                purchaseCost = "10",
+                salePrice = "15",
+                openingStock = "5",
+                note = "اختبار ترحيل القيود"
+            )
+            val product = database.productDao().getAll().single()
+
+            val sale = invoices.postInvoice(
+                invoiceNumber = "JOURNAL-SALE-1",
+                kind = "SALE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "2", "15")),
+                paidAmount = "30",
+                issuedAt = 10_000L
+            )
+            val purchase = invoices.postInvoice(
+                invoiceNumber = "JOURNAL-PURCHASE-1",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "2", "20")),
+                paidAmount = "40",
+                issuedAt = 20_000L
+            )
+
+            val entries = database.journalEntryDao().getAll()
+            assertEquals(2, entries.size)
+            assertEquals(setOf("SALE_INVOICE", "PURCHASE_INVOICE"), entries.map { it.sourceType }.toSet())
+            assertEquals(setOf(sale.invoiceId, purchase.invoiceId), entries.map { it.sourceId }.toSet())
+
+            val accounts = database.accountDao().getAll().associateBy { it.id }
+            val saleEntry = entries.single { it.sourceId == sale.invoiceId }
+            val saleLines = database.journalLineDao().getForEntry(saleEntry.id)
+            assertEquals(4, saleLines.size)
+            assertDecimal("30", saleLines.single { accounts[it.accountId]!!.code == "1000" }.debit)
+            assertDecimal("30", saleLines.single { accounts[it.accountId]!!.code == "4000" }.credit)
+            assertDecimal("20", saleLines.single { accounts[it.accountId]!!.code == "5000" }.debit)
+            assertDecimal("20", saleLines.single { accounts[it.accountId]!!.code == "1200" }.credit)
+
+            val purchaseEntry = entries.single { it.sourceId == purchase.invoiceId }
+            val purchaseLines = database.journalLineDao().getForEntry(purchaseEntry.id)
+            assertEquals(2, purchaseLines.size)
+            assertDecimal("40", purchaseLines.single { accounts[it.accountId]!!.code == "1200" }.debit)
+            assertDecimal("40", purchaseLines.single { accounts[it.accountId]!!.code == "1000" }.credit)
+
+            entries.forEach { entry ->
+                val lines = database.journalLineDao().getForEntry(entry.id)
+                val debit = lines.fold(BigDecimal.ZERO) { sum, line -> sum.add(BigDecimal(line.debit)) }
+                val credit = lines.fold(BigDecimal.ZERO) { sum, line -> sum.add(BigDecimal(line.credit)) }
+                assertEquals(0, debit.compareTo(credit))
+                assertEquals("SYP", entry.currencyCode)
+                assertEquals("1", entry.exchangeRateSnapshot)
+            }
+        } finally {
+            database.close()
+        }
+    }
+
     private fun newInMemoryDatabase(): AccountingDatabase {
         val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
         return Room.inMemoryDatabaseBuilder(context, AccountingDatabase::class.java)
