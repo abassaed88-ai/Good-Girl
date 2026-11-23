@@ -1,6 +1,9 @@
 package com.goodgirl.accounting.data
 
 import com.goodgirl.accounting.data.local.CategoryEntity
+import com.goodgirl.accounting.data.local.AccountEntity
+import com.goodgirl.accounting.data.local.JournalEntryEntity
+import com.goodgirl.accounting.data.local.JournalLineEntity
 import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
@@ -30,7 +33,10 @@ object BackupIntegrityValidator {
         invoices: List<InvoiceEntity>,
         invoiceLines: List<InvoiceLineEntity>,
         movements: List<StockMovementEntity>,
-        ledgerEntries: List<LedgerEntryEntity>
+        ledgerEntries: List<LedgerEntryEntity>,
+        accounts: List<AccountEntity> = emptyList(),
+        journalEntries: List<JournalEntryEntity> = emptyList(),
+        journalLines: List<JournalLineEntity> = emptyList()
     ) {
         ensureUnique(categories.map { it.id }, "معرّفات التصنيفات")
         ensureUnique(products.map { it.id }, "معرّفات المنتجات")
@@ -41,9 +47,18 @@ object BackupIntegrityValidator {
         ensureUnique(invoiceLines.map { it.id }, "معرّفات بنود الفواتير")
         ensureUnique(movements.map { it.id }, "معرّفات حركات المخزون")
         ensureUnique(ledgerEntries.map { it.id }, "معرّفات القيود المالية")
+        ensureUnique(accounts.map { it.id }, "معرّفات دليل الحسابات")
+        ensureUnique(accounts.map { it.code }, "رموز دليل الحسابات")
+        ensureUnique(journalEntries.map { it.id }, "معرّفات قيود اليومية")
+        ensureUnique(journalEntries.map { it.journalNumber }, "أرقام قيود اليومية")
+        ensureUnique(journalEntries.map { it.sourceType + "|" + it.sourceId }, "مصادر قيود اليومية")
+        ensureUnique(journalLines.map { it.id }, "معرّفات أسطر قيود اليومية")
+        ensureUnique(journalLines.map { it.journalEntryId + "|" + it.lineNumber }, "ترتيب أسطر قيود اليومية")
         ensureUnique(categories.map { it.name }, "أسماء التصنيفات")
 
         val categoryIds = categories.map { it.id }.toSet()
+        val accountById = accounts.associateBy { it.id }
+        val journalById = journalEntries.associateBy { it.id }
         val productById = products.associateBy { it.id }
         val partyById = parties.associateBy { it.id }
         val invoiceById = invoices.associateBy { it.id }
@@ -77,6 +92,19 @@ object BackupIntegrityValidator {
             }
             require(decimal(baseUnits.single().baseFactor, "معامل وحدة الأساس").compareTo(BigDecimal.ONE) == 0) {
                 "معامل وحدة الأساس للمنتج ${product.name} يجب أن يساوي 1"
+            }
+        }
+
+        val allowedAccountTypes = setOf("ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE")
+        accounts.forEach { account ->
+            require(account.code.isNotBlank() && account.name.isNotBlank()) {
+                "يوجد حساب بلا رمز أو اسم في دليل الحسابات"
+            }
+            require(account.accountType in allowedAccountTypes) {
+                "نوع الحساب ${account.name} غير مدعوم"
+            }
+            require(account.normalSide == "DEBIT" || account.normalSide == "CREDIT") {
+                "الطبيعة المحاسبية للحساب ${account.name} غير صالحة"
             }
         }
 
@@ -217,6 +245,35 @@ object BackupIntegrityValidator {
             }
             requireCurrency(entry.currencyCode, "عملة القيد المالي")
             requireRate(entry.exchangeRateSnapshot, entry.currencyCode, "سعر صرف القيد المالي")
+        }
+        val journalLinesByEntry = journalLines.groupBy { it.journalEntryId }
+        journalLines.forEach { line ->
+            require(line.journalEntryId in journalById) { "سطر قيد يومية مرتبط بقيد غير موجود" }
+            require(line.accountId in accountById) { "سطر قيد يومية مرتبط بحساب غير موجود" }
+            require(line.lineNumber > 0) { "ترتيب سطر قيد اليومية غير صالح" }
+            val debit = nonNegative(line.debit, "المدين في قيد اليومية")
+            val credit = nonNegative(line.credit, "الدائن في قيد اليومية")
+            require((debit > BigDecimal.ZERO) xor (credit > BigDecimal.ZERO)) {
+                "يجب أن يحتوي سطر قيد اليومية على مدين أو دائن فقط"
+            }
+        }
+        journalEntries.forEach { entry ->
+            require(entry.journalNumber.isNotBlank() && entry.sourceType.isNotBlank() &&
+                entry.sourceId.isNotBlank() && entry.description.isNotBlank()
+            ) { "بيانات قيد اليومية غير مكتملة" }
+            requireCurrency(entry.currencyCode, "عملة قيد اليومية")
+            requireRate(entry.exchangeRateSnapshot, entry.currencyCode, "سعر صرف قيد اليومية")
+            val lines = journalLinesByEntry[entry.id].orEmpty()
+            require(lines.size >= 2) { "قيد اليومية ${entry.journalNumber} يجب أن يحتوي سطرين على الأقل" }
+            val totalDebit = lines.fold(BigDecimal.ZERO) { total, line ->
+                total.add(line.debit.toBigDecimal())
+            }
+            val totalCredit = lines.fold(BigDecimal.ZERO) { total, line ->
+                total.add(line.credit.toBigDecimal())
+            }
+            require(totalDebit.compareTo(totalCredit) == 0) {
+                "قيد اليومية ${entry.journalNumber} غير متوازن"
+            }
         }
     }
 

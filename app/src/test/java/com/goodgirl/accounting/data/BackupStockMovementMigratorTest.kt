@@ -47,7 +47,7 @@ class BackupStockMovementMigratorTest {
         val adjustment = result.last()
         assertEquals("3", adjustment.quantityDelta)
         assertEquals("MIGRATION_RECONCILIATION", adjustment.sourceType)
-        assertEquals("backup-migration-v5-p1", adjustment.id)
+        assertEquals("backup-migration-v6-p1", adjustment.id)
         assertEquals(99L, adjustment.occurredAt)
     }
 
@@ -74,6 +74,18 @@ class BackupStockMovementMigratorTest {
             occurredAt = 99L
         )
 
+        assertSame(original, result.single())
+    }
+
+    @Test
+    fun versionSixBackupDoesNotReconcileStockHistory() {
+        val original = movement(quantity = "2")
+        val result = BackupStockMovementMigrator.migrateToCurrentVersion(
+            databaseVersion = 6,
+            products = listOf(product(stock = "5")),
+            movements = listOf(original),
+            occurredAt = 99L
+        )
         assertSame(original, result.single())
     }
 

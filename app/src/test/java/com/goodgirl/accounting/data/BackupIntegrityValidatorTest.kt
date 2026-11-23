@@ -1,6 +1,9 @@
 package com.goodgirl.accounting.data
 
 import com.goodgirl.accounting.data.local.InvoiceEntity
+import com.goodgirl.accounting.data.local.AccountEntity
+import com.goodgirl.accounting.data.local.JournalEntryEntity
+import com.goodgirl.accounting.data.local.JournalLineEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import com.goodgirl.accounting.data.local.PartyEntity
@@ -21,7 +24,10 @@ class BackupIntegrityValidatorTest {
         invoices: List<InvoiceEntity> = emptyList(),
         lines: List<InvoiceLineEntity> = emptyList(),
         movements: List<StockMovementEntity> = emptyList(),
-        entries: List<LedgerEntryEntity> = emptyList()
+        entries: List<LedgerEntryEntity> = emptyList(),
+        accounts: List<AccountEntity> = emptyList(),
+        journalEntries: List<JournalEntryEntity> = emptyList(),
+        journalLines: List<JournalLineEntity> = emptyList()
     ) = BackupIntegrityValidator.validate(
         categories = empty,
         products = products,
@@ -30,7 +36,10 @@ class BackupIntegrityValidatorTest {
         invoices = invoices,
         invoiceLines = lines,
         movements = movements,
-        ledgerEntries = entries
+        ledgerEntries = entries,
+        accounts = accounts,
+        journalEntries = journalEntries,
+        journalLines = journalLines
     )
 
     private fun product() = ProductEntity(
@@ -262,4 +271,49 @@ class BackupIntegrityValidatorTest {
             validate(invoices = listOf(saleInvoice().copy(remaining = "1")))
         }
     }
+
+
+    private fun journalAccounts() = listOf(
+        AccountEntity("a-cash", "1000", "الصندوق", "ASSET", "DEBIT", true, true, 1L),
+        AccountEntity("a-sales", "4000", "المبيعات", "REVENUE", "CREDIT", true, true, 1L)
+    )
+
+    private fun journalHeader() = JournalEntryEntity(
+        id = "j1", journalNumber = "JE-1", sourceType = "SALE_INVOICE",
+        sourceId = "invoice-1", currencyCode = "SYP", exchangeRateSnapshot = "1",
+        occurredAt = 1L, description = "قيد بيع", createdAt = 1L
+    )
+
+    private fun journalLines(debit: String = "100", credit: String = "100") = listOf(
+        JournalLineEntity("jl1", "j1", 1, "a-cash", debit, "0", ""),
+        JournalLineEntity("jl2", "j1", 2, "a-sales", "0", credit, "")
+    )
+
+    @Test
+    fun acceptsBalancedJournalWithValidAccounts() {
+        validate(accounts = journalAccounts(), journalEntries = listOf(journalHeader()), journalLines = journalLines())
+    }
+
+    @Test
+    fun rejectsUnbalancedJournal() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(accounts = journalAccounts(), journalEntries = listOf(journalHeader()),
+                journalLines = journalLines(debit = "100", credit = "99.99"))
+        }
+    }
+
+    @Test
+    fun rejectsJournalLineLinkedToMissingAccount() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(
+                accounts = journalAccounts(),
+                journalEntries = listOf(journalHeader()),
+                journalLines = listOf(
+                    JournalLineEntity("jl1", "j1", 1, "missing", "10", "0", ""),
+                    JournalLineEntity("jl2", "j1", 2, "a-sales", "0", "10", "")
+                )
+            )
+        }
+    }
+
 }

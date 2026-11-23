@@ -228,6 +228,12 @@ interface AccountDao {
     suspend fun insertIgnore(accounts: List<AccountEntity>)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(accounts: List<AccountEntity>)
+
+    @Query("DELETE FROM accounts")
+    suspend fun deleteAll()
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(account: AccountEntity)
 
     @Update
@@ -238,6 +244,9 @@ interface AccountDao {
 interface JournalEntryDao {
     @Query("SELECT * FROM journal_entries ORDER BY occurredAt DESC, journalNumber DESC")
     fun observeAll(): Flow<List<JournalEntryEntity>>
+
+    @Query("SELECT * FROM journal_entries ORDER BY occurredAt, journalNumber")
+    suspend fun getAll(): List<JournalEntryEntity>
 
     @Query("SELECT * FROM journal_entries WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): JournalEntryEntity?
@@ -250,6 +259,12 @@ interface JournalEntryDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: JournalEntryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(entries: List<JournalEntryEntity>)
+
+    @Query("DELETE FROM journal_entries")
+    suspend fun deleteAll()
 }
 
 @Dao
@@ -262,4 +277,7 @@ interface JournalLineDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(lines: List<JournalLineEntity>)
+
+    @Query("DELETE FROM journal_lines")
+    suspend fun deleteAll()
 }

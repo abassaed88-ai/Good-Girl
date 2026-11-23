@@ -5,6 +5,9 @@ import android.net.Uri
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.ACCOUNTING_DATABASE_VERSION
 import com.goodgirl.accounting.data.local.CategoryEntity
+import com.goodgirl.accounting.data.local.AccountEntity
+import com.goodgirl.accounting.data.local.JournalEntryEntity
+import com.goodgirl.accounting.data.local.JournalLineEntity
 import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
@@ -57,6 +60,11 @@ class AccountingBackupManager(
             val invoiceLines = database.invoiceDao().getAllLines()
             val movements = database.stockMovementDao().getAll()
             val ledgerEntries = database.ledgerDao().getAll()
+            val accounts = database.accountDao().getAll()
+            val journalEntries = database.journalEntryDao().getAll()
+            val journalLines = journalEntries.flatMap { entry ->
+                database.journalLineDao().getForEntry(entry.id)
+            }
 
             val json = JSONObject()
                 .put("format", BACKUP_FORMAT)
@@ -78,10 +86,14 @@ class AccountingBackupManager(
                 .put("invoiceLines", invoiceLines.toJsonArray { it.toBackupJson() })
                 .put("stockMovements", movements.toJsonArray { it.toBackupJson() })
                 .put("ledgerEntries", ledgerEntries.toJsonArray { it.toBackupJson() })
+                .put("accounts", accounts.toJsonArray { it.toBackupJson() })
+                .put("journalEntries", journalEntries.toJsonArray { it.toBackupJson() })
+                .put("journalLines", journalLines.toJsonArray { it.toBackupJson() })
 
             json to (
                 categories.size + products.size + units.size + parties.size +
-                    invoices.size + invoiceLines.size + movements.size + ledgerEntries.size
+                    invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
+                    accounts.size + journalEntries.size + journalLines.size
                 )
         }
 
@@ -160,7 +172,7 @@ class AccountingBackupManager(
         require(formatVersion in 1..BACKUP_FORMAT_VERSION) { "صيغة النسخة الاحتياطية غير مدعومة" }
         require(root.getString("applicationId") == APPLICATION_ID) { "النسخة الاحتياطية لا تخص هذا التطبيق" }
         val backupDatabaseVersion = root.getInt("databaseVersion")
-        require(backupDatabaseVersion in (DATABASE_VERSION - 1)..DATABASE_VERSION) {
+        require(backupDatabaseVersion in MIN_SUPPORTED_BACKUP_DATABASE_VERSION..DATABASE_VERSION) {
             "إصدار قاعدة البيانات في النسخة الاحتياطية غير مدعوم"
         }
 
@@ -178,6 +190,9 @@ class AccountingBackupManager(
             occurredAt = System.currentTimeMillis()
         )
         val ledgerEntries = root.parseArray("ledgerEntries") { it.toLedgerEntryEntity() }
+        val accounts = root.parseOptionalArray("accounts") { it.toAccountEntity() }
+        val journalEntries = root.parseOptionalArray("journalEntries") { it.toJournalEntryEntity() }
+        val journalLines = root.parseOptionalArray("journalLines") { it.toJournalLineEntity() }
 
         // Validate the complete snapshot before opening the destructive replacement transaction.
         BackupIntegrityValidator.validate(
@@ -188,11 +203,15 @@ class AccountingBackupManager(
             invoices = invoices,
             invoiceLines = invoiceLines,
             movements = movements,
-            ledgerEntries = ledgerEntries
+            ledgerEntries = ledgerEntries,
+            accounts = accounts,
+            journalEntries = journalEntries,
+            journalLines = journalLines
         )
 
         val totalRecords = categories.size + products.size + units.size + parties.size +
-            invoices.size + invoiceLines.size + movements.size + ledgerEntries.size
+            invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
+            accounts.size + journalEntries.size + journalLines.size
         val exportedAt = root.getLong("exportedAt")
 
         val settingsObject = if (formatVersion >= 2) root.optJSONObject("settings") else null
@@ -219,6 +238,9 @@ class AccountingBackupManager(
 
         // The replacement is atomic: an invalid insert rolls back and preserves current data.
         database.withTransaction {
+            database.journalLineDao().deleteAll()
+            database.journalEntryDao().deleteAll()
+            database.accountDao().deleteAll()
             database.invoiceDao().deleteAllLines()
             database.invoiceDao().deleteAllInvoices()
             database.ledgerDao().deleteAll()
@@ -236,6 +258,9 @@ class AccountingBackupManager(
             database.invoiceDao().insertAllLines(invoiceLines)
             database.stockMovementDao().insertAll(movements)
             database.ledgerDao().insertAll(ledgerEntries)
+            database.accountDao().insertAll(accounts)
+            database.journalEntryDao().insertAll(journalEntries)
+            database.journalLineDao().insertAll(journalLines)
         }
 
         context.getSharedPreferences("good_girl_settings", Context.MODE_PRIVATE).edit()
@@ -266,6 +291,11 @@ class AccountingBackupManager(
 
     private fun <T> JSONObject.parseArray(key: String, parser: (JSONObject) -> T): List<T> {
         val array = getJSONArray(key)
+        return List(array.length()) { index -> parser(array.getJSONObject(index)) }
+    }
+
+    private fun <T> JSONObject.parseOptionalArray(key: String, parser: (JSONObject) -> T): List<T> {
+        val array = optJSONArray(key) ?: return emptyList()
         return List(array.length()) { index -> parser(array.getJSONObject(index)) }
     }
 
@@ -311,6 +341,21 @@ class AccountingBackupManager(
         .put("id", id).put("partyId", partyId ?: JSONObject.NULL).put("entryType", entryType)
         .put("amount", amount).put("currencyCode", currencyCode).put("exchangeRateSnapshot", exchangeRateSnapshot)
         .put("sourceType", sourceType).put("sourceId", sourceId).put("occurredAt", occurredAt).put("note", note)
+
+    private fun AccountEntity.toBackupJson() = JSONObject()
+        .put("id", id).put("code", code).put("name", name).put("accountType", accountType)
+        .put("normalSide", normalSide).put("isSystem", isSystem).put("isActive", isActive)
+        .put("createdAt", createdAt)
+
+    private fun JournalEntryEntity.toBackupJson() = JSONObject()
+        .put("id", id).put("journalNumber", journalNumber).put("sourceType", sourceType)
+        .put("sourceId", sourceId).put("currencyCode", currencyCode)
+        .put("exchangeRateSnapshot", exchangeRateSnapshot).put("occurredAt", occurredAt)
+        .put("description", description).put("createdAt", createdAt)
+
+    private fun JournalLineEntity.toBackupJson() = JSONObject()
+        .put("id", id).put("journalEntryId", journalEntryId).put("lineNumber", lineNumber)
+        .put("accountId", accountId).put("debit", debit).put("credit", credit).put("memo", memo)
 
     private fun JSONObject.toCategoryEntity() = CategoryEntity(
         id = getString("id"), name = getString("name"), note = getString("note"), createdAt = getLong("createdAt")
@@ -369,13 +414,35 @@ class AccountingBackupManager(
         sourceId = getString("sourceId"), occurredAt = getLong("occurredAt"), note = getString("note")
     )
 
+    private fun JSONObject.toAccountEntity() = AccountEntity(
+        id = getString("id"), code = getString("code"), name = getString("name"),
+        accountType = getString("accountType"), normalSide = getString("normalSide"),
+        isSystem = getBoolean("isSystem"), isActive = getBoolean("isActive"),
+        createdAt = getLong("createdAt")
+    )
+
+    private fun JSONObject.toJournalEntryEntity() = JournalEntryEntity(
+        id = getString("id"), journalNumber = getString("journalNumber"),
+        sourceType = getString("sourceType"), sourceId = getString("sourceId"),
+        currencyCode = getString("currencyCode"), exchangeRateSnapshot = getString("exchangeRateSnapshot"),
+        occurredAt = getLong("occurredAt"), description = getString("description"),
+        createdAt = getLong("createdAt")
+    )
+
+    private fun JSONObject.toJournalLineEntity() = JournalLineEntity(
+        id = getString("id"), journalEntryId = getString("journalEntryId"),
+        lineNumber = getInt("lineNumber"), accountId = getString("accountId"),
+        debit = getString("debit"), credit = getString("credit"), memo = getString("memo")
+    )
+
     private fun JSONObject.nullableString(key: String): String? =
         if (isNull(key)) null else getString(key)
 
     companion object {
         private const val BACKUP_FORMAT = "good-girl-accounting-backup"
-        private const val BACKUP_FORMAT_VERSION = 2
+        private const val BACKUP_FORMAT_VERSION = 3
         private const val APPLICATION_ID = "com.goodgirl.accounting"
+        private const val MIN_SUPPORTED_BACKUP_DATABASE_VERSION = 4
         private const val DATABASE_VERSION = ACCOUNTING_DATABASE_VERSION
         private const val MAX_BACKUP_BYTES = 50 * 1024 * 1024
         private const val MAX_ENCRYPTED_BACKUP_BYTES =

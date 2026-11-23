@@ -8,7 +8,7 @@ import java.math.BigDecimal
 
 /**
  * Upgrades the stock audit trail embedded in a version-4 JSON backup to the
- * version-5 invariant: each product balance equals the sum of its movements.
+ * reconciled movement-history invariant. Version 5 and later already satisfy it.
  *
  * Version-4 installations may contain legacy balance edits that were not
  * written to stock_movements. The database migration uses the same rule:
@@ -21,11 +21,10 @@ object BackupStockMovementMigrator {
         movements: List<StockMovementEntity>,
         occurredAt: Long
     ): List<StockMovementEntity> {
-        val previousVersion = ACCOUNTING_DATABASE_VERSION - 1
-        require(databaseVersion in previousVersion..ACCOUNTING_DATABASE_VERSION) {
+        require(databaseVersion in 4..ACCOUNTING_DATABASE_VERSION) {
             "إصدار قاعدة البيانات في النسخة الاحتياطية غير مدعوم"
         }
-        if (databaseVersion == ACCOUNTING_DATABASE_VERSION) return movements
+        if (databaseVersion >= 5) return movements
 
         val deltasByProduct = movements.groupBy { it.productId }
             .mapValues { (_, rows) -> rows.map { it.quantityDelta } }
