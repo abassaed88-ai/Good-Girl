@@ -29,7 +29,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -80,18 +80,20 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-private val BrandBlue = Color(0xFF2878C8)
-private val LightGray = Color(0xFFE9EEF4)
-private val SoftGreen = Color(0xFFA9DDBD)
-private val SoftRed = Color(0xFFE9A5AE)
-private val SoftPurple = Color(0xFFB9A7DF)
-private val Ink = Color(0xFF263445)
+private val BrandBlue = Color(0xFFE83E91)
+private val LightGray = Color(0xFF17141B)
+private val CardSurface = Color(0xFF25212A)
+private val SoftGreen = Color(0xFF78C9A0)
+private val SoftRed = Color(0xFFE58A9B)
+private val SoftPurple = Color(0xFFC09AE8)
+private val Ink = Color(0xFFF5EFF5)
+private val MutedText = Color(0xFFB8AEBB)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = android.graphics.Color.rgb(40, 120, 200)
-        window.navigationBarColor = android.graphics.Color.rgb(255, 255, 255)
+        window.statusBarColor = android.graphics.Color.rgb(23, 20, 27)
+        window.navigationBarColor = android.graphics.Color.rgb(23, 20, 27)
         setContent {
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
                 GoodGirlApp()
@@ -108,13 +110,16 @@ private fun GoodGirlApp() {
     var unitsProductId by remember { mutableStateOf<String?>(null) }
     var historyProductId by remember { mutableStateOf<String?>(null) }
     MaterialTheme(
-        colorScheme = lightColorScheme(
+        colorScheme = darkColorScheme(
             primary = BrandBlue,
             secondary = SoftPurple,
             background = LightGray,
-            surface = Color.White,
+            surface = CardSurface,
             onPrimary = Color.White,
-            onSurface = Ink
+            onSurface = Ink,
+            onBackground = Ink,
+            surfaceVariant = Color(0xFF332C38),
+            onSurfaceVariant = MutedText
         )
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
@@ -386,7 +391,7 @@ private fun SettingsScreen(onBack: () -> Unit) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
