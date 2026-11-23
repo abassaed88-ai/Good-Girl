@@ -49,6 +49,7 @@ import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.JournalEntryEntity
 import com.goodgirl.accounting.data.local.JournalLineEntity
 import com.goodgirl.accounting.domain.JournalLineDraft
+import com.goodgirl.accounting.domain.AccountLedgerCalculator
 import com.goodgirl.accounting.domain.AccountInputRules
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
@@ -122,7 +123,10 @@ private fun AccountingNavigationCard(
 }
 
 @Composable
-fun ChartOfAccountsScreen(onBack: () -> Unit) {
+fun ChartOfAccountsScreen(
+    onBack: () -> Unit,
+    onOpenLedger: (String) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { JournalRepository(database) }
@@ -166,6 +170,7 @@ fun ChartOfAccountsScreen(onBack: () -> Unit) {
                     }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
+                    onClick = { onOpenLedger(account.id) },
                     shape = RoundedCornerShape(14.dp),
                     colors = CardDefaults.cardColors(containerColor = AccountingSurface)
                 ) {
@@ -306,6 +311,106 @@ private fun AddLedgerAccountDialog(
                         if (code.isBlank() || name.isBlank()) error = "أدخل رمز الحساب واسمه."
                         else onSave(code, name, type)
                     }, modifier = Modifier.weight(1f)) { Text("حفظ الحساب") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AccountLedgerScreen(
+    accountId: String,
+    onBack: () -> Unit,
+    onOpenEntry: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val accounts by database.accountDao().observeAll().collectAsState(initial = emptyList())
+    val entries by database.journalEntryDao().observeAll().collectAsState(initial = emptyList())
+    val lines by database.journalLineDao().observeAll().collectAsState(initial = emptyList())
+    val account = accounts.firstOrNull { it.id == accountId }
+    val statementResult = remember(account, entries, lines) {
+        account?.let {
+            runCatching { AccountLedgerCalculator.calculate(it, entries, lines) }
+        }
+    }
+    val statement = statementResult?.getOrNull()
+    val error = statementResult?.exceptionOrNull()
+
+    Column(
+        modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى دليل الحسابات") }
+        if (account == null) {
+            Text("الحساب غير موجود.", color = AccountingBad)
+        } else {
+            Text("كشف حساب", style = MaterialTheme.typography.headlineSmall, color = AccountingText, fontWeight = FontWeight.Bold)
+            Text(account.code + " — " + account.name, color = AccountingAccent, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+            Text(
+                accountTypeArabic(account.accountType) + " · " +
+                    if (account.normalSide == "DEBIT") "طبيعته مدينة" else "طبيعته دائنة",
+                color = AccountingMuted,
+                fontSize = 12.sp
+            )
+
+            if (error != null) {
+                Text("تعذر حساب كشف الحساب: " + (error.message ?: "بيانات غير سليمة"), color = AccountingBad)
+            } else if (statement == null || statement.movements.isEmpty()) {
+                Text("لا توجد حركات محاسبية على هذا الحساب حتى الآن.", color = AccountingMuted)
+            } else {
+                statement.currencySummaries.forEach { summary ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = AccountingSurface)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                            Text("ملخص العملة: " + summary.currencyCode, color = AccountingAccent, fontWeight = FontWeight.Bold)
+                            Text("إجمالي المدين: " + summary.totalDebit.stripTrailingZeros().toPlainString() + " " + summary.currencyCode, color = AccountingMuted, fontSize = 12.sp)
+                            Text("إجمالي الدائن: " + summary.totalCredit.stripTrailingZeros().toPlainString() + " " + summary.currencyCode, color = AccountingMuted, fontSize = 12.sp)
+                            Text(
+                                "الرصيد الختامي: " + summary.closingBalance.stripTrailingZeros().toPlainString() + " " +
+                                    summary.currencyCode + " (" + if (summary.closingSide == "DEBIT") "مدين" else "دائن" + ")",
+                                color = AccountingText,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                Text("حركات الحساب", style = MaterialTheme.typography.titleLarge, color = AccountingText, fontWeight = FontWeight.Bold)
+                statement.movements.forEach { movement ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = { onOpenEntry(movement.journalEntryId) },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = AccountingSurface)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(movement.journalNumber, color = AccountingAccent, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                                Text(movement.currencyCode, color = AccountingMuted, fontSize = 11.sp)
+                            }
+                            Text(movement.description, color = AccountingText, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(movement.occurredAt)),
+                                color = AccountingMuted,
+                                fontSize = 11.sp
+                            )
+                            Text("مدين: " + movement.debit.stripTrailingZeros().toPlainString() + " " + movement.currencyCode, color = AccountingMuted, fontSize = 12.sp)
+                            Text("دائن: " + movement.credit.stripTrailingZeros().toPlainString() + " " + movement.currencyCode, color = AccountingMuted, fontSize = 12.sp)
+                            if (movement.memo.isNotBlank()) Text(movement.memo, color = AccountingMuted, fontSize = 11.sp)
+                            Text(
+                                "الرصيد الجاري: " + movement.runningBalance.abs().stripTrailingZeros().toPlainString() +
+                                    " " + movement.currencyCode + " (" + if (movement.balanceSide == "DEBIT") "مدين" else "دائن" + ")",
+                                color = AccountingText,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                            Text("فتح القيد", color = AccountingAccent, fontSize = 11.sp)
+                        }
+                    }
                 }
             }
         }
