@@ -43,6 +43,35 @@ class PartySettlementIntegrationTest {
                 openingExchangeRate = "1"
             )
             val customer = database.partyDao().getAll().single()
+            val customerOpeningJournal = database.journalEntryDao().getAll().single()
+            assertEquals("CUSTOMER_OPENING_BALANCE", customerOpeningJournal.sourceType)
+            assertEquals(customer.id, customerOpeningJournal.sourceId)
+            assertEquals("SYP", customerOpeningJournal.currencyCode)
+            assertEquals("1", customerOpeningJournal.exchangeRateSnapshot)
+            val customerOpeningLines = database.journalLineDao().getForEntry(customerOpeningJournal.id)
+            val openingAccounts = database.accountDao().getAll().associate { it.id to it.code }
+            assertEquals("1100", openingAccounts.getValue(customerOpeningLines.single { it.debit != "0" }.accountId))
+            assertEquals("3000", openingAccounts.getValue(customerOpeningLines.single { it.credit != "0" }.accountId))
+            assertDecimal("10", customerOpeningLines.single { it.debit != "0" }.debit)
+            assertDecimal("10", customerOpeningLines.single { it.credit != "0" }.credit)
+
+            // Editing profile fields must not rewrite the saved opening balance or its journal.
+            partyRepository.saveParty(
+                id = customer.id,
+                kind = "CUSTOMER",
+                name = "عميل تكامل معدل",
+                phone = "",
+                address = "",
+                note = "تعديل بيانات فقط",
+                openingBalance = "999",
+                currencyCode = "USD",
+                openingExchangeRate = "15000"
+            )
+            assertEquals(1, database.journalEntryDao().getAll().size)
+            assertDecimal(
+                "10",
+                database.ledgerDao().getForParty(customer.id).single { it.entryType == "RECEIVABLE" }.amount
+            )
 
             productRepository.addProduct(
                 sku = "PARTY-001",
@@ -106,7 +135,8 @@ class PartySettlementIntegrationTest {
             assertDecimal("20", updatedInvoice!!.paid)
             assertDecimal("10", updatedInvoice.remaining)
             val settlementJournals = database.journalEntryDao().getAll()
-            assertEquals(3, settlementJournals.size)
+            assertEquals(4, settlementJournals.size)
+            assertEquals(1, settlementJournals.count { it.sourceType == "CUSTOMER_OPENING_BALANCE" })
             assertEquals(1, settlementJournals.count { it.sourceType == "CUSTOMER_RECEIPT" })
             assertEquals(1, settlementJournals.count { it.sourceType == "SALE_RECEIPT" })
             settlementJournals.forEach { journal ->
@@ -179,6 +209,60 @@ class PartySettlementIntegrationTest {
     }
 
     @Test
+    fun openingBalancesPreserveCurrencySnapshotsAndZeroBalancesDoNotCreateJournals() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val parties = PartyRepository(database)
+            parties.saveParty(
+                id = null,
+                kind = "CUSTOMER",
+                name = "عميل بالدولار",
+                phone = "",
+                address = "",
+                note = "",
+                openingBalance = "25.75",
+                currencyCode = "USD",
+                openingExchangeRate = "15250"
+            )
+            parties.saveParty(
+                id = null,
+                kind = "SUPPLIER",
+                name = "مورد بلا رصيد",
+                phone = "",
+                address = "",
+                note = "",
+                openingBalance = "0",
+                currencyCode = "SYP",
+                openingExchangeRate = "1"
+            )
+
+            val customer = database.partyDao().getAll().single { it.kind == "CUSTOMER" }
+            val supplier = database.partyDao().getAll().single { it.kind == "SUPPLIER" }
+            val journals = database.journalEntryDao().getAll()
+            assertEquals(1, journals.size)
+            val journal = journals.single()
+            assertEquals("CUSTOMER_OPENING_BALANCE", journal.sourceType)
+            assertEquals(customer.id, journal.sourceId)
+            assertEquals("USD", journal.currencyCode)
+            assertEquals("15250", journal.exchangeRateSnapshot)
+
+            val lines = database.journalLineDao().getForEntry(journal.id)
+            assertEquals(2, lines.size)
+            assertDecimal("25.75", lines.single { it.debit != "0" }.debit)
+            assertDecimal("25.75", lines.single { it.credit != "0" }.credit)
+            assertEquals(
+                0,
+                lines.fold(BigDecimal.ZERO) { sum, line -> sum + line.debit.toBigDecimal() }
+                    .compareTo(lines.fold(BigDecimal.ZERO) { sum, line -> sum + line.credit.toBigDecimal() })
+            )
+            assertEquals(1, database.ledgerDao().getAll().size)
+            assertEquals(0, database.ledgerDao().getAll().count { it.partyId == supplier.id })
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun supplierPurchaseAndPaymentReducePayableWithoutTreatingPaymentAsExpense() = runBlocking {
         val database = newInMemoryDatabase()
         try {
@@ -199,6 +283,17 @@ class PartySettlementIntegrationTest {
                 openingExchangeRate = "1"
             )
             val supplier = database.partyDao().getAll().single()
+            val supplierOpeningJournal = database.journalEntryDao().getAll().single()
+            assertEquals("SUPPLIER_OPENING_BALANCE", supplierOpeningJournal.sourceType)
+            assertEquals(supplier.id, supplierOpeningJournal.sourceId)
+            assertEquals("SYP", supplierOpeningJournal.currencyCode)
+            assertEquals("1", supplierOpeningJournal.exchangeRateSnapshot)
+            val supplierOpeningLines = database.journalLineDao().getForEntry(supplierOpeningJournal.id)
+            val openingAccounts = database.accountDao().getAll().associate { it.id to it.code }
+            assertEquals("3000", openingAccounts.getValue(supplierOpeningLines.single { it.debit != "0" }.accountId))
+            assertEquals("2000", openingAccounts.getValue(supplierOpeningLines.single { it.credit != "0" }.accountId))
+            assertDecimal("5", supplierOpeningLines.single { it.debit != "0" }.debit)
+            assertDecimal("5", supplierOpeningLines.single { it.credit != "0" }.credit)
 
             products.addProduct(
                 sku = "SUPPLIER-001",
@@ -262,7 +357,8 @@ class PartySettlementIntegrationTest {
             )
 
             val journals = database.journalEntryDao().getAll()
-            assertEquals(3, journals.size)
+            assertEquals(4, journals.size)
+            assertEquals(1, journals.count { it.sourceType == "SUPPLIER_OPENING_BALANCE" })
             assertEquals(1, journals.count { it.sourceType == "SUPPLIER_PAYMENT" })
             assertEquals(1, journals.count { it.sourceType == "PURCHASE_PAYMENT" })
             journals.forEach { journal ->

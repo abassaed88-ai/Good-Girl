@@ -68,6 +68,8 @@ class PartyRepository(private val database: AccountingDatabase) {
                 )
 
                 if (cleanOpeningBalance.toBigDecimal() > BigDecimal.ZERO) {
+                    val openingSourceType =
+                        if (cleanKind == "CUSTOMER") "CUSTOMER_OPENING_BALANCE" else "SUPPLIER_OPENING_BALANCE"
                     database.ledgerDao().insert(
                         LedgerEntryEntity(
                             id = UUID.randomUUID().toString(),
@@ -76,11 +78,20 @@ class PartyRepository(private val database: AccountingDatabase) {
                             amount = cleanOpeningBalance,
                             currencyCode = cleanCurrency,
                             exchangeRateSnapshot = cleanRate,
-                            sourceType = if (cleanKind == "CUSTOMER") "CUSTOMER_OPENING_BALANCE" else "SUPPLIER_OPENING_BALANCE",
+                            sourceType = openingSourceType,
                             sourceId = partyId,
                             occurredAt = now,
                             note = "رصيد افتتاحي عند إنشاء الحساب"
                         )
+                    )
+                    PartyOpeningBalanceJournalPoster.post(
+                        database = database,
+                        partyId = partyId,
+                        partyKind = cleanKind,
+                        amount = cleanOpeningBalance,
+                        currencyCode = cleanCurrency,
+                        exchangeRateSnapshot = cleanRate,
+                        occurredAt = now
                     )
                 }
             } else {
