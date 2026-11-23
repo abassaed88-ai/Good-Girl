@@ -44,8 +44,9 @@ jobs:
           path: legacy-v4
 
       - name: Generate legacy v4 Room schema
+        timeout-minutes: 8
         working-directory: legacy-v4
-        run: gradle :app:kaptDebugKotlin --no-daemon
+        run: gradle :app:kaptDebugKotlin --no-daemon --console=plain --stacktrace
 
       - name: Copy v4 schema into current build
         run: |
@@ -53,7 +54,8 @@ jobs:
           cp legacy-v4/app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json
 
       - name: Generate current Room schema
-        run: gradle :app:kaptDebugKotlin --no-daemon
+        timeout-minutes: 8
+        run: gradle :app:kaptDebugKotlin --no-daemon --console=plain --stacktrace
 
       - name: Upload Room schema snapshots
         uses: actions/upload-artifact@v4
@@ -64,7 +66,8 @@ jobs:
           retention-days: 14
 
       - name: Run unit tests
-        run: gradle :app:testDebugUnitTest --no-daemon
+        timeout-minutes: 12
+        run: gradle :app:testDebugUnitTest --no-daemon --console=plain --stacktrace
 
       - name: Upload unit test reports
         if: always()
@@ -88,6 +91,7 @@ jobs:
           fi
 
       - name: Run database migration instrumentation tests
+        timeout-minutes: 22
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
@@ -96,10 +100,11 @@ jobs:
           profile: pixel_2
           disable-animations: true
           emulator-boot-timeout: 900
-          script: gradle :app:connectedDebugAndroidTest --no-daemon
+          script: gradle :app:connectedDebugAndroidTest --no-daemon --console=plain --stacktrace
 
       - name: Build debug APK
-        run: gradle :app:assembleDebug --no-daemon
+        timeout-minutes: 8
+        run: gradle :app:assembleDebug --no-daemon --console=plain --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
