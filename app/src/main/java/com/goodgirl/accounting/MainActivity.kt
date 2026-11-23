@@ -112,6 +112,7 @@ private fun GoodGirlApp() {
     var statementReturnPage by remember { mutableStateOf("parties") }
     var unitsProductId by remember { mutableStateOf<String?>(null) }
     var historyProductId by remember { mutableStateOf<String?>(null) }
+    var journalEntryDetailId by remember { mutableStateOf<String?>(null) }
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = BrandBlue,
@@ -128,6 +129,23 @@ private fun GoodGirlApp() {
         Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
             when (activePage) {
                 "cash" -> CashManagementScreen(onBack = { activePage = "dashboard" })
+                "general_accounting" -> GeneralAccountingHubScreen(
+                    onBack = { activePage = "dashboard" },
+                    onOpenChart = { activePage = "chart_of_accounts" },
+                    onOpenJournal = { activePage = "journal_book" }
+                )
+                "chart_of_accounts" -> ChartOfAccountsScreen(onBack = { activePage = "general_accounting" })
+                "journal_book" -> JournalBookScreen(
+                    onBack = { activePage = "general_accounting" },
+                    onOpenEntry = { id ->
+                        journalEntryDetailId = id
+                        activePage = "journal_detail"
+                    }
+                )
+                "journal_detail" -> JournalEntryDetailScreen(
+                    entryId = journalEntryDetailId.orEmpty(),
+                    onBack = { activePage = "journal_book" }
+                )
                 "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
                 "backup" -> BackupManagementScreen(onBack = { activePage = "dashboard" })
                 "settings" -> SettingsScreen(onBack = { activePage = "dashboard" })
@@ -189,6 +207,7 @@ private fun GoodGirlApp() {
                     onOpenParties = { activePage = "parties" },
                     onOpenAccounts = { activePage = "accounts" },
                     onOpenCash = { activePage = "cash" },
+                    onOpenGeneralAccounting = { activePage = "general_accounting" },
                     onOpenReports = { activePage = "reports" },
                     onOpenBackup = { activePage = "backup" },
                     onOpenSettings = { activePage = "settings" }
@@ -208,6 +227,7 @@ private fun DashboardScreen(
     onOpenParties: () -> Unit,
     onOpenAccounts: () -> Unit,
     onOpenCash: () -> Unit,
+    onOpenGeneralAccounting: () -> Unit,
     onOpenReports: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenSettings: () -> Unit
@@ -336,7 +356,8 @@ private fun DashboardScreen(
             "الحسابات والديون",
             "الصندوق والمصروفات",
             "التقارير والأرباح",
-            "النسخ الاحتياطي والاستعادة"
+            "النسخ الاحتياطي والاستعادة",
+            "المحاسبة العامة"
         )
         sections.forEachIndexed { index, title ->
             SectionRow(
@@ -351,6 +372,7 @@ private fun DashboardScreen(
                     5 -> onOpenCash
                     6 -> onOpenReports
                     7 -> onOpenBackup
+                    8 -> onOpenGeneralAccounting
                     else -> null
                 }
             )
