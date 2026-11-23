@@ -10,6 +10,9 @@ import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
+import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
+import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
+import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -27,7 +30,10 @@ class BackupIntegrityValidatorTest {
         entries: List<LedgerEntryEntity> = emptyList(),
         accounts: List<AccountEntity> = emptyList(),
         journalEntries: List<JournalEntryEntity> = emptyList(),
-        journalLines: List<JournalLineEntity> = emptyList()
+        journalLines: List<JournalLineEntity> = emptyList(),
+        rates: List<ExchangeRateHistoryEntity> = emptyList(),
+        rateAudits: List<ExchangeRateAuditEntity> = emptyList(),
+        correctionItems: List<ExchangeRateCorrectionItemEntity> = emptyList()
     ) = BackupIntegrityValidator.validate(
         categories = empty,
         products = products,
@@ -39,7 +45,10 @@ class BackupIntegrityValidatorTest {
         ledgerEntries = entries,
         accounts = accounts,
         journalEntries = journalEntries,
-        journalLines = journalLines
+        journalLines = journalLines,
+        exchangeRateHistory = rates,
+        exchangeRateAudits = rateAudits,
+        exchangeRateCorrectionItems = correctionItems
     )
 
     private fun product() = ProductEntity(
@@ -313,6 +322,57 @@ class BackupIntegrityValidatorTest {
                     JournalLineEntity("jl2", "j1", 2, "a-sales", "0", "10", "")
                 )
             )
+        }
+    }
+
+
+    @Test
+    fun acceptsExchangeRateCorrectionWithCompleteAuditAndAffectedRecordSnapshot() {
+        val rate = ExchangeRateHistoryEntity(
+            id = "rate-1", currencyPair = "USD/SYP", rate = "15100",
+            effectiveAt = 100L, recordedAt = 100L, source = "USER"
+        )
+        val audit = ExchangeRateAuditEntity(
+            id = "audit-1", historyId = "rate-1", eventType = "RATE_CORRECTION",
+            oldRate = "15000", newRate = "15100", reason = "تصحيح سعر مدخل بالخطأ",
+            correctedAt = 200L, affectedInvoiceCount = 1
+        )
+        val item = ExchangeRateCorrectionItemEntity(
+            id = "item-1", auditId = "audit-1", recordType = "INVOICE",
+            recordId = "invoice-1", sourceType = "SALE_INVOICE", sourceId = "invoice-1",
+            oldRate = "15000", newRate = "15100"
+        )
+        validate(rates = listOf(rate), rateAudits = listOf(audit), correctionItems = listOf(item))
+    }
+
+    @Test
+    fun rejectsExchangeRateAuditWithoutItsHistoryRecord() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(
+                rateAudits = listOf(
+                    ExchangeRateAuditEntity(
+                        id = "audit-1", historyId = "missing", eventType = "RATE_SET",
+                        oldRate = "15000", newRate = "15100", reason = "تغيير سعر",
+                        correctedAt = 200L
+                    )
+                )
+            )
+        }
+    }
+
+    @Test
+    fun rejectsCorrectionAuditWhenAffectedCountsDoNotMatchItems() {
+        assertThrows(IllegalArgumentException::class.java) {
+            val rate = ExchangeRateHistoryEntity(
+                id = "rate-1", currencyPair = "USD/SYP", rate = "15100",
+                effectiveAt = 100L, recordedAt = 100L, source = "USER"
+            )
+            val audit = ExchangeRateAuditEntity(
+                id = "audit-1", historyId = "rate-1", eventType = "RATE_CORRECTION",
+                oldRate = "15000", newRate = "15100", reason = "تصحيح",
+                correctedAt = 200L, affectedInvoiceCount = 2
+            )
+            validate(rates = listOf(rate), rateAudits = listOf(audit))
         }
     }
 

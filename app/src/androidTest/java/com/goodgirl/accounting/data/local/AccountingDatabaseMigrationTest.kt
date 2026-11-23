@@ -232,6 +232,48 @@ class AccountingDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun roomMigrationCreatesVersionSevenExchangeRateHistoryAndAuditTables() {
+        val databaseName = "room-migration-v6-v7.db"
+        val legacy = roomMigrationHelper.createDatabase(databaseName, 6)
+        legacy.close()
+
+        val migrated = roomMigrationHelper.runMigrationsAndValidate(
+            databaseName,
+            7,
+            true,
+            AccountingDatabase.MIGRATION_6_7
+        )
+        try {
+            assertEquals(0, databaseCount(migrated, "exchange_rate_history"))
+            assertEquals(0, databaseCount(migrated, "exchange_rate_audits"))
+            assertEquals(0, databaseCount(migrated, "exchange_rate_correction_items"))
+
+            migrated.execSQL(
+                "INSERT INTO exchange_rate_history " +
+                    "(id, currencyPair, rate, effectiveAt, recordedAt, source, isArchived) " +
+                    "VALUES ('rate-1', 'USD/SYP', '15100', 100, 100, 'USER', 0)"
+            )
+            migrated.execSQL(
+                "INSERT INTO exchange_rate_audits " +
+                    "(id, historyId, eventType, oldRate, newRate, reason, correctedAt, " +
+                    "affectedInvoiceCount, affectedLedgerCount, affectedJournalCount, financialAmountsChanged) " +
+                    "VALUES ('audit-1', 'rate-1', 'RATE_CORRECTION', '15000', '15100', 'تصحيح', 200, 1, 0, 0, 0)"
+            )
+            migrated.execSQL(
+                "INSERT INTO exchange_rate_correction_items " +
+                    "(id, auditId, recordType, recordId, sourceType, sourceId, oldRate, newRate) " +
+                    "VALUES ('item-1', 'audit-1', 'INVOICE', 'invoice-1', 'SALE_INVOICE', 'invoice-1', '15000', '15100')"
+            )
+            assertEquals(1, databaseCount(migrated, "exchange_rate_history"))
+            assertEquals(1, databaseCount(migrated, "exchange_rate_audits"))
+            assertEquals(1, databaseCount(migrated, "exchange_rate_correction_items"))
+        } finally {
+            migrated.close()
+            InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(databaseName)
+        }
+    }
+
     private fun insertLegacyLedger(
         database: SupportSQLiteDatabase,
         id: String,
