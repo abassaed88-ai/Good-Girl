@@ -59,7 +59,11 @@ internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/octet-stream")
     ) { uri ->
-        if (uri != null) {
+        if (uri == null) {
+            // Do not keep a password in Compose state when the user cancels the picker.
+            exportPassword = ""
+            confirmExportPassword = ""
+        } else {
             scope.launch {
                 isBusy = true
                 message = null
@@ -81,7 +85,11 @@ internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
     val restoreLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) {
+        if (uri == null) {
+            // Clear typed credentials on cancellation as well as after an attempt.
+            restorePassword = ""
+            confirmRestore = false
+        } else {
             scope.launch {
                 isBusy = true
                 message = null
