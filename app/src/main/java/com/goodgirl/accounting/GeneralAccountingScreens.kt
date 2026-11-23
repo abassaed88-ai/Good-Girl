@@ -696,8 +696,15 @@ fun JournalEntryDetailScreen(
     val entries by database.journalEntryDao().observeAll().collectAsState(initial = emptyList())
     val accounts by database.accountDao().observeAll().collectAsState(initial = emptyList())
     val lines by database.journalLineDao().observeForEntry(entryId).collectAsState(initial = emptyList())
+    val repository = remember(database) { JournalRepository(database) }
+    val scope = rememberCoroutineScope()
     val entry = entries.firstOrNull { it.id == entryId }
+    val existingReversal = entries.firstOrNull { it.sourceType == "REVERSAL" && it.sourceId == entryId }
     val accountsById = accounts.associateBy { it.id }
+    var showReversalDialog by remember { mutableStateOf(false) }
+    var reversalReason by remember { mutableStateOf("") }
+    var reversalMessage by remember { mutableStateOf<String?>(null) }
+    var isReversing by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -717,6 +724,25 @@ fun JournalEntryDetailScreen(
                     Text("التاريخ: " + SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date(entry.occurredAt)), color = AccountingMuted, fontSize = 12.sp)
                     Text("نوع المصدر: " + journalSourceArabic(entry.sourceType), color = AccountingMuted, fontSize = 12.sp)
                 }
+            }
+            if (entry.sourceType == "MANUAL_JOURNAL" && existingReversal == null) {
+                Button(
+                    onClick = { showReversalDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("إنشاء قيد عكسي")
+                }
+            }
+            if (existingReversal != null) {
+                Text(
+                    "تم إنشاء القيد العكسي لهذا القيد: " + existingReversal.journalNumber,
+                    color = AccountingGood,
+                    fontSize = 12.sp
+                )
+            }
+            reversalMessage?.let { Text(it, color = if (it.startsWith("تم")) AccountingGood else AccountingBad, fontSize = 12.sp) }
+            if (entry.sourceType == "REVERSAL") {
+                Text("هذا قيد عكسي مستقل؛ لا يمكن عكسه مرة أخرى.", color = AccountingMuted, fontSize = 12.sp)
             }
             val debitTotal = lines.fold(BigDecimal.ZERO) { total, line -> total.add(line.debit.toBigDecimal()) }
             val creditTotal = lines.fold(BigDecimal.ZERO) { total, line -> total.add(line.credit.toBigDecimal()) }
@@ -740,6 +766,78 @@ fun JournalEntryDetailScreen(
                     Text("إجمالي المدين: " + debitTotal.stripTrailingZeros().toPlainString() + " " + entry.currencyCode, color = AccountingText, fontWeight = FontWeight.Bold)
                     Text("إجمالي الدائن: " + creditTotal.stripTrailingZeros().toPlainString() + " " + entry.currencyCode, color = AccountingText, fontWeight = FontWeight.Bold)
                     Text(if (debitTotal.compareTo(creditTotal) == 0) "القيد متوازن" else "تحذير: القيد غير متوازن", color = if (debitTotal.compareTo(creditTotal) == 0) AccountingGood else AccountingBad, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+
+    if (showReversalDialog) {
+        Dialog(
+            onDismissRequest = { if (!isReversing) showReversalDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth(0.96f).heightIn(max = 420.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = AccountingSurface
+            ) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("إنشاء قيد عكسي", color = AccountingText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(
+                        "سيُنشأ قيد جديد يعكس المدين والدائن دون تعديل القيد اليدوي الأصلي. لا يتاح هذا الإجراء حالياً لفواتير البيع والشراء أو حركات المخزون والتحصيل.",
+                        color = AccountingMuted,
+                        fontSize = 12.sp
+                    )
+                    OutlinedTextField(
+                        value = reversalReason,
+                        onValueChange = { reversalReason = it },
+                        label = { Text("سبب عكس القيد") },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2
+                    )
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        TextButton(
+                            onClick = { showReversalDialog = false },
+                            enabled = !isReversing,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("إلغاء") }
+                        Button(
+                            onClick = {
+                                val currentEntry = entry
+                                if (currentEntry != null) {
+                                    scope.launch {
+                                        isReversing = true
+                                        try {
+                                            val reversalId = repository.reverseJournalEntry(
+                                                originalEntryId = currentEntry.id,
+                                                reversalJournalNumber = "REV-" + System.currentTimeMillis().toString(),
+                                                occurredAt = System.currentTimeMillis(),
+                                                reason = reversalReason
+                                            )
+                                            val reversal = database.journalEntryDao().findById(reversalId)
+                                            reversalMessage = "تم إنشاء القيد العكسي: " + (reversal?.journalNumber ?: reversalId)
+                                            reversalReason = ""
+                                            showReversalDialog = false
+                                        } catch (error: Exception) {
+                                            reversalMessage = error.message ?: "تعذر إنشاء القيد العكسي"
+                                        } finally {
+                                            isReversing = false
+                                        }
+                                    }
+                                }
+                            },
+                            enabled = reversalReason.isNotBlank() && !isReversing,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (isReversing) "جارٍ الإنشاء..." else "تأكيد العكس")
+                        }
+                    }
                 }
             }
         }
@@ -770,5 +868,6 @@ private fun journalSourceArabic(source: String): String = when (source) {
     "MANUAL_CASH_INCOME" -> "إيراد نقدي يدوي"
     "MANUAL_CASH_EXPENSE" -> "مصروف نقدي يدوي"
     "MANUAL_JOURNAL" -> "قيد يومية يدوي"
+    "REVERSAL" -> "قيد عكسي"
     else -> source
 }
