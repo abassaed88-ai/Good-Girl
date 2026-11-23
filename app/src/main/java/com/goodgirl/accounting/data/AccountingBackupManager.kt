@@ -114,49 +114,46 @@ class AccountingBackupManager(
         val encodedBytes = input.use { stream ->
             val output = WipingByteArrayOutputStream()
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            try {
-                var total = 0
-                while (true) {
-                    val read = stream.read(buffer)
-                    if (read < 0) break
-                    total += read
-                    require(total <= MAX_ENCRYPTED_BACKUP_BYTES) {
-                        "حجم ملف النسخة الاحتياطية أكبر من الحد المسموح"
+            buffer.useAndWipe { readBuffer ->
+                try {
+                    var total = 0
+                    while (true) {
+                        val read = stream.read(readBuffer)
+                        if (read < 0) break
+                        total += read
+                        require(total <= MAX_ENCRYPTED_BACKUP_BYTES) {
+                            "حجم ملف النسخة الاحتياطية أكبر من الحد المسموح"
+                        }
+                        output.write(readBuffer, 0, read)
                     }
-                    output.write(buffer, 0, read)
+                    output.toByteArray()
+                } finally {
+                    output.wipe()
                 }
-                output.toByteArray()
-            } finally {
-                buffer.fill(0)
-                output.wipe()
             }
         }
         require(encodedBytes.isNotEmpty()) { "ملف النسخة الاحتياطية فارغ" }
 
         val wasLegacyUnencrypted = !EncryptedBackupCodec.isEncrypted(encodedBytes)
-        val plaintext = try {
+        val plaintext = encodedBytes.useAndWipe { sourceBytes ->
             if (wasLegacyUnencrypted) {
-                require(isLegacyJson(encodedBytes)) {
+                require(isLegacyJson(sourceBytes)) {
                     "ملف النسخة الاحتياطية غير معروف أو تالف"
                 }
-                encodedBytes.copyOf()
+                sourceBytes.copyOf()
             } else {
-                EncryptedBackupCodec.decrypt(encodedBytes, password)
+                EncryptedBackupCodec.decrypt(sourceBytes, password)
             }
-        } finally {
-            encodedBytes.fill(0)
         }
-        val root = try {
-            require(plaintext.size <= MAX_BACKUP_BYTES) {
+        val root = plaintext.useAndWipe { payload ->
+            require(payload.size <= MAX_BACKUP_BYTES) {
                 "حجم محتوى النسخة الاحتياطية أكبر من الحد المسموح"
             }
             try {
-                JSONObject(String(plaintext, Charsets.UTF_8))
+                JSONObject(String(payload, Charsets.UTF_8))
             } catch (error: Exception) {
                 throw IllegalArgumentException("ملف النسخة الاحتياطية تالف أو غير صالح", error)
             }
-        } finally {
-            plaintext.fill(0)
         }
         require(root.getString("format") == BACKUP_FORMAT) { "الملف المحدد ليس نسخة احتياطية لتطبيق Good Girl" }
         val formatVersion = root.getInt("formatVersion")
