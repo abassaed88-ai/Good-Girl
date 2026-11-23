@@ -147,8 +147,9 @@ class AccountingBackupManager(
         val formatVersion = root.getInt("formatVersion")
         require(formatVersion in 1..BACKUP_FORMAT_VERSION) { "صيغة النسخة الاحتياطية غير مدعومة" }
         require(root.getString("applicationId") == APPLICATION_ID) { "النسخة الاحتياطية لا تخص هذا التطبيق" }
-        require(root.getInt("databaseVersion") == DATABASE_VERSION) {
-            "إصدار قاعدة البيانات في النسخة لا يتوافق مع إصدار التطبيق الحالي"
+        val backupDatabaseVersion = root.getInt("databaseVersion")
+        require(backupDatabaseVersion in (DATABASE_VERSION - 1)..DATABASE_VERSION) {
+            "إصدار قاعدة البيانات في النسخة الاحتياطية غير مدعوم"
         }
 
         val categories = root.parseArray("categories") { it.toCategoryEntity() }
@@ -157,7 +158,13 @@ class AccountingBackupManager(
         val parties = root.parseArray("parties") { it.toPartyEntity() }
         val invoices = root.parseArray("invoices") { it.toInvoiceEntity() }
         val invoiceLines = root.parseArray("invoiceLines") { it.toInvoiceLineEntity() }
-        val movements = root.parseArray("stockMovements") { it.toStockMovementEntity() }
+        val importedMovements = root.parseArray("stockMovements") { it.toStockMovementEntity() }
+        val movements = BackupStockMovementMigrator.migrateToCurrentVersion(
+            databaseVersion = backupDatabaseVersion,
+            products = products,
+            movements = importedMovements,
+            occurredAt = System.currentTimeMillis()
+        )
         val ledgerEntries = root.parseArray("ledgerEntries") { it.toLedgerEntryEntity() }
 
         // Validate the complete snapshot before opening the destructive replacement transaction.
