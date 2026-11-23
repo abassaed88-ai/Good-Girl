@@ -360,6 +360,10 @@ class AccountingDatabaseMigrationTest {
         return total
     }
 
+    private fun assertDecimal(expected: String, actual: String) {
+        assertEquals(0, BigDecimal(expected).compareTo(BigDecimal(actual)))
+    }
+
     private fun assertDecimalEquals(expected: String, actual: BigDecimal) {
         assertEquals(0, BigDecimal(expected).compareTo(actual))
     }
