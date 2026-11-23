@@ -39,6 +39,10 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
+private val BackupWarningTextColor = Color(0xFFFFC078)
+private val BackupSuccessTextColor = Color(0xFF78C9A0)
+private val BackupErrorTextColor = Color(0xFFE58A9B)
+
 @Composable
 internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
     val context = LocalContext.current
@@ -126,22 +130,22 @@ internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
             "النسخ الاحتياطي والاستعادة",
             style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold,
-            color = Color(0xFF263445)
+            color = MaterialTheme.colorScheme.onSurface
         )
 
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("إنشاء نسخة احتياطية مشفّرة", color = Color(0xFF263445), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("إنشاء نسخة احتياطية مشفّرة", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                 Text(
                     "تُشفّر النسخة قبل حفظها في ملف GGBackup. اختر كلمة مرور لا تقل عن 8 أحرف، واحفظها بمكان آمن منفصل عن الملف. لا يمكن استعادة النسخة المشفّرة من دونها.",
-                    color = Color(0xFF64748B),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 13.sp
                 )
                 OutlinedTextField(
@@ -178,16 +182,16 @@ internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text("استعادة نسخة احتياطية", color = Color(0xFF263445), fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text("استعادة نسخة احتياطية", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 17.sp)
                 Text(
                     "الاستعادة تستبدل البيانات الحالية بالكامل ببيانات الملف المختار، ولا يمكن التراجع عنها من داخل التطبيق.",
-                    color = Color(0xFFB42332),
+                    color = BackupWarningTextColor,
                     fontSize = 13.sp
                 )
                 OutlinedTextField(
@@ -201,7 +205,7 @@ internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
                 )
                 Text(
                     "اترك كلمة المرور فارغة فقط عند استيراد ملف JSON قديم غير مشفّر.",
-                    color = Color(0xFF64748B),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
                 Checkbox(
@@ -231,16 +235,16 @@ internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
 
         Text(
             "ملفات JSON القديمة ما زال يمكن استيرادها، لكنها غير مشفّرة. بعد استعادتها أنشئ نسخة جديدة مشفّرة.",
-            color = Color(0xFF64748B),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp
         )
         if (isBusy) {
-            Text("جارٍ تنفيذ العملية...", color = Color(0xFF2878C8), fontWeight = FontWeight.SemiBold)
+            Text("جارٍ تنفيذ العملية...", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
         }
         message?.let {
             Text(
                 it,
-                color = if (it.startsWith("تم")) Color(0xFF287A4B) else Color(0xFFB42332),
+                color = if (it.startsWith("تم")) BackupSuccessTextColor else BackupErrorTextColor,
                 fontSize = 13.sp
             )
         }
