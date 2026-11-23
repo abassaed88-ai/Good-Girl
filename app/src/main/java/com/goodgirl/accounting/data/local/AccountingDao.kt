@@ -205,8 +205,14 @@ interface LedgerDao {
     @Query("SELECT * FROM ledger_entries WHERE partyId = :partyId ORDER BY occurredAt DESC")
     suspend fun getForParty(partyId: String): List<LedgerEntryEntity>
 
+    @Query("SELECT * FROM ledger_entries WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): LedgerEntryEntity?
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: LedgerEntryEntity)
+
+    @Update
+    suspend fun update(entry: LedgerEntryEntity)
 }
 
 
@@ -259,6 +265,9 @@ interface JournalEntryDao {
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: JournalEntryEntity)
+
+    @Update
+    suspend fun update(entry: JournalEntryEntity)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(entries: List<JournalEntryEntity>)
