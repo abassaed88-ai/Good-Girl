@@ -49,6 +49,7 @@ import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.JournalEntryEntity
 import com.goodgirl.accounting.data.local.JournalLineEntity
 import com.goodgirl.accounting.domain.JournalLineDraft
+import com.goodgirl.accounting.domain.AccountInputRules
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -174,7 +175,15 @@ fun ChartOfAccountsScreen(onBack: () -> Unit) {
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(account.code + " — " + account.name, color = AccountingText, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                            Text(if (account.isSystem) "أساسي" else "مخصص", color = AccountingAccent, fontSize = 11.sp)
+                            Text(
+                                when {
+                                    !account.isActive -> "موقوف"
+                                    account.isSystem -> "أساسي"
+                                    else -> "مخصص"
+                                },
+                                color = if (account.isActive) AccountingAccent else AccountingBad,
+                                fontSize = 11.sp
+                            )
                         }
                         Text(accountTypeArabic(account.accountType) + " · " + if (account.normalSide == "DEBIT") "طبيعته مدينة" else "طبيعته دائنة", color = AccountingMuted, fontSize = 12.sp)
                         if (currencyBalances.isEmpty()) {
@@ -225,19 +234,15 @@ fun ChartOfAccountsScreen(onBack: () -> Unit) {
             onSave = { code, name, type ->
                 scope.launch {
                     runCatching {
-                        val cleanCode = code.trim()
-                        val cleanName = name.trim()
-                        require(cleanCode.isNotEmpty()) { "رمز الحساب مطلوب" }
-                        require(cleanName.isNotEmpty()) { "اسم الحساب مطلوب" }
-                        require(database.accountDao().findByCode(cleanCode) == null) { "رمز الحساب مستخدم مسبقاً" }
-                        val normalSide = if (type == "ASSET" || type == "EXPENSE") "DEBIT" else "CREDIT"
+                        val normalized = AccountInputRules.normalize(code, name, type)
+                        require(database.accountDao().findByCode(normalized.code) == null) { "رمز الحساب مستخدم مسبقاً" }
                         database.accountDao().insert(
                             AccountEntity(
                                 id = UUID.randomUUID().toString(),
-                                code = cleanCode,
-                                name = cleanName,
-                                accountType = type,
-                                normalSide = normalSide,
+                                code = normalized.code,
+                                name = normalized.name,
+                                accountType = normalized.accountType,
+                                normalSide = normalized.normalSide,
                                 isSystem = false,
                                 isActive = true,
                                 createdAt = System.currentTimeMillis()
