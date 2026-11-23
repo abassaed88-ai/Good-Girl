@@ -172,6 +172,11 @@ private fun sameRate(left: String, right: String): Boolean = runCatching {
     BigDecimal(left).compareTo(BigDecimal(right)) == 0
 }.getOrDefault(false)
 
+private val exchangeRateTimelineOrder =
+    compareBy<ExchangeRateHistoryEntity> { it.effectiveAt }
+        .thenBy { it.recordedAt }
+        .thenBy { it.id }
+
 private suspend fun buildCorrectionPreview(
     database: AccountingDatabase,
     historyId: String,
@@ -185,10 +190,12 @@ private suspend fun buildCorrectionPreview(
 
     val activeRates = database.exchangeRateHistoryDao().getAll()
         .filter { it.currencyPair == selected.currencyPair && !it.isArchived }
-        .sortedWith(compareBy(ExchangeRateHistoryEntity::effectiveAt, ExchangeRateHistoryEntity::recordedAt))
-    val nextEffectiveAt = activeRates
-        .firstOrNull { it.effectiveAt > selected.effectiveAt }
-        ?.effectiveAt
+        .sortedWith(exchangeRateTimelineOrder)
+    val selectedIndex = activeRates.indexOfFirst { it.id == selected.id }
+    check(selectedIndex >= 0) { "سجل سعر الصرف غير موجود ضمن السجل النشط" }
+    // The next row in timeline order is the boundary, even when its effectiveAt
+    // is equal. In that case the earlier row has an empty, unambiguous time window.
+    val nextEffectiveAt = activeRates.getOrNull(selectedIndex + 1)?.effectiveAt
 
     fun inSelectedPeriod(timestamp: Long): Boolean =
         timestamp >= selected.effectiveAt &&
@@ -379,7 +386,7 @@ suspend fun applyExchangeRateCorrection(
 
         val latest = historyDao.getAll()
             .filter { it.currencyPair == selected.currencyPair && !it.isArchived }
-            .maxWithOrNull(compareBy<ExchangeRateHistoryEntity> { it.effectiveAt }.thenBy { it.recordedAt })
+            .maxWithOrNull(exchangeRateTimelineOrder)
         ExchangeRateCorrectionResult(
             auditId = auditId,
             updatedInvoiceCount = preview.invoiceCount,
@@ -412,9 +419,7 @@ suspend fun archiveExchangeRate(
         require(!selected.isArchived) { "السعر مؤرشف مسبقاً" }
         val active = database.exchangeRateHistoryDao().getAll()
             .filter { it.currencyPair == selected.currencyPair && !it.isArchived }
-        val latest = active.maxWithOrNull(
-            compareBy<ExchangeRateHistoryEntity> { it.effectiveAt }.thenBy { it.recordedAt }
-        )
+        val latest = active.maxWithOrNull(exchangeRateTimelineOrder)
         require(latest?.id != selected.id) { "لا يمكن أرشفة سعر الصرف الحالي" }
         database.exchangeRateAuditDao().insert(
             ExchangeRateAuditEntity(

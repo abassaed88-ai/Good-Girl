@@ -179,6 +179,63 @@ class ExchangeRateHistoryCorrectionTest {
     }
 
     @Test
+    fun equalEffectiveTimestampsUseRecordedOrderForCorrectionWindows() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            AccountingDatabase::class.java
+        ).allowMainThreadQueries().build()
+        try {
+            database.exchangeRateHistoryDao().insertAll(
+                listOf(
+                    ExchangeRateHistoryEntity(
+                        "rate-first", "USD/SYP", "15000", 100L, 100L, "USER"
+                    ),
+                    ExchangeRateHistoryEntity(
+                        "rate-second", "USD/SYP", "15500", 100L, 200L, "USER"
+                    ),
+                    ExchangeRateHistoryEntity(
+                        "rate-next", "USD/SYP", "16000", 300L, 300L, "USER"
+                    )
+                )
+            )
+            database.invoiceDao().insertAllInvoices(
+                listOf(
+                    InvoiceEntity(
+                        id = "invoice-first-rate", invoiceNumber = "S-TIE-1", kind = "SALE",
+                        currencyCode = "USD", exchangeRateSnapshot = "15000",
+                        subtotal = "10", discount = "0", total = "10", paid = "10",
+                        remaining = "0", status = "POSTED", issuedAt = 150L, createdAt = 150L
+                    ),
+                    InvoiceEntity(
+                        id = "invoice-second-rate", invoiceNumber = "S-TIE-2", kind = "SALE",
+                        currencyCode = "USD", exchangeRateSnapshot = "15500",
+                        subtotal = "20", discount = "0", total = "20", paid = "20",
+                        remaining = "0", status = "POSTED", issuedAt = 150L, createdAt = 150L
+                    ),
+                    InvoiceEntity(
+                        id = "invoice-after-tie-period", invoiceNumber = "S-TIE-3", kind = "SALE",
+                        currencyCode = "USD", exchangeRateSnapshot = "15500",
+                        subtotal = "30", discount = "0", total = "30", paid = "30",
+                        remaining = "0", status = "POSTED", issuedAt = 350L, createdAt = 350L
+                    )
+                )
+            )
+
+            val firstPreview = previewExchangeRateCorrection(database, "rate-first", "15100")
+            assertEquals(100L, firstPreview.effectiveUntilExclusive)
+            assertTrue(firstPreview.records.isEmpty())
+
+            val secondPreview = previewExchangeRateCorrection(database, "rate-second", "15600")
+            assertEquals(300L, secondPreview.effectiveUntilExclusive)
+            assertEquals(1, secondPreview.invoiceCount)
+            assertEquals("invoice-second-rate", secondPreview.records.single().recordId)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun archivesOldRateWithoutDeletingItAndBlocksArchivingCurrentRate() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val database = Room.inMemoryDatabaseBuilder(
