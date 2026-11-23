@@ -134,6 +134,7 @@ private fun GoodGirlApp() {
         )
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
+            Box(modifier = Modifier.fillMaxSize()) {
             when (activePage) {
                 "cash" -> CashManagementScreen(onBack = { activePage = "dashboard" })
                 "general_accounting" -> GeneralAccountingHubScreen(
@@ -233,6 +234,18 @@ private fun GoodGirlApp() {
                     onOpenBackup = { activePage = "backup" },
                     onOpenSettings = { activePage = "settings" }
                 )
+            }
+            if (activePage != "dashboard") {
+                TextButton(
+                    onClick = { activePage = "dashboard" },
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(12.dp)
+                        .background(BrandBlue, RoundedCornerShape(24.dp))
+                ) {
+                    Text("⌂ الرئيسية", color = Color.White, fontWeight = FontWeight.SemiBold)
+                }
+            }
             }
         }
     }
