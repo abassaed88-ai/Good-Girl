@@ -836,6 +836,7 @@ private fun SettingsScreen(
                 Text("ملاحظات", color = Ink, fontWeight = FontWeight.Bold)
                 Text("• سعر الصرف محفوظ محلياً على هذا الجهاز.", color = MutedText, fontSize = 12.sp)
                 Text("• الفواتير السابقة تحتفظ بسعر الصرف المسجل وقت إنشائها.", color = MutedText, fontSize = 12.sp)
+                Text("• سجل أسعار الصرف محفوظ ضمن بيانات التطبيق والنسخ الاحتياطية، وتغيير السعر الحالي لا يعدّل الحركات السابقة.", color = MutedText, fontSize = 12.sp)
                 Text("• العملة السورية تعتمد سعر صرف 1 تلقائياً.", color = MutedText, fontSize = 12.sp)
             }
         }
