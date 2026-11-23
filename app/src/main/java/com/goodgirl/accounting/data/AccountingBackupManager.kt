@@ -26,6 +26,13 @@ data class AccountingBackupResult(
     val wasLegacyUnencrypted: Boolean = false
 )
 
+private class WipingByteArrayOutputStream : ByteArrayOutputStream() {
+    fun wipe() {
+        buf.fill(0)
+        reset()
+    }
+}
+
 /**
  * Logical JSON backup. All values are serialized from Room entities, preserving
  * decimal strings and avoiding unsafe copying of an open SQLite/WAL database.
@@ -105,19 +112,24 @@ class AccountingBackupManager(
         val input = context.contentResolver.openInputStream(source)
             ?: throw IllegalStateException("تعذر فتح ملف النسخة الاحتياطية")
         val encodedBytes = input.use { stream ->
-            val output = ByteArrayOutputStream()
+            val output = WipingByteArrayOutputStream()
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-            var total = 0
-            while (true) {
-                val read = stream.read(buffer)
-                if (read < 0) break
-                total += read
-                require(total <= MAX_ENCRYPTED_BACKUP_BYTES) {
-                    "حجم ملف النسخة الاحتياطية أكبر من الحد المسموح"
+            try {
+                var total = 0
+                while (true) {
+                    val read = stream.read(buffer)
+                    if (read < 0) break
+                    total += read
+                    require(total <= MAX_ENCRYPTED_BACKUP_BYTES) {
+                        "حجم ملف النسخة الاحتياطية أكبر من الحد المسموح"
+                    }
+                    output.write(buffer, 0, read)
                 }
-                output.write(buffer, 0, read)
+                output.toByteArray()
+            } finally {
+                buffer.fill(0)
+                output.wipe()
             }
-            output.toByteArray()
         }
         require(encodedBytes.isNotEmpty()) { "ملف النسخة الاحتياطية فارغ" }
 
@@ -134,14 +146,15 @@ class AccountingBackupManager(
         } finally {
             encodedBytes.fill(0)
         }
-        require(plaintext.size <= MAX_BACKUP_BYTES) {
-            "حجم محتوى النسخة الاحتياطية أكبر من الحد المسموح"
-        }
-
         val root = try {
-            JSONObject(String(plaintext, Charsets.UTF_8))
-        } catch (error: Exception) {
-            throw IllegalArgumentException("ملف النسخة الاحتياطية تالف أو غير صالح", error)
+            require(plaintext.size <= MAX_BACKUP_BYTES) {
+                "حجم محتوى النسخة الاحتياطية أكبر من الحد المسموح"
+            }
+            try {
+                JSONObject(String(plaintext, Charsets.UTF_8))
+            } catch (error: Exception) {
+                throw IllegalArgumentException("ملف النسخة الاحتياطية تالف أو غير صالح", error)
+            }
         } finally {
             plaintext.fill(0)
         }
