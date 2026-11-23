@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.withTransaction
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
+import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
