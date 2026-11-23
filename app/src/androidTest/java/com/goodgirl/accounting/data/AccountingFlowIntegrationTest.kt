@@ -258,8 +258,17 @@ class AccountingFlowIntegrationTest {
             )
 
             val entries = database.journalEntryDao().getAll()
-            assertEquals(2, entries.size)
-            assertEquals(setOf("SALE_INVOICE", "PURCHASE_INVOICE"), entries.map { it.sourceType }.toSet())
+            assertEquals(3, entries.size)
+            assertEquals(
+                setOf("PRODUCT_OPENING_STOCK", "SALE_INVOICE", "PURCHASE_INVOICE"),
+                entries.map { it.sourceType }.toSet()
+            )
+            val openingEntry = entries.single { it.sourceType == "PRODUCT_OPENING_STOCK" }
+            assertEquals(product.id, openingEntry.sourceId)
+            val openingLines = database.journalLineDao().getForEntry(openingEntry.id)
+            assertEquals(2, openingLines.size)
+            assertDecimal("50", openingLines.single { accounts[it.accountId]!!.code == "1200" }.debit)
+            assertDecimal("50", openingLines.single { accounts[it.accountId]!!.code == "3000" }.credit)
             assertEquals(setOf(sale.invoiceId, purchase.invoiceId), entries.map { it.sourceId }.toSet())
 
             val accounts = database.accountDao().getAll().associateBy { it.id }

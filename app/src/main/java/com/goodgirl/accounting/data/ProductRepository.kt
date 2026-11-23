@@ -23,7 +23,8 @@ class ProductRepository(private val database: AccountingDatabase) {
         note: String,
         priceCurrencyCode: String = "SYP",
         categoryId: String? = null,
-        lowStockThreshold: String = "0"
+        lowStockThreshold: String = "0",
+        openingExchangeRate: String = "1"
     ) {
         val now = System.currentTimeMillis()
         val productId = UUID.randomUUID().toString()
@@ -81,6 +82,15 @@ class ProductRepository(private val database: AccountingDatabase) {
                         occurredAt = now,
                         note = "رصيد افتتاحي عند إنشاء المنتج"
                     )
+                )
+                ProductOpeningStockJournalPoster.post(
+                    database = database,
+                    productId = productId,
+                    quantity = cleanStock,
+                    unitCost = cleanCost,
+                    currencyCode = cleanCurrency,
+                    exchangeRateSnapshot = openingExchangeRate,
+                    occurredAt = now
                 )
             }
         }

@@ -2361,7 +2361,13 @@ private fun ProductManagementScreen(
                                         note = note,
                                         priceCurrencyCode = priceCurrencyCode,
                                         categoryId = selectedCategoryId,
-                                        lowStockThreshold = lowStockThreshold
+                                        lowStockThreshold = lowStockThreshold,
+                                        openingExchangeRate = if (priceCurrencyCode == "SYP") "1" else (
+                                            context.getSharedPreferences(
+                                                "good_girl_settings",
+                                                android.content.Context.MODE_PRIVATE
+                                            ).getString("usd_syp_rate", "1") ?: "1"
+                                        )
                                     )
                                 }
                                 resetForm()
@@ -2509,7 +2515,13 @@ private fun ProductManagementScreen(
                                             productId = adjustingProduct.id,
                                             countedQuantity = countedQuantity,
                                             unitCost = adjustmentCost,
-                                            note = noteToSave
+                                            note = noteToSave,
+                                            exchangeRateSnapshot = if (adjustingProduct.priceCurrencyCode == "SYP") "1" else (
+                                            context.getSharedPreferences(
+                                                "good_girl_settings",
+                                                android.content.Context.MODE_PRIVATE
+                                            ).getString("usd_syp_rate", "1") ?: "1"
+                                        )
                                         )
                                         stockMessage = if (result.adjustmentDelta == "0") {
                                             "تم التحقق من الجرد: الكمية مطابقة للرصيد المسجل، ولم تكن هناك حاجة إلى تسوية."
@@ -2523,7 +2535,13 @@ private fun ProductManagementScreen(
                                             productId = adjustingProduct.id,
                                             quantityDelta = deltaToSave,
                                             unitCost = adjustmentCost,
-                                            note = noteToSave
+                                            note = noteToSave,
+                                            exchangeRateSnapshot = if (adjustingProduct.priceCurrencyCode == "SYP") "1" else (
+                                            context.getSharedPreferences(
+                                                "good_girl_settings",
+                                                android.content.Context.MODE_PRIVATE
+                                            ).getString("usd_syp_rate", "1") ?: "1"
+                                        )
                                         )
                                         stockMessage = "تم تحديث الرصيد إلى " + newBalance
                                         adjustingProductId = null

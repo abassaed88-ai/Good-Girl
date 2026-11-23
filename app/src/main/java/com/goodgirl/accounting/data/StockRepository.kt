@@ -16,7 +16,8 @@ class StockRepository(private val database: AccountingDatabase) {
         productId: String,
         countedQuantity: String,
         unitCost: String,
-        note: String
+        note: String,
+        exchangeRateSnapshot: String = "1"
     ): StocktakeResult {
         val cleanCount = com.goodgirl.accounting.domain.ProductInputRules
             .normalizeNonNegativeDecimal(countedQuantity, "الكمية الفعلية")
@@ -62,6 +63,19 @@ class StockRepository(private val database: AccountingDatabase) {
                         note = note.trim()
                     )
                 )
+                val adjustmentValue = delta.toBigDecimal().abs()
+                    .multiply(costResult.movementUnitCost.toBigDecimal())
+                StockAdjustmentJournalPoster.post(
+                    database = database,
+                    movementId = movementId,
+                    quantityDelta = delta,
+                    amount = adjustmentValue.stripTrailingZeros().toPlainString(),
+                    currencyCode = product.priceCurrencyCode,
+                    exchangeRateSnapshot = exchangeRateSnapshot,
+                    occurredAt = now,
+                    description = note.trim().ifEmpty { "تسوية جرد مخزون" },
+                    sourcePrefix = "STOCKTAKE"
+                )
                 result = StocktakeResult(delta, newBalance)
             }
         }
@@ -72,7 +86,8 @@ class StockRepository(private val database: AccountingDatabase) {
         productId: String,
         quantityDelta: String,
         unitCost: String,
-        note: String
+        note: String,
+        exchangeRateSnapshot: String = "1"
     ): String {
         val cleanDelta = StockInputRules.normalizeDelta(quantityDelta)
         val movementId = UUID.randomUUID().toString()
@@ -110,6 +125,19 @@ class StockRepository(private val database: AccountingDatabase) {
                     occurredAt = now,
                     note = note.trim()
                 )
+            )
+            val adjustmentValue = cleanDelta.toBigDecimal().abs()
+                .multiply(costResult.movementUnitCost.toBigDecimal())
+            StockAdjustmentJournalPoster.post(
+                database = database,
+                movementId = movementId,
+                quantityDelta = cleanDelta,
+                amount = adjustmentValue.stripTrailingZeros().toPlainString(),
+                currencyCode = product.priceCurrencyCode,
+                exchangeRateSnapshot = exchangeRateSnapshot,
+                occurredAt = now,
+                description = note.trim().ifEmpty { "تسوية مخزون يدوية" },
+                sourcePrefix = "MANUAL"
             )
         }
         return resultingBalance
