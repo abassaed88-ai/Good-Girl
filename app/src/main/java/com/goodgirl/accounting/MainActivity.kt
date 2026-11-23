@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -199,10 +200,23 @@ private fun GoodGirlApp() {
     var activePage by remember { mutableStateOf("dashboard") }
     var statementPartyId by remember { mutableStateOf<String?>(null) }
     var statementReturnPage by remember { mutableStateOf("parties") }
+    var journalReturnPage by remember { mutableStateOf("journal_book") }
+    var salesReturnPage by remember { mutableStateOf("dashboard") }
+    var partiesReturnPage by remember { mutableStateOf("dashboard") }
     var unitsProductId by remember { mutableStateOf<String?>(null) }
     var historyProductId by remember { mutableStateOf<String?>(null) }
     var journalEntryDetailId by remember { mutableStateOf<String?>(null) }
     var accountLedgerId by remember { mutableStateOf<String?>(null) }
+    val backTargetPage = previousAppPage(
+        currentPage = activePage,
+        statementReturnPage = statementReturnPage,
+        journalReturnPage = journalReturnPage,
+        salesReturnPage = salesReturnPage,
+        partiesReturnPage = partiesReturnPage
+    )
+    BackHandler(enabled = activePage != "dashboard") {
+        activePage = backTargetPage
+    }
     MaterialTheme(
         colorScheme = if (darkThemeEnabled) {
             darkColorScheme(
@@ -251,6 +265,7 @@ private fun GoodGirlApp() {
                     onBack = { activePage = "chart_of_accounts" },
                     onOpenEntry = { id ->
                         journalEntryDetailId = id
+                        journalReturnPage = "account_ledger"
                         activePage = "journal_detail"
                     }
                 )
@@ -258,12 +273,13 @@ private fun GoodGirlApp() {
                     onBack = { activePage = "general_accounting" },
                     onOpenEntry = { id ->
                         journalEntryDetailId = id
+                        journalReturnPage = "journal_book"
                         activePage = "journal_detail"
                     }
                 )
                 "journal_detail" -> JournalEntryDetailScreen(
                     entryId = journalEntryDetailId.orEmpty(),
-                    onBack = { activePage = "journal_book" }
+                    onBack = { activePage = journalReturnPage }
                 )
                 "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
                 "backup" -> BackupManagementScreen(onBack = { activePage = "dashboard" })
@@ -275,10 +291,13 @@ private fun GoodGirlApp() {
                         darkThemeEnabled = enabled
                     }
                 )
-                "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = "dashboard" })
+                "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = salesReturnPage })
                 "daily_sales" -> DailySalesScreen(
                     onBack = { activePage = "dashboard" },
-                    onOpenFullInvoice = { activePage = "sales" }
+                    onOpenFullInvoice = {
+                        salesReturnPage = "daily_sales"
+                        activePage = "sales"
+                    }
                 )
                 "price_settings" -> ProductPriceManagementScreen(onBack = { activePage = "dashboard" })
                 "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
@@ -305,7 +324,10 @@ private fun GoodGirlApp() {
                 )
                 "accounts" -> AccountsAndDebtsScreen(
                     onBack = { activePage = "dashboard" },
-                    onManageParties = { activePage = "parties" },
+                    onManageParties = {
+                        partiesReturnPage = "accounts"
+                        activePage = "parties"
+                    },
                     onOpenStatement = { partyId ->
                         statementPartyId = partyId
                         statementReturnPage = "accounts"
@@ -313,7 +335,7 @@ private fun GoodGirlApp() {
                     }
                 )
                 "parties" -> PartyManagementScreen(
-                    onBack = { activePage = "dashboard" },
+                    onBack = { activePage = partiesReturnPage },
                     onOpenStatement = { partyId ->
                         statementPartyId = partyId
                         statementReturnPage = "parties"
@@ -327,10 +349,16 @@ private fun GoodGirlApp() {
                 else -> DashboardScreen(
                     onOpenDailySales = { activePage = "daily_sales" },
                     onOpenPriceSettings = { activePage = "price_settings" },
-                    onOpenSales = { activePage = "sales" },
+                    onOpenSales = {
+                        salesReturnPage = "dashboard"
+                        activePage = "sales"
+                    },
                     onOpenPurchases = { activePage = "purchases" },
                     onOpenProducts = { activePage = "products" },
-                    onOpenParties = { activePage = "parties" },
+                    onOpenParties = {
+                        partiesReturnPage = "dashboard"
+                        activePage = "parties"
+                    },
                     onOpenAccounts = { activePage = "accounts" },
                     onOpenCash = { activePage = "cash" },
                     onOpenGeneralAccounting = { activePage = "general_accounting" },
@@ -349,10 +377,41 @@ private fun GoodGirlApp() {
                 ) {
                     Text("⌂ الرئيسية", color = BrandOnPrimary, fontWeight = FontWeight.SemiBold)
                 }
+                TextButton(
+                    onClick = { activePage = backTargetPage },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(12.dp)
+                        .background(BrandBlue, RoundedCornerShape(24.dp))
+                ) {
+                    Text("← رجوع", color = BrandOnPrimary, fontWeight = FontWeight.SemiBold)
+                }
             }
             }
         }
     }
+}
+
+/**
+ * Resolves a predictable parent destination for the global back control and
+ * Android system back. Return destinations are retained for detail flows.
+ */
+internal fun previousAppPage(
+    currentPage: String,
+    statementReturnPage: String = "parties",
+    journalReturnPage: String = "journal_book",
+    salesReturnPage: String = "dashboard",
+    partiesReturnPage: String = "dashboard"
+): String = when (currentPage) {
+    "chart_of_accounts", "journal_book" -> "general_accounting"
+    "account_ledger" -> "chart_of_accounts"
+    "journal_detail" -> journalReturnPage
+    "categories", "product_units", "stock_history" -> "products"
+    "statement" -> statementReturnPage
+    "sales" -> salesReturnPage
+    "parties" -> partiesReturnPage
+    "dashboard" -> "dashboard"
+    else -> "dashboard"
 }
 
 @Composable
