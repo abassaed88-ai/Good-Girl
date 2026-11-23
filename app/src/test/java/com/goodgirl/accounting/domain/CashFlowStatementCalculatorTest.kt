@@ -28,7 +28,7 @@ class CashFlowStatementCalculatorTest {
 
     private val entries = listOf(
         entry("opening-syp", "MIGRATION_OPENING", at = 10L),
-        entry("opening-usd", "MIGRATION_OPENING", currency = "USD", at = 15L),
+        entry("opening-usd", "MIGRATION_OPENING", currency = "USD", at = 10L),
         entry("sale", "SALE_INVOICE", at = 30L),
         entry("purchase", "PURCHASE_INVOICE", at = 31L),
         entry("receipt", "CUSTOMER_RECEIPT", at = 32L),
