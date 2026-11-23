@@ -786,36 +786,6 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     val calculatedTotal = subtotal.subtract(lineDiscountTotal).subtract(enteredInvoiceDiscount).max(BigDecimal.ZERO)
 
 
-    val generalLedgerPdfLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/pdf")
-    ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                isExportingStatementsPdf = true
-                statementsPdfMessage = null
-                try {
-                    val currentTrialBalance = trialBalance
-                        ?: throw IllegalStateException(trialBalanceResult.exceptionOrNull()?.message ?: "لا تتوفر بيانات ميزان المراجعة")
-                    val currentStatements = generalLedgerStatements
-                        ?: throw IllegalStateException(generalLedgerStatementsResult.exceptionOrNull()?.message ?: "لا تتوفر القوائم المالية")
-                    GeneralLedgerStatementsPdfExporter.write(
-                        context = context,
-                        destination = uri,
-                        trialBalance = currentTrialBalance,
-                        financialStatements = currentStatements,
-                        cashFlowStatement = cashFlowStatement,
-                        generatedAt = now
-                    )
-                    statementsPdfMessage = "تم حفظ القوائم المالية وميزان المراجعة والتدفقات النقدية بصيغة PDF."
-                } catch (error: Exception) {
-                    statementsPdfMessage = error.message ?: "تعذر إنشاء ملف القوائم المالية"
-                } finally {
-                    isExportingStatementsPdf = false
-                }
-            }
-        }
-    }
-
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1223,6 +1193,36 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
                     reportExportMessage = error.message ?: "تعذر إنشاء تقرير PDF"
                 } finally {
                     isExportingReport = false
+                }
+            }
+        }
+    }
+
+    val generalLedgerPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isExportingStatementsPdf = true
+                statementsPdfMessage = null
+                try {
+                    val currentTrialBalance = trialBalance
+                        ?: throw IllegalStateException(trialBalanceResult.exceptionOrNull()?.message ?: "لا تتوفر بيانات ميزان المراجعة")
+                    val currentStatements = generalLedgerStatements
+                        ?: throw IllegalStateException(generalLedgerStatementsResult.exceptionOrNull()?.message ?: "لا تتوفر القوائم المالية")
+                    GeneralLedgerStatementsPdfExporter.write(
+                        context = context,
+                        destination = uri,
+                        trialBalance = currentTrialBalance,
+                        financialStatements = currentStatements,
+                        cashFlowStatement = cashFlowStatement,
+                        generatedAt = now
+                    )
+                    statementsPdfMessage = "تم حفظ القوائم المالية وميزان المراجعة والتدفقات النقدية بصيغة PDF."
+                } catch (error: Exception) {
+                    statementsPdfMessage = error.message ?: "تعذر إنشاء ملف القوائم المالية"
+                } finally {
+                    isExportingStatementsPdf = false
                 }
             }
         }
