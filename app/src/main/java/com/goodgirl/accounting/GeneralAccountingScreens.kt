@@ -369,9 +369,10 @@ fun AccountLedgerScreen(
                             Text("ملخص العملة: " + summary.currencyCode, color = AccountingAccent, fontWeight = FontWeight.Bold)
                             Text("إجمالي المدين: " + summary.totalDebit.stripTrailingZeros().toPlainString() + " " + summary.currencyCode, color = AccountingMuted, fontSize = 12.sp)
                             Text("إجمالي الدائن: " + summary.totalCredit.stripTrailingZeros().toPlainString() + " " + summary.currencyCode, color = AccountingMuted, fontSize = 12.sp)
+                            val closingSideLabel = if (summary.closingSide == "DEBIT") "مدين" else "دائن"
                             Text(
-                                "الرصيد الختامي: " + summary.closingBalance.stripTrailingZeros().toPlainString() + " " +
-                                    summary.currencyCode + " (" + if (summary.closingSide == "DEBIT") "مدين" else "دائن" + ")",
+                                "الرصيد الختامي: " + summary.closingBalance.stripTrailingZeros().toPlainString() +
+                                    " " + summary.currencyCode + " (" + closingSideLabel + ")",
                                 color = AccountingText,
                                 fontWeight = FontWeight.Bold
                             )
@@ -401,9 +402,10 @@ fun AccountLedgerScreen(
                             Text("مدين: " + movement.debit.stripTrailingZeros().toPlainString() + " " + movement.currencyCode, color = AccountingMuted, fontSize = 12.sp)
                             Text("دائن: " + movement.credit.stripTrailingZeros().toPlainString() + " " + movement.currencyCode, color = AccountingMuted, fontSize = 12.sp)
                             if (movement.memo.isNotBlank()) Text(movement.memo, color = AccountingMuted, fontSize = 11.sp)
+                            val runningSideLabel = if (movement.balanceSide == "DEBIT") "مدين" else "دائن"
                             Text(
                                 "الرصيد الجاري: " + movement.runningBalance.abs().stripTrailingZeros().toPlainString() +
-                                    " " + movement.currencyCode + " (" + if (movement.balanceSide == "DEBIT") "مدين" else "دائن" + ")",
+                                    " " + movement.currencyCode + " (" + runningSideLabel + ")",
                                 color = AccountingText,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp
