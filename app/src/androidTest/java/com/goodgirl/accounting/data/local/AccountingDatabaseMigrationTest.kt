@@ -154,6 +154,38 @@ class AccountingDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun roomMigrationCreatesVersionSixJournalTablesAndPreservesExistingRows() {
+        val databaseName = "room-migration-v5-v6.db"
+        val legacy = roomMigrationHelper.createDatabase(databaseName, 5)
+        try {
+            insertProduct(legacy, "legacy-product", "4.25", "3.00", "SYP")
+        } finally {
+            legacy.close()
+        }
+
+        val migrated = roomMigrationHelper.runMigrationsAndValidate(
+            databaseName,
+            6,
+            true,
+            AccountingDatabase.MIGRATION_5_6
+        )
+        try {
+            assertEquals(1, databaseCount(migrated, "products"))
+            assertEquals(0, databaseCount(migrated, "accounts"))
+            assertEquals(0, databaseCount(migrated, "journal_entries"))
+            assertEquals(0, databaseCount(migrated, "journal_lines"))
+            migrated.query("SELECT stockQuantity FROM products WHERE id = 'legacy-product'").use {
+                assertTrue(it.moveToFirst())
+                assertEquals("4.25", it.getString(0))
+            }
+        } finally {
+            migrated.close()
+            InstrumentationRegistry.getInstrumentation()
+                .targetContext.deleteDatabase(databaseName)
+        }
+    }
+
     private fun withVersionFourDatabase(block: (SupportSQLiteDatabase) -> Unit) {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "migration-v4-${UUID.randomUUID()}.db"

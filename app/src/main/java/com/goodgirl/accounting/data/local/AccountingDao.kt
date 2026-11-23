@@ -208,3 +208,58 @@ interface LedgerDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(entry: LedgerEntryEntity)
 }
+
+
+@Dao
+interface AccountDao {
+    @Query("SELECT * FROM accounts ORDER BY code")
+    fun observeAll(): Flow<List<AccountEntity>>
+
+    @Query("SELECT * FROM accounts ORDER BY code")
+    suspend fun getAll(): List<AccountEntity>
+
+    @Query("SELECT * FROM accounts WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): AccountEntity?
+
+    @Query("SELECT * FROM accounts WHERE code = :code LIMIT 1")
+    suspend fun findByCode(code: String): AccountEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIgnore(accounts: List<AccountEntity>)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(account: AccountEntity)
+
+    @Update
+    suspend fun update(account: AccountEntity)
+}
+
+@Dao
+interface JournalEntryDao {
+    @Query("SELECT * FROM journal_entries ORDER BY occurredAt DESC, journalNumber DESC")
+    fun observeAll(): Flow<List<JournalEntryEntity>>
+
+    @Query("SELECT * FROM journal_entries WHERE id = :id LIMIT 1")
+    suspend fun findById(id: String): JournalEntryEntity?
+
+    @Query("SELECT * FROM journal_entries WHERE journalNumber = :journalNumber LIMIT 1")
+    suspend fun findByNumber(journalNumber: String): JournalEntryEntity?
+
+    @Query("SELECT * FROM journal_entries WHERE sourceType = :sourceType AND sourceId = :sourceId LIMIT 1")
+    suspend fun findBySource(sourceType: String, sourceId: String): JournalEntryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(entry: JournalEntryEntity)
+}
+
+@Dao
+interface JournalLineDao {
+    @Query("SELECT * FROM journal_lines WHERE journalEntryId = :journalEntryId ORDER BY lineNumber")
+    suspend fun getForEntry(journalEntryId: String): List<JournalLineEntity>
+
+    @Query("SELECT * FROM journal_lines WHERE journalEntryId = :journalEntryId ORDER BY lineNumber")
+    fun observeForEntry(journalEntryId: String): Flow<List<JournalLineEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(lines: List<JournalLineEntity>)
+}
