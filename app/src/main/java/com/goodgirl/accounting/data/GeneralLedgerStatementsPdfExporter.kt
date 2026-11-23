@@ -114,7 +114,7 @@ object GeneralLedgerStatementsPdfExporter {
             builder.append("الأرصدة المدينة: ").append(n(summary.debitBalances))
                 .append(" | الأرصدة الدائنة: ").append(n(summary.creditBalances)).append("\n")
             trialBalance.rows.filter { it.currencyCode == summary.currencyCode }.forEach { row ->
-                row(builder, row.accountCode, row.accountName, row.debitBalance, row.creditBalance)
+                appendAccountRow(builder, row.accountCode, row.accountName, row.debitBalance, row.creditBalance)
             }
             divider(builder)
         }
@@ -123,9 +123,9 @@ object GeneralLedgerStatementsPdfExporter {
         if (financialStatements.incomeStatements.isEmpty()) builder.append("لا توجد بيانات دخل ضمن الفترة.\n")
         financialStatements.incomeStatements.forEach { statement ->
             builder.append("العملة: ").append(statement.currencyCode).append("\nالإيرادات\n")
-            statement.revenues.forEach { row(builder, it.accountCode, it.accountName, it.amount) }
+            statement.revenues.forEach { appendAccountRow(builder, it.accountCode, it.accountName, it.amount) }
             builder.append("إجمالي الإيرادات: ").append(n(statement.totalRevenue)).append("\nالمصروفات\n")
-            statement.expenses.forEach { row(builder, it.accountCode, it.accountName, it.amount) }
+            statement.expenses.forEach { appendAccountRow(builder, it.accountCode, it.accountName, it.amount) }
             builder.append("إجمالي المصروفات: ").append(n(statement.totalExpenses)).append("\n")
             builder.append("صافي ربح / خسارة الفترة: ").append(n(statement.netIncome)).append("\n")
             divider(builder)
@@ -135,11 +135,11 @@ object GeneralLedgerStatementsPdfExporter {
         if (financialStatements.balanceSheets.isEmpty()) builder.append("لا توجد أرصدة لإنشاء الميزانية.\n")
         financialStatements.balanceSheets.forEach { sheet ->
             builder.append("العملة: ").append(sheet.currencyCode).append("\nالأصول\n")
-            sheet.assets.forEach { row(builder, it.accountCode, it.accountName, it.amount) }
+            sheet.assets.forEach { appendAccountRow(builder, it.accountCode, it.accountName, it.amount) }
             builder.append("إجمالي الأصول: ").append(n(sheet.totalAssets)).append("\nالالتزامات\n")
-            sheet.liabilities.forEach { row(builder, it.accountCode, it.accountName, it.amount) }
+            sheet.liabilities.forEach { appendAccountRow(builder, it.accountCode, it.accountName, it.amount) }
             builder.append("إجمالي الالتزامات: ").append(n(sheet.totalLiabilities)).append("\nحقوق الملكية\n")
-            sheet.equity.forEach { row(builder, it.accountCode, it.accountName, it.amount) }
+            sheet.equity.forEach { appendAccountRow(builder, it.accountCode, it.accountName, it.amount) }
             builder.append("إجمالي حقوق الملكية: ").append(n(sheet.totalEquity)).append("\n")
             builder.append("الأرباح المحتجزة / نتيجة الفترات: ").append(n(sheet.retainedEarnings)).append("\n")
             builder.append("إجمالي الالتزامات وحقوق الملكية: ").append(n(sheet.totalLiabilitiesAndEquity)).append("\n")
@@ -183,11 +183,11 @@ object GeneralLedgerStatementsPdfExporter {
         return builder.toString()
     }
 
-    private fun row(builder: StringBuilder, code: String, name: String, amount: BigDecimal) {
+    private fun appendAccountRow(builder: StringBuilder, code: String, name: String, amount: BigDecimal) {
         builder.append(code).append(" — ").append(name).append(": ").append(n(amount)).append("\n")
     }
 
-    private fun row(
+    private fun appendAccountRow(
         builder: StringBuilder,
         code: String,
         name: String,
