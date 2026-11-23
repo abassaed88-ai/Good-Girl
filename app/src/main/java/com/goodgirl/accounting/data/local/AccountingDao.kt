@@ -272,6 +272,12 @@ interface JournalLineDao {
     @Query("SELECT * FROM journal_lines WHERE journalEntryId = :journalEntryId ORDER BY lineNumber")
     suspend fun getForEntry(journalEntryId: String): List<JournalLineEntity>
 
+    @Query("SELECT * FROM journal_lines ORDER BY journalEntryId, lineNumber")
+    suspend fun getAll(): List<JournalLineEntity>
+
+    @Query("SELECT * FROM journal_lines ORDER BY journalEntryId, lineNumber")
+    fun observeAll(): Flow<List<JournalLineEntity>>
+
     @Query("SELECT * FROM journal_lines WHERE journalEntryId = :journalEntryId ORDER BY lineNumber")
     fun observeForEntry(journalEntryId: String): Flow<List<JournalLineEntity>>
 
