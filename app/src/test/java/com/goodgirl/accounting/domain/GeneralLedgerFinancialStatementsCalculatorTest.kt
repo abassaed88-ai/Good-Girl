@@ -88,7 +88,7 @@ class GeneralLedgerFinancialStatementsCalculatorTest {
     @Test
     fun excludesTransactionsOutsideSelectedIncomePeriodButKeepsThemInBalanceSheet() {
         val result = GeneralLedgerFinancialStatementsCalculator.calculate(
-            periodStartInclusive = 30L,
+            periodStartInclusive = 40L,
             periodEndInclusive = 40L,
             asOfInclusive = 40L,
             accounts = accounts,
@@ -96,7 +96,9 @@ class GeneralLedgerFinancialStatementsCalculatorTest {
             lines = lines
         )
         val income = result.incomeStatements.single { it.currencyCode == "SYP" }
-        assertEquals(BigDecimal("150"), income.totalRevenue)
+        assertEquals(BigDecimal.ZERO, income.totalRevenue)
+        assertEquals(BigDecimal("10"), income.totalExpenses)
+        assertEquals(BigDecimal("-10"), income.netIncome)
         assertEquals(BigDecimal("80"), result.balanceSheets.single { it.currencyCode == "SYP" }.retainedEarnings)
     }
 
