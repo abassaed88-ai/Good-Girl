@@ -71,7 +71,7 @@ class GeneralLedgerFinancialStatementsCalculatorTest {
         val syp = result.balanceSheets.single { it.currencyCode == "SYP" }
         assertEquals(BigDecimal("1080"), syp.totalAssets)
         assertEquals(BigDecimal("1000"), syp.totalEquity)
-        assertEquals(BigDecimal("80"), syp.retainedEarnings)
+        assertDecimalEquals("80", syp.retainedEarnings)
         assertEquals(BigDecimal("1080"), syp.totalLiabilitiesAndEquity)
 
         val usd = result.balanceSheets.single { it.currencyCode == "USD" }
@@ -99,7 +99,7 @@ class GeneralLedgerFinancialStatementsCalculatorTest {
         assertEquals(BigDecimal.ZERO, income.totalRevenue)
         assertEquals(BigDecimal("10"), income.totalExpenses)
         assertEquals(BigDecimal("-10"), income.netIncome)
-        assertEquals(BigDecimal("80"), result.balanceSheets.single { it.currencyCode == "SYP" }.retainedEarnings)
+        assertDecimalEquals("80", result.balanceSheets.single { it.currencyCode == "SYP" }.retainedEarnings)
     }
 
     @Test
@@ -115,6 +115,14 @@ class GeneralLedgerFinancialStatementsCalculatorTest {
                 50L, 40L, 40L, accounts, entries, lines
             )
         }
+    }
+
+    private fun assertDecimalEquals(expected: String, actual: BigDecimal) {
+        assertEquals(
+            "Expected $expected but was ${actual.toPlainString()}",
+            0,
+            actual.compareTo(BigDecimal(expected))
+        )
     }
 
     private fun incomeStatementsForUsd(result: GeneralLedgerFinancialStatements) =
