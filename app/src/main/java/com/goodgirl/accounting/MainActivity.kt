@@ -134,6 +134,7 @@ private val SoftRed get() = activePalette.softRed
 private val SoftPurple get() = activePalette.softPurple
 private val Ink get() = activePalette.ink
 private val MutedText get() = activePalette.mutedText
+private val BrandOnPrimary get() = if (activePalette == DarkPalette) Color(0xFF10232C) else Color.White
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -215,7 +216,7 @@ private fun GoodGirlApp() {
                 secondary = selectedPalette.softPurple,
                 background = selectedPalette.background,
                 surface = selectedPalette.cardSurface,
-                onPrimary = Color.White,
+                onPrimary = BrandOnPrimary,
                 onSurface = selectedPalette.ink,
                 onBackground = selectedPalette.ink,
                 surfaceVariant = selectedPalette.surfaceVariant,
@@ -340,7 +341,7 @@ private fun GoodGirlApp() {
                         .padding(12.dp)
                         .background(BrandBlue, RoundedCornerShape(24.dp))
                 ) {
-                    Text("⌂ الرئيسية", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text("⌂ الرئيسية", color = BrandOnPrimary, fontWeight = FontWeight.SemiBold)
                 }
             }
             }
@@ -433,13 +434,13 @@ private fun DashboardScreen(
                 .background(BrandBlue, RoundedCornerShape(22.dp))
                 .padding(20.dp)
         ) {
-            Text("Good Girl", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+            Text("Good Girl", color = BrandOnPrimary, fontSize = 25.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(5.dp))
-            Text("نظام إدارة ومحاسبة متكامل", color = Color.White, fontSize = 16.sp)
+            Text("نظام إدارة ومحاسبة متكامل", color = BrandOnPrimary, fontSize = 16.sp)
             Spacer(Modifier.height(12.dp))
             Text(
                 "تُحدّث مؤشرات اللوحة من السجلات المحفوظة على هذا الجهاز، مع فصل العملات",
-                color = Color.White.copy(alpha = 0.88f),
+                color = BrandOnPrimary.copy(alpha = 0.88f),
                 fontSize = 12.sp
             )
         }
