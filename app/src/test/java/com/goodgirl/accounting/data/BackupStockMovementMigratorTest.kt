@@ -1,5 +1,6 @@
 package com.goodgirl.accounting.data
 
+import com.goodgirl.accounting.data.local.ACCOUNTING_DATABASE_VERSION
 import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import org.junit.Assert.assertEquals
@@ -47,7 +48,7 @@ class BackupStockMovementMigratorTest {
         val adjustment = result.last()
         assertEquals("3", adjustment.quantityDelta)
         assertEquals("MIGRATION_RECONCILIATION", adjustment.sourceType)
-        assertEquals("backup-migration-v6-p1", adjustment.id)
+        assertEquals("backup-migration-v${ACCOUNTING_DATABASE_VERSION}-p1", adjustment.id)
         assertEquals(99L, adjustment.occurredAt)
     }
 
