@@ -57,6 +57,7 @@ import com.goodgirl.accounting.data.InvoiceLineDraft
 import com.goodgirl.accounting.data.InvoicePdfExporter
 import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.FinancialReportPdfExporter
+import com.goodgirl.accounting.data.GeneralLedgerStatementsPdfExporter
 import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.PartyPaymentRepository
 import com.goodgirl.accounting.data.PartyStatementPdfExporter
@@ -784,6 +785,37 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     val enteredInvoiceDiscount = runCatching { BigDecimal(invoiceDiscount.trim()) }.getOrDefault(BigDecimal.ZERO)
     val calculatedTotal = subtotal.subtract(lineDiscountTotal).subtract(enteredInvoiceDiscount).max(BigDecimal.ZERO)
 
+
+    val generalLedgerPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                isExportingStatementsPdf = true
+                statementsPdfMessage = null
+                try {
+                    val currentTrialBalance = trialBalance
+                        ?: throw IllegalStateException(trialBalanceResult.exceptionOrNull()?.message ?: "لا تتوفر بيانات ميزان المراجعة")
+                    val currentStatements = generalLedgerStatements
+                        ?: throw IllegalStateException(generalLedgerStatementsResult.exceptionOrNull()?.message ?: "لا تتوفر القوائم المالية")
+                    GeneralLedgerStatementsPdfExporter.write(
+                        context = context,
+                        destination = uri,
+                        trialBalance = currentTrialBalance,
+                        financialStatements = currentStatements,
+                        cashFlowStatement = cashFlowStatement,
+                        generatedAt = now
+                    )
+                    statementsPdfMessage = "تم حفظ القوائم المالية وميزان المراجعة والتدفقات النقدية بصيغة PDF."
+                } catch (error: Exception) {
+                    statementsPdfMessage = error.message ?: "تعذر إنشاء ملف القوائم المالية"
+                } finally {
+                    isExportingStatementsPdf = false
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1097,6 +1129,8 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
     var showCashFlow by remember { mutableStateOf(true) }
     var isExportingReport by remember { mutableStateOf(false) }
     var reportExportMessage by remember { mutableStateOf<String?>(null) }
+    var isExportingStatementsPdf by remember { mutableStateOf(false) }
+    var statementsPdfMessage by remember { mutableStateOf<String?>(null) }
     val now = System.currentTimeMillis()
     val trialBalanceResult = remember(accounts, journalEntries, journalLines, now) {
         runCatching {
@@ -1218,11 +1252,24 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
         reportExportMessage?.let {
             Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
         }
-        Text(
-            "تصدير PDF الحالي خاص بتقرير الفواتير وتحليل المواد؛ قوائم دفتر الأستاذ العام المعروضة أدناه لم تُضمّن بعد في ملف PDF.",
-            color = MutedText,
-            fontSize = 11.sp
-        )
+        Button(
+            onClick = {
+                val periodSuffix = when (selectedPeriod) {
+                    "TODAY" -> "Today"
+                    "MONTH" -> "Month"
+                    else -> "All"
+                }
+                val dateSuffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
+                generalLedgerPdfLauncher.launch("GoodGirl_Financial_Statements_" + periodSuffix + "_" + dateSuffix + ".pdf")
+            },
+            enabled = !isExportingStatementsPdf && trialBalance != null && generalLedgerStatements != null,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (isExportingStatementsPdf) "جارٍ تجهيز القوائم المالية..." else "تصدير القوائم المالية وميزان المراجعة إلى PDF")
+        }
+        statementsPdfMessage?.let {
+            Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
+        }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TextButton(onClick = { selectedPeriod = "TODAY" }, enabled = selectedPeriod != "TODAY") { Text("اليوم") }
             TextButton(onClick = { selectedPeriod = "MONTH" }, enabled = selectedPeriod != "MONTH") { Text("هذا الشهر") }
