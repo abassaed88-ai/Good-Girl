@@ -8,8 +8,25 @@ import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.goodgirl.accounting.domain.StockMovementReconciliation
 import java.math.BigDecimal
+import java.util.UUID
 
 const val ACCOUNTING_DATABASE_VERSION = 6
+
+private data class MigrationCurrencyBalances(
+    var cash: BigDecimal = BigDecimal.ZERO,
+    var receivables: BigDecimal = BigDecimal.ZERO,
+    var payables: BigDecimal = BigDecimal.ZERO,
+    var inventory: BigDecimal = BigDecimal.ZERO,
+    var exchangeRate: String = "1",
+    var latestRateAt: Long = Long.MIN_VALUE
+)
+
+private data class MigrationOpeningLine(
+    val accountId: String,
+    val debit: BigDecimal,
+    val credit: BigDecimal,
+    val memo: String
+)
 
 @Database(
     entities = [
@@ -137,22 +154,6 @@ abstract class AccountingDatabase : RoomDatabase() {
          * the current cash, party balances, and inventory at the upgrade date.
          */
         internal val MIGRATION_5_6 = object : Migration(5, 6) {
-            private data class CurrencyBalances(
-                var cash: BigDecimal = BigDecimal.ZERO,
-                var receivables: BigDecimal = BigDecimal.ZERO,
-                var payables: BigDecimal = BigDecimal.ZERO,
-                var inventory: BigDecimal = BigDecimal.ZERO,
-                var exchangeRate: String = "1",
-                var latestRateAt: Long = Long.MIN_VALUE
-            )
-
-            private data class OpeningLine(
-                val accountId: String,
-                val debit: BigDecimal,
-                val credit: BigDecimal,
-                val memo: String
-            )
-
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL(
                     "CREATE TABLE IF NOT EXISTS accounts (" +
@@ -249,7 +250,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                         require(amount.compareTo(BigDecimal.ZERO) >= 0) {
                             "مبلغ حركة قديمة غير صالح أثناء ترحيل الأرصدة"
                         }
-                        val totals = balances.getOrPut(currency) { CurrencyBalances() }
+                        val totals = balances.getOrPut(currency) { MigrationCurrencyBalances() }
                         when (entryType) {
                             "CASH_IN" -> totals.cash = totals.cash.add(amount)
                             "CASH_OUT" -> totals.cash = totals.cash.subtract(amount)
@@ -282,7 +283,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                         require(quantity.compareTo(BigDecimal.ZERO) >= 0 && unitCost.compareTo(BigDecimal.ZERO) >= 0) {
                             "قيمة مخزون قديمة غير صالحة أثناء ترحيل الأرصدة"
                         }
-                        val totals = balances.getOrPut(currency) { CurrencyBalances() }
+                        val totals = balances.getOrPut(currency) { MigrationCurrencyBalances() }
                         totals.inventory = totals.inventory.add(quantity.multiply(unitCost))
                     }
                 }
@@ -301,14 +302,14 @@ abstract class AccountingDatabase : RoomDatabase() {
                     val creditTotal = lines.fold(BigDecimal.ZERO) { sum, line -> sum.add(line.credit) }
                     val difference = debitTotal.subtract(creditTotal)
                     if (difference > BigDecimal.ZERO) {
-                        lines += OpeningLine(
+                        lines += MigrationOpeningLine(
                             accountId = "SYS-3000",
                             debit = BigDecimal.ZERO,
                             credit = difference,
                             memo = "مقابل أرصدة الفترة السابقة"
                         )
                     } else if (difference < BigDecimal.ZERO) {
-                        lines += OpeningLine(
+                        lines += MigrationOpeningLine(
                             accountId = "SYS-3000",
                             debit = difference.abs(),
                             credit = BigDecimal.ZERO,
@@ -362,26 +363,26 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
 
             private fun addAssetBalance(
-                lines: MutableList<OpeningLine>,
+                lines: MutableList<MigrationOpeningLine>,
                 accountId: String,
                 balance: BigDecimal,
                 memo: String
             ) {
                 when {
-                    balance > BigDecimal.ZERO -> lines += OpeningLine(accountId, balance, BigDecimal.ZERO, memo)
-                    balance < BigDecimal.ZERO -> lines += OpeningLine(accountId, BigDecimal.ZERO, balance.abs(), memo)
+                    balance > BigDecimal.ZERO -> lines += MigrationOpeningLine(accountId, balance, BigDecimal.ZERO, memo)
+                    balance < BigDecimal.ZERO -> lines += MigrationOpeningLine(accountId, BigDecimal.ZERO, balance.abs(), memo)
                 }
             }
 
             private fun addLiabilityBalance(
-                lines: MutableList<OpeningLine>,
+                lines: MutableList<MigrationOpeningLine>,
                 accountId: String,
                 balance: BigDecimal,
                 memo: String
             ) {
                 when {
-                    balance > BigDecimal.ZERO -> lines += OpeningLine(accountId, BigDecimal.ZERO, balance, memo)
-                    balance < BigDecimal.ZERO -> lines += OpeningLine(accountId, balance.abs(), BigDecimal.ZERO, memo)
+                    balance > BigDecimal.ZERO -> lines += MigrationOpeningLine(accountId, BigDecimal.ZERO, balance, memo)
+                    balance < BigDecimal.ZERO -> lines += MigrationOpeningLine(accountId, balance.abs(), BigDecimal.ZERO, memo)
                 }
             }
         }
