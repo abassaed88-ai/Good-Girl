@@ -39,7 +39,7 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
-private val BackupWarningTextColor = Color(0xFFFFC078)
+private val BackupWarningTextColor = Color(0xFFE7A2C1)
 private val BackupSuccessTextColor = Color(0xFF78C9A0)
 private val BackupErrorTextColor = Color(0xFFE58A9B)
 
