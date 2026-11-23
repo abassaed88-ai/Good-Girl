@@ -105,6 +105,16 @@ class PartySettlementIntegrationTest {
             assertNotNull(updatedInvoice)
             assertDecimal("20", updatedInvoice!!.paid)
             assertDecimal("10", updatedInvoice.remaining)
+            val settlementJournals = database.journalEntryDao().getAll()
+            assertEquals(3, settlementJournals.size)
+            assertEquals(2, settlementJournals.count { it.sourceType == "SALE_RECEIPT" })
+            settlementJournals.forEach { journal ->
+                val journalLines = database.journalLineDao().getForEntry(journal.id)
+                val debits = journalLines.fold(BigDecimal.ZERO) { sum, line -> sum + line.debit.toBigDecimal() }
+                val credits = journalLines.fold(BigDecimal.ZERO) { sum, line -> sum + line.credit.toBigDecimal() }
+                assertEquals(0, debits.compareTo(credits))
+            }
+
             assertDecimal(
                 "20",
                 PartyBalanceCalculator.calculate(
