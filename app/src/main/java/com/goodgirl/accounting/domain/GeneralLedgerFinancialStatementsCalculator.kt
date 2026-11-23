@@ -127,7 +127,8 @@ object GeneralLedgerFinancialStatementsCalculator {
                 val type = key.second
                 when (type) {
                     "REVENUE" -> totals[1].subtract(totals[0])
-                    "EXPENSE" -> totals[0].subtract(totals[1])
+                    // Expenses reduce accumulated earnings; they must be subtracted.
+                    "EXPENSE" -> totals[1].subtract(totals[0])
                     else -> BigDecimal.ZERO
                 }
             }.fold(BigDecimal.ZERO, BigDecimal::add)
