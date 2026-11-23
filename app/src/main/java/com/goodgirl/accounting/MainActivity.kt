@@ -133,6 +133,7 @@ private fun GoodGirlApp() {
                     onBack = { activePage = "dashboard" },
                     onOpenFullInvoice = { activePage = "sales" }
                 )
+                "price_settings" -> ProductPriceManagementScreen(onBack = { activePage = "dashboard" })
                 "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
                 "products" -> ProductManagementScreen(
                     onBack = { activePage = "dashboard" },
@@ -178,6 +179,7 @@ private fun GoodGirlApp() {
                 )
                 else -> DashboardScreen(
                     onOpenDailySales = { activePage = "daily_sales" },
+                    onOpenPriceSettings = { activePage = "price_settings" },
                     onOpenSales = { activePage = "sales" },
                     onOpenPurchases = { activePage = "purchases" },
                     onOpenProducts = { activePage = "products" },
@@ -196,6 +198,7 @@ private fun GoodGirlApp() {
 @Composable
 private fun DashboardScreen(
     onOpenDailySales: () -> Unit,
+    onOpenPriceSettings: () -> Unit,
     onOpenSales: () -> Unit,
     onOpenPurchases: () -> Unit,
     onOpenProducts: () -> Unit,
@@ -321,6 +324,7 @@ private fun DashboardScreen(
 
         Text("الأقسام الرئيسية", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
         SectionRow(number = 0, title = "المبيعات اليومية", icon = "🧾", onClick = onOpenDailySales)
+        SectionRow(number = 0, title = "تحديد سعر البيع", icon = "🏷️", onClick = onOpenPriceSettings)
         val sections = listOf(
             "المبيعات والفواتير",
             "المشتريات",
@@ -359,6 +363,139 @@ private fun DashboardScreen(
 }
 
 
+
+@Composable
+private fun ProductPriceManagementScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val database = remember(context) { AccountingDatabase.getInstance(context) }
+    val repository = remember(database) { ProductRepository(database) }
+    val products by repository.observeProducts().collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+
+    var searchQuery by remember { mutableStateOf("") }
+    var priceInputs by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var messages by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var savingIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    val filteredProducts = products.filter { product ->
+        searchQuery.isBlank() ||
+            product.name.contains(searchQuery.trim(), ignoreCase = true) ||
+            product.sku.contains(searchQuery.trim(), ignoreCase = true)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) {
+            Text("العودة إلى لوحة التحكم")
+        }
+        Text(
+            "تحديد سعر البيع",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Ink
+        )
+        Text(
+            "عدّل سعر البيع الافتراضي للمادة. يُطبّق السعر الجديد على المبيعات القادمة فقط، ولا يغيّر أسعار الفواتير السابقة أو كلفة الشراء أو رصيد المخزون.",
+            color = MutedText,
+            fontSize = 13.sp
+        )
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("البحث باسم المادة أو رمزها") },
+            singleLine = true
+        )
+
+        if (filteredProducts.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
+            ) {
+                Text(
+                    if (products.isEmpty()) "لا توجد مواد مسجلة بعد." else "لا توجد مواد مطابقة للبحث.",
+                    modifier = Modifier.padding(16.dp),
+                    color = MutedText
+                )
+            }
+        } else {
+            filteredProducts.forEach { product ->
+                val enteredPrice = priceInputs[product.id] ?: product.salePrice
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(product.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text(
+                            "السعر الحالي: " + product.salePrice + " " + product.priceCurrencyCode +
+                                "  •  الوحدة: " + product.baseUnit,
+                            color = MutedText,
+                            fontSize = 12.sp
+                        )
+                        OutlinedTextField(
+                            value = enteredPrice,
+                            onValueChange = {
+                                priceInputs = priceInputs + (product.id to it)
+                                messages = messages - product.id
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("سعر البيع الجديد للوحدة") },
+                            singleLine = true,
+                            enabled = product.id !in savingIds
+                        )
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    savingIds = savingIds + product.id
+                                    messages = messages - product.id
+                                    try {
+                                        val cleanPrice = ProductInputRules.normalizeNonNegativeDecimal(
+                                            enteredPrice,
+                                            "سعر البيع"
+                                        )
+                                        val updated = repository.updateSalePrice(product.id, cleanPrice)
+                                        check(updated) { "تعذر العثور على المادة لتحديث سعرها" }
+                                        priceInputs = priceInputs + (product.id to cleanPrice)
+                                        messages = messages + (product.id to "تم تحديث سعر البيع للمبيعات الجديدة.")
+                                    } catch (error: Exception) {
+                                        messages = messages + (
+                                            product.id to (error.message ?: "تعذر تحديث سعر البيع")
+                                        )
+                                    } finally {
+                                        savingIds = savingIds - product.id
+                                    }
+                                }
+                            },
+                            enabled = product.id !in savingIds,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (product.id in savingIds) "جارٍ حفظ السعر..." else "حفظ سعر البيع")
+                        }
+                        messages[product.id]?.let { message ->
+                            Text(
+                                message,
+                                color = if (message.startsWith("تم")) SoftGreen else SoftRed,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 @Composable
 private fun SettingsScreen(onBack: () -> Unit) {
