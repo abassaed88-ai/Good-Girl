@@ -92,6 +92,17 @@ class PartyPaymentRepository(private val database: AccountingDatabase) {
                     note = cleanNote
                 )
             )
+            SettlementJournalPoster.post(
+                database = database,
+                sourceType = if (isCustomer) "CUSTOMER_RECEIPT" else "SUPPLIER_PAYMENT",
+                sourceId = paymentId,
+                partyKind = values.partyKind,
+                amount = values.amount,
+                currencyCode = values.currencyCode,
+                exchangeRateSnapshot = values.exchangeRate,
+                occurredAt = now,
+                description = cleanNote
+            )
             Triple(values, partyEntryType, cashEntryType)
         }
 
