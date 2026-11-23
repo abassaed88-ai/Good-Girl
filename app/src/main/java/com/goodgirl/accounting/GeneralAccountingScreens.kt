@@ -182,10 +182,15 @@ fun ChartOfAccountsScreen(onBack: () -> Unit) {
                         } else {
                             currencyBalances.toSortedMap().forEach { (currency, balance) ->
                                 val normalBalance = if (account.normalSide == "DEBIT") balance else balance.negate()
+                                val balanceDirection = when {
+                                    normalBalance.signum() == 0 -> "متوازن"
+                                    normalBalance.signum() > 0 && account.normalSide == "DEBIT" -> "مدين"
+                                    normalBalance.signum() > 0 -> "دائن"
+                                    account.normalSide == "DEBIT" -> "دائن"
+                                    else -> "مدين"
+                                }
                                 Text(
-                                    "الرصيد: " + normalBalance.abs().stripTrailingZeros().toPlainString() + " " + currency +
-                                        if (normalBalance.signum() >= 0) " (" + if (account.normalSide == "DEBIT") "مدين" else "دائن" + ")" else
-                                            " (" + if (account.normalSide == "DEBIT") "دائن" else "مدين" + ")",
+                                    "الرصيد: " + normalBalance.abs().stripTrailingZeros().toPlainString() + " " + currency + " (" + balanceDirection + ")",
                                     color = AccountingMuted,
                                     fontSize = 12.sp
                                 )
@@ -417,10 +422,11 @@ private fun ManualJournalEntryDialog(
 ) {
     var journalNumber by remember { mutableStateOf("MAN-" + System.currentTimeMillis().toString().takeLast(8)) }
     var description by remember { mutableStateOf("") }
+    val context = LocalContext.current
     var currency by remember { mutableStateOf("SYP") }
-    var exchangeRate by remember {
+    var exchangeRate by remember(context) {
         mutableStateOf(
-            LocalContext.current.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+            context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
                 .getString("usd_syp_rate", "1") ?: "1"
         )
     }
@@ -600,11 +606,9 @@ fun JournalEntryDetailScreen(
                     Text("نوع المصدر: " + journalSourceArabic(entry.sourceType), color = AccountingMuted, fontSize = 12.sp)
                 }
             }
-            var debitTotal = BigDecimal.ZERO
-            var creditTotal = BigDecimal.ZERO
+            val debitTotal = lines.fold(BigDecimal.ZERO) { total, line -> total.add(line.debit.toBigDecimal()) }
+            val creditTotal = lines.fold(BigDecimal.ZERO) { total, line -> total.add(line.credit.toBigDecimal()) }
             lines.forEach { line ->
-                debitTotal = debitTotal.add(line.debit.toBigDecimal())
-                creditTotal = creditTotal.add(line.credit.toBigDecimal())
                 Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = AccountingSurface)) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         val account = accountsById[line.accountId]
