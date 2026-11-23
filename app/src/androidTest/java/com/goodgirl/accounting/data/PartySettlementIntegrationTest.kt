@@ -167,6 +167,102 @@ class PartySettlementIntegrationTest {
         }
     }
 
+    @Test
+    fun supplierPurchaseAndPaymentReducePayableWithoutTreatingPaymentAsExpense() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val parties = PartyRepository(database)
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+            val payments = PartyPaymentRepository(database)
+
+            parties.saveParty(
+                id = null,
+                kind = "SUPPLIER",
+                name = "مورد اختبار",
+                phone = "",
+                address = "",
+                note = "اختبار تسوية المورد",
+                openingBalance = "5",
+                currencyCode = "SYP",
+                openingExchangeRate = "1"
+            )
+            val supplier = database.partyDao().getAll().single()
+
+            products.addProduct(
+                sku = "SUPPLIER-001",
+                name = "مادة مشتراة",
+                unit = "قطعة",
+                purchaseCost = "10",
+                salePrice = "15",
+                openingStock = "2",
+                note = "اختبار فاتورة شراء"
+            )
+            val product = database.productDao().getAll().single()
+
+            val purchase = invoices.postInvoice(
+                invoiceNumber = "SUPPLIER-PURCHASE-001",
+                kind = "PURCHASE",
+                partyId = supplier.id,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "1", "12")),
+                paidAmount = "0",
+                issuedAt = 1_000L
+            )
+
+            assertDecimal(
+                "17",
+                PartyBalanceCalculator.calculate(
+                    "SUPPLIER",
+                    database.ledgerDao().getForParty(supplier.id)
+                ).getValue("SYP").toPlainString()
+            )
+
+            payments.recordPayment(
+                partyId = supplier.id,
+                amount = "7",
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                note = "دفعة للمورد"
+            )
+
+            val updatedPurchase = database.invoiceDao().findById(purchase.invoiceId)!!
+            assertDecimal("7", updatedPurchase.paid)
+            assertDecimal("5", updatedPurchase.remaining)
+            assertDecimal(
+                "10",
+                PartyBalanceCalculator.calculate(
+                    "SUPPLIER",
+                    database.ledgerDao().getForParty(supplier.id)
+                ).getValue("SYP").toPlainString()
+            )
+
+            val entries = database.ledgerDao().getAll()
+            assertDecimal(
+                "7",
+                entries.filter { it.entryType == "CASH_OUT" }
+                    .fold(BigDecimal.ZERO) { sum, entry -> sum + entry.amount.toBigDecimal() }
+                    .toPlainString()
+            )
+            assertEquals(0, entries.count { it.entryType == "EXPENSE" })
+
+            val report = FinancialReportCalculator.calculate(
+                fromInclusive = 0L,
+                toInclusive = Long.MAX_VALUE,
+                invoices = database.invoiceDao().getAllInvoices(),
+                lines = database.invoiceDao().getAllLines(),
+                ledgerEntries = entries
+            )
+            val summary = report.currencySummaries.single { it.currencyCode == "SYP" }
+            assertDecimal("12", summary.purchases.toPlainString())
+            assertDecimal("0", summary.expenses.toPlainString())
+            assertDecimal("0", summary.netProfit.toPlainString())
+        } finally {
+            database.close()
+        }
+    }
+
     private fun newInMemoryDatabase(): AccountingDatabase {
         val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
         return Room.inMemoryDatabaseBuilder(context, AccountingDatabase::class.java)
