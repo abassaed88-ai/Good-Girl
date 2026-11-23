@@ -19,7 +19,7 @@ class EncryptedBackupCodecTest {
         )
         try {
             assertEquals(
-                "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17",
+                "120fb6cffcf8b32c43e7225256c4f837a86548c92ccc35480805987cb70be17b",
                 actual.joinToString("") { "%02x".format(it) }
             )
         } finally {
