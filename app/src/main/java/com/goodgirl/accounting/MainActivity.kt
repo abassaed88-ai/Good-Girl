@@ -70,6 +70,7 @@ import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.domain.CashTransactionRules
 import com.goodgirl.accounting.domain.FinancialReportCalculator
 import com.goodgirl.accounting.domain.TrialBalanceCalculator
+import com.goodgirl.accounting.domain.GeneralLedgerFinancialStatementsCalculator
 import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
@@ -1091,6 +1092,7 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var selectedPeriod by remember { mutableStateOf("TODAY") }
     var showTrialBalance by remember { mutableStateOf(false) }
+    var showLedgerStatements by remember { mutableStateOf(true) }
     var isExportingReport by remember { mutableStateOf(false) }
     var reportExportMessage by remember { mutableStateOf<String?>(null) }
     val now = System.currentTimeMillis()
@@ -1120,9 +1122,24 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
                 set(java.util.Calendar.SECOND, 0)
                 set(java.util.Calendar.MILLISECOND, 0)
             }.timeInMillis
-            else -> Long.MIN_VALUE
+            else -> 0L
         }
     }
+    val generalLedgerStatementsResult = remember(
+        accounts, journalEntries, journalLines, fromTime, now
+    ) {
+        runCatching {
+            GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = fromTime,
+                periodEndInclusive = now,
+                asOfInclusive = now,
+                accounts = accounts,
+                entries = journalEntries,
+                lines = journalLines
+            )
+        }
+    }
+    val generalLedgerStatements = generalLedgerStatementsResult.getOrNull()
     val report = remember(selectedPeriod, invoices, invoiceLines, ledgerEntries) {
         FinancialReportCalculator.calculate(
             fromInclusive = fromTime,
@@ -1287,6 +1304,107 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
                     fontSize = 12.sp
                 )
             }
+        }
+
+        TextButton(onClick = { showLedgerStatements = !showLedgerStatements }) {
+            Text(if (showLedgerStatements) "إخفاء القوائم المالية من دفتر الأستاذ" else "عرض القوائم المالية من دفتر الأستاذ")
+        }
+        if (showLedgerStatements) {
+            Text(
+                "قائمة الدخل والميزانية العمومية — من دفتر الأستاذ العام",
+                style = MaterialTheme.typography.titleLarge,
+                color = Ink,
+                fontWeight = FontWeight.Bold
+            )
+            val statementError = generalLedgerStatementsResult.exceptionOrNull()
+            if (statementError != null) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Text(
+                        "تعذر إنشاء القوائم المالية: " + (statementError.message ?: "بيانات القيود غير سليمة"),
+                        modifier = Modifier.padding(16.dp),
+                        color = SoftRed
+                    )
+                }
+            } else if (generalLedgerStatements == null ||
+                (generalLedgerStatements.balanceSheets.isEmpty() && generalLedgerStatements.incomeStatements.isEmpty())
+            ) {
+                Text("لا توجد قيود محاسبية كافية لإنشاء القوائم المالية.", color = MutedText)
+            } else {
+                generalLedgerStatements.incomeStatements.forEach { statement ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("قائمة الدخل — " + statement.currencyCode, color = BrandBlue, fontWeight = FontWeight.Bold)
+                            Text("الإيرادات", color = Ink, fontWeight = FontWeight.SemiBold)
+                            statement.revenues.forEach { row ->
+                                ReportValueRow(row.accountCode + " — " + row.accountName, row.amount, statement.currencyCode)
+                            }
+                            ReportValueRow("إجمالي الإيرادات", statement.totalRevenue, statement.currencyCode, strong = true)
+                            androidx.compose.material3.Divider(color = LightGray)
+                            Text("المصروفات", color = Ink, fontWeight = FontWeight.SemiBold)
+                            statement.expenses.forEach { row ->
+                                ReportValueRow(row.accountCode + " — " + row.accountName, row.amount, statement.currencyCode)
+                            }
+                            ReportValueRow("إجمالي المصروفات", statement.totalExpenses, statement.currencyCode, strong = true)
+                            androidx.compose.material3.Divider(color = LightGray)
+                            ReportValueRow("صافي ربح / خسارة الفترة", statement.netIncome, statement.currencyCode, strong = true)
+                        }
+                    }
+                }
+                generalLedgerStatements.balanceSheets.forEach { statement ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text("الميزانية العمومية — " + statement.currencyCode, color = BrandBlue, fontWeight = FontWeight.Bold)
+                            Text("الأصول", color = Ink, fontWeight = FontWeight.SemiBold)
+                            statement.assets.forEach { row ->
+                                ReportValueRow(row.accountCode + " — " + row.accountName, row.amount, statement.currencyCode)
+                            }
+                            ReportValueRow("إجمالي الأصول", statement.totalAssets, statement.currencyCode, strong = true)
+                            androidx.compose.material3.Divider(color = LightGray)
+                            Text("الالتزامات", color = Ink, fontWeight = FontWeight.SemiBold)
+                            statement.liabilities.forEach { row ->
+                                ReportValueRow(row.accountCode + " — " + row.accountName, row.amount, statement.currencyCode)
+                            }
+                            ReportValueRow("إجمالي الالتزامات", statement.totalLiabilities, statement.currencyCode, strong = true)
+                            androidx.compose.material3.Divider(color = LightGray)
+                            Text("حقوق الملكية", color = Ink, fontWeight = FontWeight.SemiBold)
+                            statement.equity.forEach { row ->
+                                ReportValueRow(row.accountCode + " — " + row.accountName, row.amount, statement.currencyCode)
+                            }
+                            ReportValueRow("إجمالي حقوق الملكية", statement.totalEquity, statement.currencyCode)
+                            ReportValueRow("الأرباح المحتجزة / نتيجة الفترات", statement.retainedEarnings, statement.currencyCode)
+                            ReportValueRow("إجمالي الالتزامات وحقوق الملكية", statement.totalLiabilitiesAndEquity, statement.currencyCode, strong = true)
+                            val balanced = statement.totalAssets.compareTo(statement.totalLiabilitiesAndEquity) == 0
+                            Text(
+                                if (balanced) "الميزانية متوازنة محاسبياً" else "تنبيه: الميزانية غير متوازنة",
+                                color = if (balanced) SoftGreen else SoftRed,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+            }
+            Text(
+                "هذه القوائم مستخرجة من قيود اليومية المرحلة. الأرصدة السابقة لترقية قاعدة البيانات تظهر كأرصدة افتتاحية، ولا تعيد بناء أرباح الفترات التاريخية السابقة للترقية.",
+                color = MutedText,
+                fontSize = 12.sp
+            )
         }
 
         if (report.currencySummaries.isEmpty()) {
