@@ -113,6 +113,7 @@ private fun GoodGirlApp() {
     var unitsProductId by remember { mutableStateOf<String?>(null) }
     var historyProductId by remember { mutableStateOf<String?>(null) }
     var journalEntryDetailId by remember { mutableStateOf<String?>(null) }
+    var accountLedgerId by remember { mutableStateOf<String?>(null) }
     MaterialTheme(
         colorScheme = darkColorScheme(
             primary = BrandBlue,
@@ -134,7 +135,21 @@ private fun GoodGirlApp() {
                     onOpenChart = { activePage = "chart_of_accounts" },
                     onOpenJournal = { activePage = "journal_book" }
                 )
-                "chart_of_accounts" -> ChartOfAccountsScreen(onBack = { activePage = "general_accounting" })
+                "chart_of_accounts" -> ChartOfAccountsScreen(
+                    onBack = { activePage = "general_accounting" },
+                    onOpenLedger = { id ->
+                        accountLedgerId = id
+                        activePage = "account_ledger"
+                    }
+                )
+                "account_ledger" -> AccountLedgerScreen(
+                    accountId = accountLedgerId.orEmpty(),
+                    onBack = { activePage = "chart_of_accounts" },
+                    onOpenEntry = { id ->
+                        journalEntryDetailId = id
+                        activePage = "journal_detail"
+                    }
+                )
                 "journal_book" -> JournalBookScreen(
                     onBack = { activePage = "general_accounting" },
                     onOpenEntry = { id ->
