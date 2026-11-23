@@ -155,11 +155,16 @@ class AccountingDatabaseMigrationTest {
     }
 
     @Test
-    fun roomMigrationCreatesVersionSixJournalTablesAndPreservesExistingRows() {
+    fun roomMigrationCreatesVersionSixJournalTablesAndPostsBalancedCurrencyOpeningSummaries() {
         val databaseName = "room-migration-v5-v6.db"
         val legacy = roomMigrationHelper.createDatabase(databaseName, 5)
         try {
             insertProduct(legacy, "legacy-product", "4.25", "3.00", "SYP")
+            insertLegacyLedger(legacy, "cash-in", "CASH_IN", "100", "SYP", "1", 100L)
+            insertLegacyLedger(legacy, "cash-out", "CASH_OUT", "25", "SYP", "1", 200L)
+            insertLegacyLedger(legacy, "supplier-debt", "PAYABLE", "20", "SYP", "1", 300L)
+            insertLegacyLedger(legacy, "customer-debt", "RECEIVABLE", "40", "USD", "15000", 400L)
+            insertLegacyLedger(legacy, "customer-paid", "RECEIVABLE_PAYMENT", "10", "USD", "15250", 500L)
         } finally {
             legacy.close()
         }
@@ -172,18 +177,104 @@ class AccountingDatabaseMigrationTest {
         )
         try {
             assertEquals(1, databaseCount(migrated, "products"))
-            assertEquals(0, databaseCount(migrated, "accounts"))
-            assertEquals(0, databaseCount(migrated, "journal_entries"))
-            assertEquals(0, databaseCount(migrated, "journal_lines"))
+            assertEquals(9, databaseCount(migrated, "accounts"))
+            assertEquals(2, databaseCount(migrated, "journal_entries"))
+            assertEquals(6, databaseCount(migrated, "journal_lines"))
+
             migrated.query("SELECT stockQuantity FROM products WHERE id = 'legacy-product'").use {
                 assertTrue(it.moveToFirst())
                 assertEquals("4.25", it.getString(0))
             }
+
+            val currencyJournals = mutableMapOf<String, String>()
+            migrated.query(
+                "SELECT id, currencyCode, exchangeRateSnapshot, sourceType FROM journal_entries"
+            ).use { cursor ->
+                while (cursor.moveToNext()) {
+                    val entryId = cursor.getString(0)
+                    val currency = cursor.getString(1)
+                    val rate = cursor.getString(2)
+                    val sourceType = cursor.getString(3)
+                    currencyJournals[currency] = entryId
+                    assertEquals("MIGRATION_OPENING", sourceType)
+                    if (currency == "SYP") assertEquals("1", rate)
+                    if (currency == "USD") assertEquals("15250", rate)
+                }
+            }
+            assertEquals(setOf("SYP", "USD"), currencyJournals.keys)
+
+            val accountCodes = mutableMapOf<String, String>()
+            migrated.query("SELECT id, code FROM accounts").use { cursor ->
+                while (cursor.moveToNext()) accountCodes[cursor.getString(0)] = cursor.getString(1)
+            }
+
+            val sypLines = linesForCurrencyJournal(migrated, currencyJournals.getValue("SYP"))
+            assertEquals(4, sypLines.size)
+            assertDecimal("75", sypLines.single { accountCodes.getValue(it.first) == "1000" }.second)
+            assertDecimal("12.75", sypLines.single { accountCodes.getValue(it.first) == "1200" }.second)
+            assertDecimal("20", sypLines.single { accountCodes.getValue(it.first) == "2000" }.third)
+            assertDecimal("67.75", sypLines.single { accountCodes.getValue(it.first) == "3000" }.third)
+            assertBalanced(sypLines)
+
+            val usdLines = linesForCurrencyJournal(migrated, currencyJournals.getValue("USD"))
+            assertEquals(2, usdLines.size)
+            assertDecimal("30", usdLines.single { accountCodes.getValue(it.first) == "1100" }.second)
+            assertDecimal("30", usdLines.single { accountCodes.getValue(it.first) == "3000" }.third)
+            assertBalanced(usdLines)
+
+            // The migration summarizes current balances per currency; it never
+            // converts or adds USD to SYP.
+            assertEquals(0, accountCodes.size - 9)
         } finally {
             migrated.close()
             InstrumentationRegistry.getInstrumentation()
                 .targetContext.deleteDatabase(databaseName)
         }
+    }
+
+    private fun insertLegacyLedger(
+        database: SupportSQLiteDatabase,
+        id: String,
+        entryType: String,
+        amount: String,
+        currencyCode: String,
+        exchangeRate: String,
+        occurredAt: Long
+    ) {
+        database.execSQL(
+            "INSERT INTO ledger_entries " +
+                "(id, partyId, entryType, amount, currencyCode, exchangeRateSnapshot, " +
+                "sourceType, sourceId, occurredAt, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            arrayOf(id, null, entryType, amount, currencyCode, exchangeRate, "LEGACY_TEST", id, occurredAt, "سجل قديم")
+        )
+    }
+
+    private data class MigrationJournalLine(
+        val first: String,
+        val second: String,
+        val third: String
+    )
+
+    private fun linesForCurrencyJournal(
+        database: SupportSQLiteDatabase,
+        entryId: String
+    ): List<MigrationJournalLine> {
+        val rows = mutableListOf<MigrationJournalLine>()
+        database.query(
+            "SELECT accountId, debit, credit FROM journal_lines WHERE journalEntryId = ?",
+            arrayOf(entryId)
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                rows += MigrationJournalLine(cursor.getString(0), cursor.getString(1), cursor.getString(2))
+            }
+        }
+        return rows
+    }
+
+    private fun assertBalanced(lines: List<MigrationJournalLine>) {
+        val debits = lines.fold(BigDecimal.ZERO) { sum, line -> sum + BigDecimal(line.second) }
+        val credits = lines.fold(BigDecimal.ZERO) { sum, line -> sum + BigDecimal(line.third) }
+        assertEquals(0, debits.compareTo(credits))
     }
 
     private fun withVersionFourDatabase(block: (SupportSQLiteDatabase) -> Unit) {

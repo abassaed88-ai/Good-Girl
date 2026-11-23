@@ -130,8 +130,29 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
-        /** Adds the chart of accounts and balanced general-journal storage. */
+        /**
+         * Adds the chart of accounts and journal storage, then carries forward
+         * each existing currency balance as one balanced opening journal.
+         * Historical source documents remain untouched; the migration records
+         * the current cash, party balances, and inventory at the upgrade date.
+         */
         internal val MIGRATION_5_6 = object : Migration(5, 6) {
+            private data class CurrencyBalances(
+                var cash: BigDecimal = BigDecimal.ZERO,
+                var receivables: BigDecimal = BigDecimal.ZERO,
+                var payables: BigDecimal = BigDecimal.ZERO,
+                var inventory: BigDecimal = BigDecimal.ZERO,
+                var exchangeRate: String = "1",
+                var latestRateAt: Long = Long.MIN_VALUE
+            )
+
+            private data class OpeningLine(
+                val accountId: String,
+                val debit: BigDecimal,
+                val credit: BigDecimal,
+                val memo: String
+            )
+
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL(
                     "CREATE TABLE IF NOT EXISTS accounts (" +
@@ -183,6 +204,185 @@ abstract class AccountingDatabase : RoomDatabase() {
                     "CREATE UNIQUE INDEX IF NOT EXISTS index_journal_lines_journalEntryId_lineNumber " +
                         "ON journal_lines(journalEntryId, lineNumber)"
                 )
+
+                createSystemAccounts(database, System.currentTimeMillis())
+                migrateExistingBalancesToOpeningJournals(database)
+            }
+
+            private fun createSystemAccounts(database: SupportSQLiteDatabase, createdAt: Long) {
+                val defaults = listOf(
+                    arrayOf("SYS-1000", "1000", "الصندوق", "ASSET", "DEBIT"),
+                    arrayOf("SYS-1100", "1100", "ذمم العملاء", "ASSET", "DEBIT"),
+                    arrayOf("SYS-1200", "1200", "المخزون", "ASSET", "DEBIT"),
+                    arrayOf("SYS-2000", "2000", "ذمم الموردين", "LIABILITY", "CREDIT"),
+                    arrayOf("SYS-3000", "3000", "رأس المال", "EQUITY", "CREDIT"),
+                    arrayOf("SYS-4000", "4000", "المبيعات", "REVENUE", "CREDIT"),
+                    arrayOf("SYS-5000", "5000", "تكلفة البضاعة المباعة", "EXPENSE", "DEBIT"),
+                    arrayOf("SYS-6000", "6000", "إيرادات أخرى", "REVENUE", "CREDIT"),
+                    arrayOf("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT")
+                )
+                defaults.forEach { account ->
+                    database.execSQL(
+                        "INSERT OR IGNORE INTO accounts " +
+                            "(id, code, name, accountType, normalSide, isSystem, isActive, createdAt) " +
+                            "VALUES (?, ?, ?, ?, ?, 1, 1, ?)",
+                        arrayOf(account[0], account[1], account[2], account[3], account[4], createdAt)
+                    )
+                }
+            }
+
+            private fun migrateExistingBalancesToOpeningJournals(database: SupportSQLiteDatabase) {
+                val balances = linkedMapOf<String, CurrencyBalances>()
+                database.query(
+                    "SELECT entryType, amount, currencyCode, exchangeRateSnapshot, occurredAt " +
+                        "FROM ledger_entries ORDER BY occurredAt, id"
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val entryType = cursor.getString(0)
+                        val amount = BigDecimal(cursor.getString(1))
+                        val currency = cursor.getString(2)
+                        val rate = cursor.getString(3)
+                        val occurredAt = cursor.getLong(4)
+                        require(currency == "SYP" || currency == "USD") {
+                            "عملة قديمة غير مدعومة أثناء ترحيل الأرصدة: $currency"
+                        }
+                        require(amount.compareTo(BigDecimal.ZERO) >= 0) {
+                            "مبلغ حركة قديمة غير صالح أثناء ترحيل الأرصدة"
+                        }
+                        val totals = balances.getOrPut(currency) { CurrencyBalances() }
+                        when (entryType) {
+                            "CASH_IN" -> totals.cash = totals.cash.add(amount)
+                            "CASH_OUT" -> totals.cash = totals.cash.subtract(amount)
+                            "RECEIVABLE" -> totals.receivables = totals.receivables.add(amount)
+                            "RECEIVABLE_PAYMENT" -> totals.receivables = totals.receivables.subtract(amount)
+                            "PAYABLE" -> totals.payables = totals.payables.add(amount)
+                            "PAYABLE_PAYMENT" -> totals.payables = totals.payables.subtract(amount)
+                        }
+                        if (currency == "USD" && occurredAt >= totals.latestRateAt) {
+                            val parsedRate = BigDecimal(rate)
+                            require(parsedRate > BigDecimal.ZERO) {
+                                "سعر صرف قديم غير صالح أثناء ترحيل الأرصدة"
+                            }
+                            totals.exchangeRate = parsedRate.stripTrailingZeros().toPlainString()
+                            totals.latestRateAt = occurredAt
+                        }
+                    }
+                }
+
+                database.query(
+                    "SELECT stockQuantity, purchaseCost, priceCurrencyCode FROM products ORDER BY id"
+                ).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val quantity = BigDecimal(cursor.getString(0))
+                        val unitCost = BigDecimal(cursor.getString(1))
+                        val currency = cursor.getString(2)
+                        require(currency == "SYP" || currency == "USD") {
+                            "عملة مخزون قديمة غير مدعومة أثناء ترحيل الأرصدة: $currency"
+                        }
+                        require(quantity.compareTo(BigDecimal.ZERO) >= 0 && unitCost.compareTo(BigDecimal.ZERO) >= 0) {
+                            "قيمة مخزون قديمة غير صالحة أثناء ترحيل الأرصدة"
+                        }
+                        val totals = balances.getOrPut(currency) { CurrencyBalances() }
+                        totals.inventory = totals.inventory.add(quantity.multiply(unitCost))
+                    }
+                }
+
+                val migrationTime = System.currentTimeMillis()
+                balances.toSortedMap().forEach { (currency, totals) ->
+                    val lines = mutableListOf<OpeningLine>()
+                    addAssetBalance(lines, "SYS-1000", totals.cash, "رصيد الصندوق المرحّل")
+                    addAssetBalance(lines, "SYS-1100", totals.receivables, "صافي ذمم العملاء المرحّل")
+                    addAssetBalance(lines, "SYS-1200", totals.inventory, "قيمة المخزون المرحّلة")
+                    addLiabilityBalance(lines, "SYS-2000", totals.payables, "صافي ذمم الموردين المرحّل")
+
+                    if (lines.isEmpty()) return@forEach
+
+                    val debitTotal = lines.fold(BigDecimal.ZERO) { sum, line -> sum.add(line.debit) }
+                    val creditTotal = lines.fold(BigDecimal.ZERO) { sum, line -> sum.add(line.credit) }
+                    val difference = debitTotal.subtract(creditTotal)
+                    if (difference > BigDecimal.ZERO) {
+                        lines += OpeningLine(
+                            accountId = "SYS-3000",
+                            debit = BigDecimal.ZERO,
+                            credit = difference,
+                            memo = "مقابل أرصدة الفترة السابقة"
+                        )
+                    } else if (difference < BigDecimal.ZERO) {
+                        lines += OpeningLine(
+                            accountId = "SYS-3000",
+                            debit = difference.abs(),
+                            credit = BigDecimal.ZERO,
+                            memo = "مقابل أرصدة الفترة السابقة"
+                        )
+                    }
+
+                    val finalDebits = lines.fold(BigDecimal.ZERO) { sum, line -> sum.add(line.debit) }
+                    val finalCredits = lines.fold(BigDecimal.ZERO) { sum, line -> sum.add(line.credit) }
+                    check(finalDebits.compareTo(finalCredits) == 0) {
+                        "تعذر موازنة قيد الأرصدة الافتتاحية للعملة $currency"
+                    }
+
+                    val sourceId = "V5_TO_V6_$currency"
+                    val entryId = UUID.randomUUID().toString()
+                    val exchangeRate = if (currency == "SYP") "1" else totals.exchangeRate
+                    database.execSQL(
+                        "INSERT INTO journal_entries " +
+                            "(id, journalNumber, sourceType, sourceId, currencyCode, exchangeRateSnapshot, " +
+                            "occurredAt, description, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        arrayOf(
+                            entryId,
+                            "AUTO-V5-V6-OPENING-$currency",
+                            "MIGRATION_OPENING",
+                            sourceId,
+                            currency,
+                            exchangeRate,
+                            migrationTime,
+                            "ملخص أرصدة افتتاحية مرحّل من الإصدار السابق - $currency",
+                            migrationTime
+                        )
+                    )
+
+                    lines.forEachIndexed { index, line ->
+                        database.execSQL(
+                            "INSERT INTO journal_lines " +
+                                "(id, journalEntryId, lineNumber, accountId, debit, credit, memo) " +
+                                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            arrayOf(
+                                UUID.randomUUID().toString(),
+                                entryId,
+                                index + 1,
+                                line.accountId,
+                                line.debit.stripTrailingZeros().toPlainString(),
+                                line.credit.stripTrailingZeros().toPlainString(),
+                                line.memo
+                            )
+                        )
+                    }
+                }
+            }
+
+            private fun addAssetBalance(
+                lines: MutableList<OpeningLine>,
+                accountId: String,
+                balance: BigDecimal,
+                memo: String
+            ) {
+                when {
+                    balance > BigDecimal.ZERO -> lines += OpeningLine(accountId, balance, BigDecimal.ZERO, memo)
+                    balance < BigDecimal.ZERO -> lines += OpeningLine(accountId, BigDecimal.ZERO, balance.abs(), memo)
+                }
+            }
+
+            private fun addLiabilityBalance(
+                lines: MutableList<OpeningLine>,
+                accountId: String,
+                balance: BigDecimal,
+                memo: String
+            ) {
+                when {
+                    balance > BigDecimal.ZERO -> lines += OpeningLine(accountId, BigDecimal.ZERO, balance, memo)
+                    balance < BigDecimal.ZERO -> lines += OpeningLine(accountId, balance.abs(), BigDecimal.ZERO, memo)
+                }
             }
         }
 
