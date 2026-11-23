@@ -144,6 +144,29 @@ class ProductRepository(private val database: AccountingDatabase) {
         return updated
     }
 
+    /**
+     * Updates only the default sale price for future sales.
+     * Existing invoice lines keep their saved unit-price snapshots.
+     */
+    suspend fun updateSalePrice(id: String, salePrice: String): Boolean {
+        val cleanPrice = ProductInputRules.normalizeNonNegativeDecimal(salePrice, "سعر البيع")
+        var updated = false
+
+        database.withTransaction {
+            val current = database.productDao().findById(id)
+            if (current != null && current.isActive) {
+                database.productDao().update(
+                    current.copy(
+                        salePrice = cleanPrice,
+                        updatedAt = System.currentTimeMillis()
+                    )
+                )
+                updated = true
+            }
+        }
+        return updated
+    }
+
     suspend fun archiveProduct(id: String) {
         database.productDao().archive(id, System.currentTimeMillis())
     }
