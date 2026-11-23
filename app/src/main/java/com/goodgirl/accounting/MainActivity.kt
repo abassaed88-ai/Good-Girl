@@ -1228,7 +1228,15 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(row.accountCode + " — " + row.accountName, color = Ink, fontWeight = FontWeight.Bold)
-                            Text("العملة: " + row.currencyCode + "   |   نوع الحساب: " + row.accountType, color = MutedText, fontSize = 12.sp)
+                            val accountTypeLabel = when (row.accountType) {
+                                "ASSET" -> "أصول"
+                                "LIABILITY" -> "التزامات"
+                                "EQUITY" -> "حقوق ملكية"
+                                "REVENUE" -> "إيرادات"
+                                "EXPENSE" -> "مصروفات"
+                                else -> "غير محدد"
+                            }
+                            Text("العملة: " + row.currencyCode + "   |   نوع الحساب: " + accountTypeLabel, color = MutedText, fontSize = 12.sp)
                             ReportValueRow("إجمالي مدين", row.totalDebit, row.currencyCode)
                             ReportValueRow("إجمالي دائن", row.totalCredit, row.currencyCode)
                             ReportValueRow("الرصيد المدين", row.debitBalance, row.currencyCode, strong = true)
