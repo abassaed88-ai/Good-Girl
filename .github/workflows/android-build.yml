@@ -7,8 +7,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Keep untrusted build/test code read-only. Grant write access only to the
+# isolated schema-persistence job, which runs after the build has completed.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: android-build-${{ github.ref }}
@@ -53,21 +55,6 @@ jobs:
       - name: Generate current v5 Room schema
         run: gradle :app:kaptDebugKotlin --no-daemon
 
-      - name: Persist exported Room schemas in the PR branch
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        env:
-          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/5.json
-          if git diff --cached --quiet; then
-            echo "Room schemas are already current."
-          else
-            git commit -m "chore: persist Room schema snapshots [skip ci]"
-            git push origin "HEAD:${PR_BRANCH}"
-          fi
-
       - name: Upload Room schema snapshots
         uses: actions/upload-artifact@v4
         with:
@@ -99,3 +86,38 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  persist-room-schemas:
+    name: Persist exported Room schemas
+    needs: build
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - name: Checkout pull request branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          persist-credentials: true
+
+      - name: Download Room schema snapshots
+        uses: actions/download-artifact@v4
+        with:
+          name: good-girl-room-schemas
+          path: app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase
+
+      - name: Commit schema snapshots when changed
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/4.json app/schemas/com.goodgirl.accounting.data.local.AccountingDatabase/5.json
+          if git diff --cached --quiet; then
+            echo "Room schemas are already current."
+          else
+            git commit -m "chore: persist Room schema snapshots [skip ci]"
+            git push origin "HEAD:${PR_BRANCH}"
+          fi
