@@ -44,7 +44,7 @@ class EncryptedBackupRestoreIntegrationTest {
             val productId = "restored-product-001"
             val root = JSONObject()
                 .put("format", "good-girl-accounting-backup")
-                .put("formatVersion", 4)
+                .put("formatVersion", 5)
                 .put("applicationId", "com.goodgirl.accounting")
                 .put("databaseVersion", ACCOUNTING_DATABASE_VERSION)
                 .put("exportedAt", 1_700_000_000_000L)
@@ -69,6 +69,15 @@ class EncryptedBackupRestoreIntegrationTest {
                         .put("isActive", true)
                         .put("createdAt", 100L)
                         .put("updatedAt", 200L)
+                ))
+                .put("productBarcodes", JSONArray().put(
+                    JSONObject()
+                        .put("id", "restored-barcode-001")
+                        .put("productId", productId)
+                        .put("barcodeValue", "6291234567890")
+                        .put("format", "EAN_13")
+                        .put("origin", "ORIGINAL")
+                        .put("createdAt", 150L)
                 ))
                 .put("productUnits", JSONArray().put(
                     JSONObject()
@@ -193,7 +202,7 @@ class EncryptedBackupRestoreIntegrationTest {
             val result = AccountingBackupManager(context, database)
                 .restoreBackup(android.net.Uri.fromFile(backupFile), restorePassword)
 
-            assertEquals(11, result.recordCount)
+            assertEquals(12, result.recordCount)
             assertTrue(restorePassword.all { it == '\u0000' })
 
             val products = database.productDao().getAll()
@@ -204,6 +213,11 @@ class EncryptedBackupRestoreIntegrationTest {
             assertEquals("مادة مستعادة", restored.name)
             assertEquals("7", restored.stockQuantity)
             assertEquals("2.50", restored.purchaseCost)
+
+            val restoredBarcodes = database.productBarcodeDao().getAll()
+            assertEquals(1, restoredBarcodes.size)
+            assertEquals(productId, restoredBarcodes.single().productId)
+            assertEquals("6291234567890", restoredBarcodes.single().barcodeValue)
 
             val units = database.productUnitDao().getAll()
             assertEquals(1, units.size)
