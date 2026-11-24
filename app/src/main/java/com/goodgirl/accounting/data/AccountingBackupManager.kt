@@ -13,6 +13,7 @@ import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
@@ -58,6 +59,7 @@ class AccountingBackupManager(
         val snapshot = database.withTransaction {
             val categories = database.categoryDao().getAll()
             val products = database.productDao().getAll()
+            val productBarcodes = database.productBarcodeDao().getAll()
             val units = database.productUnitDao().getAll()
             val parties = database.partyDao().getAll()
             val invoices = database.invoiceDao().getAllInvoices()
@@ -87,6 +89,7 @@ class AccountingBackupManager(
                 .put("exportedAt", exportedAt)
                 .put("categories", categories.toJsonArray { it.toBackupJson() })
                 .put("products", products.toJsonArray { it.toBackupJson() })
+                .put("productBarcodes", productBarcodes.toJsonArray { it.toBackupJson() })
                 .put("productUnits", units.toJsonArray { it.toBackupJson() })
                 .put("parties", parties.toJsonArray { it.toBackupJson() })
                 .put("invoices", invoices.toJsonArray { it.toBackupJson() })
@@ -101,7 +104,7 @@ class AccountingBackupManager(
                 .put("exchangeRateCorrectionItems", exchangeRateCorrectionItems.toJsonArray { it.toBackupJson() })
 
             json to (
-                categories.size + products.size + units.size + parties.size +
+                categories.size + products.size + productBarcodes.size + units.size + parties.size +
                     invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
                     accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
                     exchangeRateAudits.size + exchangeRateCorrectionItems.size
@@ -189,6 +192,7 @@ class AccountingBackupManager(
 
         val categories = root.parseArray("categories") { it.toCategoryEntity() }
         val products = root.parseArray("products") { it.toProductEntity() }
+        val productBarcodes = root.parseOptionalArray("productBarcodes") { it.toProductBarcodeEntity() }
         val units = root.parseArray("productUnits") { it.toProductUnitEntity() }
         val parties = root.parseArray("parties") { it.toPartyEntity() }
         val invoices = root.parseArray("invoices") { it.toInvoiceEntity() }
@@ -212,6 +216,7 @@ class AccountingBackupManager(
         BackupIntegrityValidator.validate(
             categories = categories,
             products = products,
+            productBarcodes = productBarcodes,
             units = units,
             parties = parties,
             invoices = invoices,
@@ -226,7 +231,7 @@ class AccountingBackupManager(
             exchangeRateCorrectionItems = exchangeRateCorrectionItems
         )
 
-        val totalRecords = categories.size + products.size + units.size + parties.size +
+        val totalRecords = categories.size + products.size + productBarcodes.size + units.size + parties.size +
             invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
             accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
             exchangeRateAudits.size + exchangeRateCorrectionItems.size
@@ -266,6 +271,7 @@ class AccountingBackupManager(
             database.invoiceDao().deleteAllInvoices()
             database.ledgerDao().deleteAll()
             database.stockMovementDao().deleteAll()
+            database.productBarcodeDao().deleteAll()
             database.productUnitDao().deleteAll()
             database.partyDao().deleteAll()
             database.productDao().deleteAll()
@@ -273,6 +279,7 @@ class AccountingBackupManager(
 
             database.categoryDao().insertAll(categories)
             database.productDao().insertAll(products)
+            database.productBarcodeDao().insertAll(productBarcodes)
             database.productUnitDao().insertAll(units)
             database.partyDao().insertAll(parties)
             database.invoiceDao().insertAllInvoices(invoices)
@@ -333,6 +340,10 @@ class AccountingBackupManager(
         .put("priceCurrencyCode", priceCurrencyCode).put("stockQuantity", stockQuantity)
         .put("lowStockThreshold", lowStockThreshold).put("note", note).put("isActive", isActive)
         .put("createdAt", createdAt).put("updatedAt", updatedAt)
+
+    private fun ProductBarcodeEntity.toBackupJson() = JSONObject()
+        .put("id", id).put("productId", productId).put("barcodeValue", barcodeValue)
+        .put("format", format).put("origin", origin).put("createdAt", createdAt)
 
     private fun ProductUnitEntity.toBackupJson() = JSONObject()
         .put("id", id).put("productId", productId).put("unitName", unitName)
@@ -410,6 +421,12 @@ class AccountingBackupManager(
         priceCurrencyCode = getString("priceCurrencyCode"), stockQuantity = getString("stockQuantity"),
         lowStockThreshold = getString("lowStockThreshold"), note = getString("note"),
         isActive = getBoolean("isActive"), createdAt = getLong("createdAt"), updatedAt = getLong("updatedAt")
+    )
+
+    private fun JSONObject.toProductBarcodeEntity() = ProductBarcodeEntity(
+        id = getString("id"), productId = getString("productId"),
+        barcodeValue = getString("barcodeValue"), format = getString("format"),
+        origin = getString("origin"), createdAt = getLong("createdAt")
     )
 
     private fun JSONObject.toProductUnitEntity() = ProductUnitEntity(
@@ -502,7 +519,7 @@ class AccountingBackupManager(
 
     companion object {
         private const val BACKUP_FORMAT = "good-girl-accounting-backup"
-        private const val BACKUP_FORMAT_VERSION = 4
+        private const val BACKUP_FORMAT_VERSION = 5
         private const val APPLICATION_ID = "com.goodgirl.accounting"
         private const val MIN_SUPPORTED_BACKUP_DATABASE_VERSION = 4
         private const val DATABASE_VERSION = ACCOUNTING_DATABASE_VERSION
