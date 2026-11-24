@@ -5,6 +5,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -65,6 +66,7 @@ class ManualJournalLineEditorTextInputTest {
         secondField.assertTextEquals("ملاحظة عربية")
     }
 
+    @OptIn(ExperimentalTestApi::class)
     @Test
     fun arabicTextCanBeEditedInTheMiddleWithoutLosingAdjacentCharacters() {
         val lines = testLines()
