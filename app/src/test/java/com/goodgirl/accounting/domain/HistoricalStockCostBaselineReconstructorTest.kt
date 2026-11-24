@@ -107,6 +107,19 @@ class HistoricalStockCostBaselineReconstructorTest {
         }
     }
 
+    @Test
+    fun rejectsLegacyReconciliationAfterAccountingBoundaryAndRequiresFallback() {
+        assertThrows(IllegalArgumentException::class.java) {
+            HistoricalStockCostBaselineReconstructor.reconstruct(
+                current = HistoricalStockCostCurrentState("product-7", "2", "10", "SYP"),
+                accountingBoundaryAt = 100,
+                postBoundaryEvents = listOf(
+                    event("legacy-adjustment", "MIGRATION_RECONCILIATION", "1", "10", "SYP", 120, 121)
+                )
+            )
+        }
+    }
+
     private fun event(
         id: String,
         sourceType: String,
