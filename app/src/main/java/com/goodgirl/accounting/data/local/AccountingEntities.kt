@@ -274,3 +274,18 @@ data class ExchangeRateCorrectionItemEntity(
     val oldRate: String,
     val newRate: String
 )
+
+@Entity(
+    tableName = "product_barcodes",
+    indices = [Index("productId"), Index(value = ["barcodeValue"], unique = true)]
+)
+data class ProductBarcodeEntity(
+    @PrimaryKey val id: String,
+    val productId: String,
+    val barcodeValue: String,
+    /** EAN_13, EAN_8, UPC_A, or CODE_128. */
+    val format: String,
+    /** ORIGINAL for a supplier barcode, INTERNAL for a code created in Good Girl. */
+    val origin: String,
+    val createdAt: Long
+)
