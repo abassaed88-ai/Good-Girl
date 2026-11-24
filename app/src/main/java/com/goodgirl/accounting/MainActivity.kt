@@ -21,6 +21,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -207,6 +208,18 @@ private fun GoodGirlApp() {
     var historyProductId by remember { mutableStateOf<String?>(null) }
     var journalEntryDetailId by remember { mutableStateOf<String?>(null) }
     var accountLedgerId by remember { mutableStateOf<String?>(null) }
+    var hasUnsavedChanges by remember { mutableStateOf(false) }
+    var showUnsavedChangesDialog by remember { mutableStateOf(false) }
+    var pendingNavigationPage by remember { mutableStateOf<String?>(null) }
+    val requestNavigation: (String) -> Unit = { destination ->
+        if (activePage in setOf("sales", "purchases", "products") && hasUnsavedChanges) {
+            pendingNavigationPage = destination
+            showUnsavedChangesDialog = true
+        } else {
+            hasUnsavedChanges = false
+            activePage = destination
+        }
+    }
     val backTargetPage = previousAppPage(
         currentPage = activePage,
         statementReturnPage = statementReturnPage,
@@ -215,7 +228,7 @@ private fun GoodGirlApp() {
         partiesReturnPage = partiesReturnPage
     )
     BackHandler(enabled = activePage != "dashboard") {
-        activePage = backTargetPage
+        requestNavigation(backTargetPage)
     }
     MaterialTheme(
         colorScheme = if (darkThemeEnabled) {
@@ -291,7 +304,11 @@ private fun GoodGirlApp() {
                         darkThemeEnabled = enabled
                     }
                 )
-                "sales" -> InvoiceManagementScreen(kind = "SALE", onBack = { activePage = salesReturnPage })
+                "sales" -> InvoiceManagementScreen(
+                    kind = "SALE",
+                    onBack = { requestNavigation(salesReturnPage) },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
+                )
                 "daily_sales" -> DailySalesScreen(
                     onBack = { activePage = "dashboard" },
                     onOpenFullInvoice = {
@@ -300,18 +317,23 @@ private fun GoodGirlApp() {
                     }
                 )
                 "price_settings" -> ProductPriceManagementScreen(onBack = { activePage = "dashboard" })
-                "purchases" -> InvoiceManagementScreen(kind = "PURCHASE", onBack = { activePage = "dashboard" })
+                "purchases" -> InvoiceManagementScreen(
+                    kind = "PURCHASE",
+                    onBack = { requestNavigation("dashboard") },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
+                )
                 "products" -> ProductManagementScreen(
-                    onBack = { activePage = "dashboard" },
+                    onBack = { requestNavigation("dashboard") },
                     onManageUnits = { productId ->
                         unitsProductId = productId
-                        activePage = "product_units"
+                        requestNavigation("product_units")
                     },
-                    onManageCategories = { activePage = "categories" },
+                    onManageCategories = { requestNavigation("categories") },
                     onViewHistory = { productId ->
                         historyProductId = productId
-                        activePage = "stock_history"
-                    }
+                        requestNavigation("stock_history")
+                    },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "categories" -> ProductCategoriesScreen(onBack = { activePage = "products" })
                 "product_units" -> ProductUnitsScreen(
@@ -369,7 +391,7 @@ private fun GoodGirlApp() {
             }
             if (activePage != "dashboard") {
                 TextButton(
-                    onClick = { activePage = "dashboard" },
+                    onClick = { requestNavigation("dashboard") },
                     modifier = Modifier
                         .align(Alignment.BottomStart)
                         .padding(12.dp)
@@ -378,7 +400,7 @@ private fun GoodGirlApp() {
                     Text("⌂ الرئيسية", color = BrandOnPrimary, fontWeight = FontWeight.SemiBold)
                 }
                 TextButton(
-                    onClick = { activePage = backTargetPage },
+                    onClick = { requestNavigation(backTargetPage) },
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
                         .padding(12.dp)
@@ -386,6 +408,41 @@ private fun GoodGirlApp() {
                 ) {
                     Text("← رجوع", color = BrandOnPrimary, fontWeight = FontWeight.SemiBold)
                 }
+            }
+            if (showUnsavedChangesDialog) {
+                AlertDialog(
+                    onDismissRequest = {
+                        showUnsavedChangesDialog = false
+                        pendingNavigationPage = null
+                    },
+                    title = { Text("لديك بيانات غير محفوظة") },
+                    text = {
+                        Text("أدخلت بيانات لم يتم حفظها بعد. هل تريد مغادرة الشاشة دون حفظها؟")
+                    },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                val destination = pendingNavigationPage
+                                showUnsavedChangesDialog = false
+                                pendingNavigationPage = null
+                                hasUnsavedChanges = false
+                                if (destination != null) activePage = destination
+                            }
+                        ) {
+                            Text("مغادرة دون حفظ")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                showUnsavedChangesDialog = false
+                                pendingNavigationPage = null
+                            }
+                        ) {
+                            Text("متابعة التعديل")
+                        }
+                    }
+                )
             }
             }
         }
@@ -1204,7 +1261,11 @@ private fun BackupManagementScreen(onBack: () -> Unit) {
     EncryptedBackupManagementScreen(onBack)
 }
 @Composable
-private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
+private fun InvoiceManagementScreen(
+    kind: String,
+    onBack: () -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { InvoiceRepository(database) }
@@ -1294,7 +1355,26 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
     }
     val enteredInvoiceDiscount = runCatching { BigDecimal(invoiceDiscount.trim()) }.getOrDefault(BigDecimal.ZERO)
     val calculatedTotal = subtotal.subtract(lineDiscountTotal).subtract(enteredInvoiceDiscount).max(BigDecimal.ZERO)
-
+    val hasUnsavedInvoiceChanges = hasUnsavedInvoiceDraft(
+        InvoiceDraftState(
+            draftLineCount = draftLines.size,
+            hasSelectedProduct = selectedProductId != null,
+            hasSelectedParty = selectedPartyId != null,
+            quantity = quantity,
+            unitPrice = unitPrice,
+            lineDiscount = lineDiscount,
+            invoiceDiscount = invoiceDiscount,
+            paidAmount = paidAmount,
+            currencyCode = currencyCode,
+            note = note,
+            paymentPanelOpen = paymentInvoiceId != null,
+            paymentAmount = paymentAmount,
+            paymentNote = paymentNote
+        )
+    )
+    LaunchedEffect(hasUnsavedInvoiceChanges) {
+        onUnsavedChangesChanged(hasUnsavedInvoiceChanges)
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -1488,6 +1568,11 @@ private fun InvoiceManagementScreen(kind: String, onBack: () -> Unit) {
                                 invoiceDiscount = "0"
                                 paidAmount = "0"
                                 note = ""
+                                quantity = "1"
+                                unitPrice = "0"
+                                lineDiscount = "0"
+                                currencyCode = "SYP"
+                                exchangeRate = "1"
                                 selectedProductId = null
                                 selectedUnitName = null
                                 selectedPartyId = null
@@ -3099,7 +3184,8 @@ private fun ProductManagementScreen(
     onBack: () -> Unit,
     onManageUnits: (String) -> Unit,
     onManageCategories: () -> Unit,
-    onViewHistory: (String) -> Unit
+    onViewHistory: (String) -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
@@ -3133,6 +3219,53 @@ private fun ProductManagementScreen(
     var adjustmentNote by remember { mutableStateOf("") }
     var stockMessage by remember { mutableStateOf<String?>(null) }
     var isSavingStock by remember { mutableStateOf(false) }
+
+    val editingProduct = products.firstOrNull { it.id == editingId }
+    val productFormValues = ProductFormValues(
+        categoryId = selectedCategoryId,
+        name = name,
+        sku = sku,
+        baseUnit = unit,
+        purchaseCost = purchaseCost,
+        salePrice = salePrice,
+        currencyCode = priceCurrencyCode,
+        openingStock = openingStock,
+        lowStockThreshold = lowStockThreshold,
+        note = note
+    )
+    val originalProductFormValues = editingProduct?.let { product ->
+        ProductFormValues(
+            categoryId = product.categoryId,
+            name = product.name,
+            sku = product.sku,
+            baseUnit = product.baseUnit,
+            purchaseCost = product.purchaseCost,
+            salePrice = product.salePrice,
+            currencyCode = product.priceCurrencyCode,
+            openingStock = "0",
+            lowStockThreshold = product.lowStockThreshold,
+            note = product.note
+        )
+    }
+    val adjustingProduct = products.firstOrNull { it.id == adjustingProductId }
+    val hasUnsavedProductChanges =
+        (editingId != null && editingProduct == null) ||
+            hasUnsavedProductForm(productFormValues, originalProductFormValues) ||
+            hasUnsavedStockAdjustment(
+                StockAdjustmentDraft(
+                    isOpen = adjustingProduct != null,
+                    stocktakeMode = stocktakeMode,
+                    currentStock = adjustingProduct?.stockQuantity.orEmpty(),
+                    countedQuantity = countedQuantity,
+                    quantityDelta = adjustmentDelta,
+                    unitCost = adjustmentCost,
+                    originalUnitCost = adjustingProduct?.purchaseCost.orEmpty(),
+                    note = adjustmentNote
+                )
+            )
+    LaunchedEffect(hasUnsavedProductChanges) {
+        onUnsavedChangesChanged(hasUnsavedProductChanges)
+    }
 
     fun resetForm() {
         editingId = null
