@@ -1671,6 +1671,7 @@ private fun InvoiceManagementScreen(
     }
     var exchangeRate by remember { mutableStateOf(defaultExchangeRate) }
     var note by remember { mutableStateOf("") }
+    var currencyCorrectionReason by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var paymentInvoiceId by remember { mutableStateOf<String?>(null) }
@@ -3514,7 +3515,9 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
                     val date = remember(movement.occurredAt) {
                         SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(movement.occurredAt))
                     }
+                    val isCurrencyCorrection = movement.sourceType == "PRODUCT_CURRENCY_CORRECTION"
                     val sourceLabel = when (movement.sourceType) {
+                        "PRODUCT_CURRENCY_CORRECTION" -> "تصحيح عملة المنتج"
                         "OPENING_BALANCE" -> "رصيد افتتاحي"
                         "MANUAL_ADJUSTMENT" -> "تسوية مخزون يدوية"
                         "STOCKTAKE_ADJUSTMENT" -> "تسوية ناتجة عن الجرد"
@@ -3528,8 +3531,8 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(sourceLabel, color = Ink, fontWeight = FontWeight.Bold)
                                 Text(
-                                    (if (isIncrease) "+" else "-") + quantity + " " + (product?.baseUnit ?: ""),
-                                    color = if (isIncrease) SoftGreen else SoftRed,
+                                    if (isCurrencyCorrection) "دون تغيير الكمية" else (if (isIncrease) "+" else "-") + quantity + " " + (product?.baseUnit ?: ""),
+                                    color = if (isCurrencyCorrection) BrandBlue else if (isIncrease) SoftGreen else SoftRed,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
@@ -3849,6 +3852,7 @@ private fun ProductManagementScreen(
         openingStock = "0"
         lowStockThreshold = "0"
         note = ""
+        currencyCorrectionReason = ""
     }
 
     fun startEditing(product: ProductEntity) {
@@ -3871,6 +3875,7 @@ private fun ProductManagementScreen(
         purchaseCost = product.purchaseCost
         salePrice = product.salePrice
         priceCurrencyCode = product.priceCurrencyCode
+        currencyCorrectionReason = ""
         lowStockThreshold = product.lowStockThreshold
         note = product.note
         message = null
@@ -3957,19 +3962,46 @@ private fun ProductManagementScreen(
                 }
                 OutlinedTextField(salePrice, { salePrice = it }, modifier = Modifier.fillMaxWidth(), label = { Text("سعر البيع") }, singleLine = true)
                 Text("عملة الكلفة وسعر البيع", color = MutedText, fontSize = 12.sp)
-                val canChangeCurrency = editingProduct == null ||
-                    (editingProduct.stockQuantity.toBigDecimalOrNull()?.compareTo(BigDecimal.ZERO) == 0)
-                if (canChangeCurrency) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { priceCurrencyCode = "SYP" }) {
-                            Text(if (priceCurrencyCode == "SYP") "✓ ليرة سورية" else "ليرة سورية")
-                        }
-                        TextButton(onClick = { priceCurrencyCode = "USD" }) {
-                            Text(if (priceCurrencyCode == "USD") "✓ دولار أمريكي" else "دولار أمريكي")
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = {
+                        priceCurrencyCode = "SYP"
+                        currencyCorrectionReason = if (editingProduct?.priceCurrencyCode != null && editingProduct.priceCurrencyCode != "SYP") {
+                            "تصحيح خطأ في اختيار عملة المنتج"
+                        } else ""
+                    }) {
+                        Text(if (priceCurrencyCode == "SYP") "✓ ليرة سورية" else "ليرة سورية")
+                    }
+                    TextButton(onClick = {
+                        priceCurrencyCode = "USD"
+                        currencyCorrectionReason = if (editingProduct?.priceCurrencyCode != null && editingProduct.priceCurrencyCode != "USD") {
+                            "تصحيح خطأ في اختيار عملة المنتج"
+                        } else ""
+                    }) {
+                        Text(if (priceCurrencyCode == "USD") "✓ دولار أمريكي" else "دولار أمريكي")
+                    }
+                }
+                if (editingProduct != null && priceCurrencyCode != editingProduct.priceCurrencyCode) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = activePalette.surfaceVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("تصحيح عملة المنتج", color = Ink, fontWeight = FontWeight.Bold)
+                            Text(
+                                "سيبقى سعر الشراء وسعر البيع بالقيم الرقمية نفسها، ولن يتم تحويلهما بسعر الصرف. ستُسجل حركة تصحيح للرصيد الحالي دون تغيير الكمية، وتبقى الفواتير وحركات المخزون السابقة كما هي.",
+                                color = MutedText,
+                                fontSize = 12.sp
+                            )
+                            OutlinedTextField(
+                                value = currencyCorrectionReason,
+                                onValueChange = { currencyCorrectionReason = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("سبب التصحيح *") },
+                                minLines = 2
+                            )
                         }
                     }
-                } else {
-                    Text("عملة المنتج ثابتة ما دام له رصيد مخزني: " + priceCurrencyCode, color = MutedText, fontSize = 12.sp)
                 }
                 if (editingId == null) {
                     OutlinedTextField(openingStock, { openingStock = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الرصيد الافتتاحي") }, singleLine = true)
@@ -4006,7 +4038,12 @@ private fun ProductManagementScreen(
                                         note = note,
                                         priceCurrencyCode = priceCurrencyCode,
                                         categoryId = selectedCategoryId,
-                                        lowStockThreshold = lowStockThreshold
+                                        lowStockThreshold = lowStockThreshold,
+                                        currencyCorrectionReason = if (editingProduct != null && editingProduct.priceCurrencyCode != priceCurrencyCode) currencyCorrectionReason else null,
+                                        currencyCorrectionExchangeRate = context.getSharedPreferences(
+                                            "good_girl_settings",
+                                            android.content.Context.MODE_PRIVATE
+                                        ).getString("usd_syp_rate", "1") ?: "1"
                                     )
                                     check(updated) { "تعذر العثور على المنتج لتحديثه" }
                                 } else {
