@@ -1671,7 +1671,6 @@ private fun InvoiceManagementScreen(
     }
     var exchangeRate by remember { mutableStateOf(defaultExchangeRate) }
     var note by remember { mutableStateOf("") }
-    var currencyCorrectionReason by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var paymentInvoiceId by remember { mutableStateOf<String?>(null) }
@@ -3781,6 +3780,7 @@ private fun ProductManagementScreen(
     var searchQuery by remember { mutableStateOf("") }
     var showLowStockOnly by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
+    var currencyCorrectionReason by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var editingId by remember { mutableStateOf<String?>(null) }
