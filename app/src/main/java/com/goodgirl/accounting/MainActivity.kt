@@ -365,7 +365,7 @@ private fun GoodGirlApp() {
             )
         }
     ) {
-        Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
+        Surface(modifier = Modifier.fillMaxSize(), color = selectedPalette.background) {
             Box(modifier = Modifier.fillMaxSize()) {
             when (activePage) {
                 "cash" -> CashManagementScreen(
