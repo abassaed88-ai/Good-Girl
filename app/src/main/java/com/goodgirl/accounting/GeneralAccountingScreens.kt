@@ -30,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,8 +39,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -546,6 +549,7 @@ fun JournalBookScreen(
 }
 
 private data class ManualJournalLineInput(
+    val id: String = UUID.randomUUID().toString(),
     val accountId: String = "",
     val debit: String = "",
     val credit: String = "",
@@ -622,13 +626,15 @@ private fun ManualJournalEntryDialog(
                 }
                 Text("أسطر القيد", color = AccountingAccent, fontWeight = FontWeight.Bold)
                 lines.forEachIndexed { index, line ->
-                    ManualJournalLineEditor(
-                        index = index,
-                        line = line,
-                        accounts = accounts,
-                        onChange = { updated -> lines[index] = updated; error = null },
-                        onRemove = { if (lines.size > 2) lines.removeAt(index) }
-                    )
+                    key(line.id) {
+                        ManualJournalLineEditor(
+                            index = index,
+                            line = line,
+                            accounts = accounts,
+                            onChange = { updated -> lines[index] = updated; error = null },
+                            onRemove = { if (lines.size > 2) lines.removeAt(index) }
+                        )
+                    }
                 }
                 TextButton(onClick = { lines.add(ManualJournalLineInput()) }) {
                     Text("إضافة سطر")
@@ -690,7 +696,31 @@ private fun ManualJournalLineEditor(
     onChange: (ManualJournalLineInput) -> Unit,
     onRemove: () -> Unit
 ) {
-    var menuExpanded by remember { mutableStateOf(false) }
+    var menuExpanded by remember(line.id) { mutableStateOf(false) }
+    var debitValue by remember(line.id) {
+        mutableStateOf(TextFieldValue(text = line.debit, selection = TextRange(line.debit.length)))
+    }
+    var creditValue by remember(line.id) {
+        mutableStateOf(TextFieldValue(text = line.credit, selection = TextRange(line.credit.length)))
+    }
+    var memoValue by remember(line.id) {
+        mutableStateOf(TextFieldValue(text = line.memo, selection = TextRange(line.memo.length)))
+    }
+    LaunchedEffect(line.debit) {
+        if (debitValue.text != line.debit) {
+            debitValue = TextFieldValue(text = line.debit, selection = TextRange(line.debit.length))
+        }
+    }
+    LaunchedEffect(line.credit) {
+        if (creditValue.text != line.credit) {
+            creditValue = TextFieldValue(text = line.credit, selection = TextRange(line.credit.length))
+        }
+    }
+    LaunchedEffect(line.memo) {
+        if (memoValue.text != line.memo) {
+            memoValue = TextFieldValue(text = line.memo, selection = TextRange(line.memo.length))
+        }
+    }
     val selectedAccount = accounts.firstOrNull { it.id == line.accountId }
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -723,16 +753,22 @@ private fun ManualJournalLineEditor(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
-                    value = line.debit,
-                    onValueChange = { onChange(line.copy(debit = it, credit = if (it.isNotBlank()) "" else line.credit)) },
+                    value = debitValue,
+                    onValueChange = { updated ->
+                        debitValue = updated
+                        onChange(line.copy(debit = updated.text, credit = if (updated.text.isNotBlank()) "" else line.credit))
+                    },
                     label = { Text("مدين") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
                 OutlinedTextField(
-                    value = line.credit,
-                    onValueChange = { onChange(line.copy(credit = it, debit = if (it.isNotBlank()) "" else line.debit)) },
+                    value = creditValue,
+                    onValueChange = { updated ->
+                        creditValue = updated
+                        onChange(line.copy(credit = updated.text, debit = if (updated.text.isNotBlank()) "" else line.debit))
+                    },
                     label = { Text("دائن") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
@@ -740,8 +776,11 @@ private fun ManualJournalLineEditor(
                 )
             }
             OutlinedTextField(
-                value = line.memo,
-                onValueChange = { onChange(line.copy(memo = it)) },
+                value = memoValue,
+                onValueChange = { updated ->
+                    memoValue = updated
+                    onChange(line.copy(memo = updated.text))
+                },
                 label = { Text("بيان السطر (اختياري)") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
