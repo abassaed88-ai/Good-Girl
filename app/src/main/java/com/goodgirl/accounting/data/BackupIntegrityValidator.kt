@@ -75,6 +75,19 @@ object BackupIntegrityValidator {
         val partyById = parties.associateBy { it.id }
         val invoiceById = invoices.associateBy { it.id }
 
+        productBarcodes.forEach { barcode ->
+            require(barcode.productId in productById) {
+                "باركود مرتبط بمنتج غير موجود"
+            }
+            require(barcode.barcodeValue.isNotBlank()) { "يوجد رقم باركود فارغ" }
+            require(barcode.format in setOf("EAN_13", "EAN_8", "UPC_A", "CODE_128")) {
+                "صيغة باركود غير مدعومة"
+            }
+            require(barcode.origin in setOf("ORIGINAL", "INTERNAL")) {
+                "مصدر الباركود غير مدعوم"
+            }
+        }
+
         products.forEach { product ->
             require(product.name.isNotBlank()) { "يوجد منتج بلا اسم في النسخة الاحتياطية" }
             require(product.categoryId == null || product.categoryId in categoryIds) {
