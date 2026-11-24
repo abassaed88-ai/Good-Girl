@@ -231,7 +231,7 @@ class AccountingBackupManager(
             exchangeRateCorrectionItems = exchangeRateCorrectionItems
         )
 
-        val totalRecords = categories.size + products.size + units.size + parties.size +
+        val totalRecords = categories.size + products.size + productBarcodes.size + units.size + parties.size +
             invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
             accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
             exchangeRateAudits.size + exchangeRateCorrectionItems.size
