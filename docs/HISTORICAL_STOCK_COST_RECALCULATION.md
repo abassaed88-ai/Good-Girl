@@ -13,13 +13,15 @@ Status: approved engineering design for the development branch. This document is
 
 ## 2. Trusted cost-history baseline
 
-Add an immutable per-product `stock_cost_baselines` row containing product ID, quantity, average unit cost, currency, effective timestamp, and recording timestamp.
+Add an immutable per-product `stock_cost_baselines` row containing product ID, quantity, average unit cost, currency, effective timestamp, recording timestamp, and a coverage/source marker.
 
-- During the v8-to-v9 migration, snapshot each existing product's current quantity, purchase cost, and currency. Existing movements before this timestamp remain available in the movement history screen but are not replayed for new historical costing.
-- For a newly created product, create its baseline in the same transaction as the product and its opening-stock movement.
-- A backdated invoice line is accepted only when its issue time is at or after that product's baseline effective time.
-- The existing `MIGRATION_RECONCILIATION` rows are absorbed into the migration baseline; they must not be replayed as ordinary purchases or sales.
-- This boundary is required because the legacy-to-general-ledger migration carried forward balances as opening journals; it did not reconstruct every pre-migration sale and cost as a posted journal. Replaying earlier sales as if that complete ledger existed would produce false historical profit and inventory balances.
+- The usable accounting-history boundary is the general-ledger opening migration (v5-to-v6), not the new v8-to-v9 schema migration. The v5-to-v6 migration records balanced `MIGRATION_OPENING` journals and snapshots the current inventory value; transactions before that opening are not individually reconstructed in the general ledger.
+- During v8-to-v9, attempt to reconstruct each existing product's quantity, weighted-average cost, and currency immediately after that opening boundary by reversing every stock movement recorded after it, in reverse chronological order. A successful reconstruction must pass a forward replay and exactly reconcile to the current product quantity, currency, and carrying cost (with a documented decimal tolerance only where the existing eight-decimal weighted-average rounding requires it).
+- Movements recorded before the opening boundary are already represented in the opening balances and must not be replayed or re-journaled. A movement recorded after the boundary but carrying a business date before it makes reconstruction unsafe and triggers fallback for that product.
+- If reverse reconstruction, currency-boundary recovery, or forward reconciliation fails, create a per-product fallback baseline from the current saved product balance at v9 migration time. Such a product accepts only future/new transactions dated at or after that fallback boundary; older backdated transactions are rejected with a clear Arabic explanation. Do not fabricate earlier stock or profit.
+- For a product created after the accounting opening boundary, create a zero-quantity baseline immediately before its opening-stock event, then replay that event as the first stock movement. A product created with zero opening quantity still receives a baseline.
+- Existing `MIGRATION_RECONCILIATION` movements created by the v4-to-v5 migration are part of the pre-ledger opening position. Keep them for historical display, but do not mistake them for purchases or replay them after the general-ledger opening boundary.
+- This coverage rule keeps backdated entries available across the period for which source-based journal accounting exists, while protecting earlier legacy periods represented only by opening balances.
 
 ## 3. Stable movement ordering
 
@@ -28,9 +30,9 @@ Add a persisted `recordedAt` value to stock movements. Backdated events retain t
 - `occurredAt`: the business date selected for the invoice.
 - `recordedAt`: the time the event was saved.
 
-Replay order is `occurredAt`, then `recordedAt`, then movement ID as a final deterministic tie-breaker. Movement recording timestamps must be monotonically advanced per product where millisecond collisions would otherwise make two separately posted transactions ambiguous. Rows from the same invoice are inserted in a stable order.
+Replay order is `occurredAt`, then `recordedAt`, then movement ID as a final deterministic tie-breaker. New movement recording timestamps must be monotonically advanced per product (and in insertion order for repeated product lines within one invoice), so millisecond collisions cannot make separate transactions ambiguous.
 
-For existing v8 rows, initialize `recordedAt` from the linked invoice's `createdAt` where a stock movement references an invoice line; otherwise initialize it from `occurredAt`.
+For existing v8 rows, initialize `recordedAt` from the linked invoice's `createdAt` where a stock movement references an invoice line; otherwise initialize it from `occurredAt`. During baseline replay, only events with `recordedAt` after the accounting opening boundary are reversed/replayed. A future-dated legacy event recorded before the boundary is already included in the opening snapshot and must not be counted twice.
 
 ## 4. Replay and event handling
 
