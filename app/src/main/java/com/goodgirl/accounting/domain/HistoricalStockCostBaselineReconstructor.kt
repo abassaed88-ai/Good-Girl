@@ -54,8 +54,12 @@ object HistoricalStockCostBaselineReconstructor {
             require(event.occurredAt >= accountingBoundaryAt) {
                 "توجد حركة مسجلة بعد بداية دفتر الأستاذ بتاريخ أقدم منها؛ يلزم تصحيحها قبل إعادة بناء الرصيد"
             }
-            require(event.sourceType.trim().uppercase() in supportedMovementTypes) {
+            val sourceType = event.sourceType.trim().uppercase()
+            require(sourceType in supportedMovementTypes) {
                 "نوع حركة المخزون غير معروف لإعادة بناء الرصيد: ${event.sourceType}"
+            }
+            require(sourceType != "MIGRATION_RECONCILIATION") {
+                "توجد تسوية رصيد ترحيل بعد بداية دفتر الأستاذ؛ يلزم اعتماد لقطة بداية جديدة لهذه المادة"
             }
         }
 
