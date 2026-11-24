@@ -134,14 +134,14 @@ private val DarkPalette = AppPalette(
 )
 
 private var activePalette by mutableStateOf(LightPalette)
-private val BrandBlue get() = activePalette.brandBlue
-private val LightGray get() = activePalette.background
-private val CardSurface get() = activePalette.cardSurface
-private val SoftGreen get() = activePalette.softGreen
-private val SoftRed get() = activePalette.softRed
-private val SoftPurple get() = activePalette.softPurple
-private val Ink get() = activePalette.ink
-private val MutedText get() = activePalette.mutedText
+internal val BrandBlue get() = activePalette.brandBlue
+internal val LightGray get() = activePalette.background
+internal val CardSurface get() = activePalette.cardSurface
+internal val SoftGreen get() = activePalette.softGreen
+internal val SoftRed get() = activePalette.softRed
+internal val SoftPurple get() = activePalette.softPurple
+internal val Ink get() = activePalette.ink
+internal val MutedText get() = activePalette.mutedText
 private val BrandOnPrimary get() = if (activePalette == DarkPalette) Color(0xFF10232C) else Color.White
 
 class MainActivity : ComponentActivity() {

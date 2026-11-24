@@ -59,12 +59,12 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.launch
 
-private val AccountingAccent = androidx.compose.ui.graphics.Color(0xFFE83E91)
-private val AccountingSurface = androidx.compose.ui.graphics.Color(0xFF25212A)
-private val AccountingText = androidx.compose.ui.graphics.Color(0xFFF5EFF5)
-private val AccountingMuted = androidx.compose.ui.graphics.Color(0xFFB8AEBB)
-private val AccountingGood = androidx.compose.ui.graphics.Color(0xFF78C9A0)
-private val AccountingBad = androidx.compose.ui.graphics.Color(0xFFE58A9B)
+private val AccountingAccent get() = BrandBlue
+private val AccountingSurface get() = CardSurface
+private val AccountingText get() = Ink
+private val AccountingMuted get() = MutedText
+private val AccountingGood get() = SoftGreen
+private val AccountingBad get() = SoftRed
 
 @Composable
 fun GeneralAccountingHubScreen(
@@ -695,7 +695,7 @@ private fun ManualJournalLineEditor(
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = androidx.compose.ui.graphics.Color(0xFF332C38))
+        colors = CardDefaults.cardColors(containerColor = LightGray)
     ) {
         Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
