@@ -10,7 +10,7 @@ import com.goodgirl.accounting.domain.StockMovementReconciliation
 import java.math.BigDecimal
 import java.util.UUID
 
-const val ACCOUNTING_DATABASE_VERSION = 7
+const val ACCOUNTING_DATABASE_VERSION = 8
 
 private data class MigrationCurrencyBalances(
     var cash: BigDecimal = BigDecimal.ZERO,
@@ -32,6 +32,7 @@ private data class MigrationOpeningLine(
     entities = [
         CategoryEntity::class,
         ProductEntity::class,
+        ProductBarcodeEntity::class,
         ProductUnitEntity::class,
         PartyEntity::class,
         InvoiceEntity::class,
@@ -50,6 +51,7 @@ private data class MigrationOpeningLine(
 )
 abstract class AccountingDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
+    abstract fun productBarcodeDao(): ProductBarcodeDao
     abstract fun productUnitDao(): ProductUnitDao
     abstract fun categoryDao(): CategoryDao
     abstract fun partyDao(): PartyDao
@@ -451,6 +453,22 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS product_barcodes (" +
+                        "id TEXT NOT NULL, productId TEXT NOT NULL, barcodeValue TEXT NOT NULL, " +
+                        "format TEXT NOT NULL, origin TEXT NOT NULL, createdAt INTEGER NOT NULL, PRIMARY KEY(id))"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_product_barcodes_productId ON product_barcodes(productId)"
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_product_barcodes_barcodeValue ON product_barcodes(barcodeValue)"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AccountingDatabase? = null
 
@@ -460,7 +478,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build().also { INSTANCE = it }
             }
     }
 }
