@@ -39,6 +39,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -546,7 +547,7 @@ fun JournalBookScreen(
     }
 }
 
-private data class ManualJournalLineInput(
+internal data class ManualJournalLineInput(
     val id: String = UUID.randomUUID().toString(),
     val accountId: String = "",
     val debit: String = "",
@@ -687,7 +688,7 @@ private fun ManualJournalEntryDialog(
 }
 
 @Composable
-private fun ManualJournalLineEditor(
+internal fun ManualJournalLineEditor(
     index: Int,
     line: ManualJournalLineInput,
     accounts: List<AccountEntity>,
@@ -734,7 +735,7 @@ private fun ManualJournalLineEditor(
                     label = { Text("مدين") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).testTag("manual-journal-debit-${line.id}")
                 )
                 OutlinedTextField(
                     value = line.credit,
@@ -744,7 +745,7 @@ private fun ManualJournalLineEditor(
                     label = { Text("دائن") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f).testTag("manual-journal-credit-${line.id}")
                 )
             }
             OutlinedTextField(
@@ -754,14 +755,14 @@ private fun ManualJournalLineEditor(
                 },
                 label = { Text("بيان السطر (اختياري)") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().testTag("manual-journal-memo-${line.id}")
             )
         }
     }
 }
 
 @Composable
-fun JournalEntryDetailScreen(
+fun JournalEntryDetailScreen,
     entryId: String,
     onBack: () -> Unit
 ) {
