@@ -274,6 +274,49 @@ class AccountingDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun roomMigrationCreatesVersionEightProductBarcodeTableAndUniqueIndex() {
+        val databaseName = "room-migration-v7-v8.db"
+        val legacy = roomMigrationHelper.createDatabase(databaseName, 7)
+        legacy.close()
+
+        val migrated = roomMigrationHelper.runMigrationsAndValidate(
+            databaseName,
+            8,
+            true,
+            AccountingDatabase.MIGRATION_7_8
+        )
+        try {
+            assertEquals(0, databaseCount(migrated, "product_barcodes"))
+            migrated.execSQL(
+                "INSERT INTO products " +
+                    "(id, sku, name, categoryId, baseUnit, purchaseCost, salePrice, priceCurrencyCode, " +
+                    "stockQuantity, lowStockThreshold, note, isActive, createdAt, updatedAt) " +
+                    "VALUES ('barcode-product', '', 'منتج باركود', NULL, 'قطعة', '1', '2', 'SYP', '0', '0', '', 1, 1, 1)"
+            )
+            migrated.execSQL(
+                "INSERT INTO product_barcodes " +
+                    "(id, productId, barcodeValue, format, origin, createdAt) " +
+                    "VALUES ('barcode-1', 'barcode-product', '6291234567890', 'EAN_13', 'ORIGINAL', 1)"
+            )
+            assertEquals(1, databaseCount(migrated, "product_barcodes"))
+            var duplicateRejected = false
+            try {
+                migrated.execSQL(
+                    "INSERT INTO product_barcodes " +
+                        "(id, productId, barcodeValue, format, origin, createdAt) " +
+                        "VALUES ('barcode-2', 'barcode-product', '6291234567890', 'EAN_13', 'ORIGINAL', 2)"
+                )
+            } catch (_: Exception) {
+                duplicateRejected = true
+            }
+            assertTrue("Duplicate barcode values must be rejected", duplicateRejected)
+        } finally {
+            migrated.close()
+            InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(databaseName)
+        }
+    }
+
     private fun insertLegacyLedger(
         database: SupportSQLiteDatabase,
         id: String,
