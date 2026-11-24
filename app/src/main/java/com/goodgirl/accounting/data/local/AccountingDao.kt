@@ -360,3 +360,24 @@ interface ExchangeRateCorrectionItemDao {
     @Query("DELETE FROM exchange_rate_correction_items")
     suspend fun deleteAll()
 }
+
+@Dao
+interface ProductBarcodeDao {
+    @Query("SELECT * FROM product_barcodes ORDER BY productId, createdAt")
+    suspend fun getAll(): List<ProductBarcodeEntity>
+
+    @Query("SELECT * FROM product_barcodes WHERE productId = :productId ORDER BY createdAt")
+    suspend fun getForProduct(productId: String): List<ProductBarcodeEntity>
+
+    @Query("SELECT * FROM product_barcodes WHERE barcodeValue = :barcodeValue LIMIT 1")
+    suspend fun findByValue(barcodeValue: String): ProductBarcodeEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(barcode: ProductBarcodeEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(barcodes: List<ProductBarcodeEntity>)
+
+    @Query("DELETE FROM product_barcodes")
+    suspend fun deleteAll()
+}
