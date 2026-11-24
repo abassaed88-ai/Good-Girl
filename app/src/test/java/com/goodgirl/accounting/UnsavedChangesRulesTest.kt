@@ -113,4 +113,70 @@ class UnsavedChangesRulesTest {
         assertFalse(hasUnsavedUnitDraft("", "1"))
         assertTrue(hasUnsavedUnitDraft("كرتونة", "12"))
     }
+
+
+    @Test
+    fun invoiceExchangeRateChangesAreTrackedOnlyForUsd() {
+        assertFalse(
+            hasUnsavedInvoiceDraft(
+                InvoiceDraftState(
+                    currencyCode = "USD",
+                    exchangeRate = "15000",
+                    defaultExchangeRate = "15000"
+                )
+            )
+        )
+        assertTrue(
+            hasUnsavedInvoiceDraft(
+                InvoiceDraftState(
+                    currencyCode = "USD",
+                    exchangeRate = "15100",
+                    defaultExchangeRate = "15000"
+                )
+            )
+        )
+        assertFalse(
+            hasUnsavedInvoiceDraft(
+                InvoiceDraftState(
+                    currencyCode = "SYP",
+                    exchangeRate = "15100",
+                    defaultExchangeRate = "15000"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun stockAdjustmentUnitCostChangesAreTracked() {
+        assertFalse(
+            hasUnsavedStockAdjustment(
+                StockAdjustmentDraft(
+                    isOpen = true,
+                    currentStock = "10",
+                    countedQuantity = "10",
+                    unitCost = "15",
+                    originalUnitCost = "15"
+                )
+            )
+        )
+        assertTrue(
+            hasUnsavedStockAdjustment(
+                StockAdjustmentDraft(
+                    isOpen = true,
+                    currentStock = "10",
+                    countedQuantity = "10",
+                    unitCost = "18",
+                    originalUnitCost = "15"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun partyPaymentOnlyWarnsForEnteredAmountOrNote() {
+        assertFalse(hasUnsavedPartyPaymentDraft(isFormOpen = false, amount = "100", note = ""))
+        assertFalse(hasUnsavedPartyPaymentDraft(isFormOpen = true, amount = "", note = ""))
+        assertTrue(hasUnsavedPartyPaymentDraft(isFormOpen = true, amount = "100", note = ""))
+        assertTrue(hasUnsavedPartyPaymentDraft(isFormOpen = true, amount = "", note = "تحصيل نقدي"))
+    }
 }

@@ -10,6 +10,8 @@ internal data class InvoiceDraftState(
     val invoiceDiscount: String = "0",
     val paidAmount: String = "0",
     val currencyCode: String = "SYP",
+    val exchangeRate: String = "1",
+    val defaultExchangeRate: String = "1",
     val note: String = "",
     val paymentPanelOpen: Boolean = false,
     val paymentAmount: String = "",
@@ -26,6 +28,7 @@ internal fun hasUnsavedInvoiceDraft(state: InvoiceDraftState): Boolean =
         state.invoiceDiscount != "0" ||
         state.paidAmount != "0" ||
         state.currencyCode != "SYP" ||
+        (state.currencyCode == "USD" && state.exchangeRate != state.defaultExchangeRate) ||
         state.note.isNotBlank() ||
         state.paymentPanelOpen ||
         state.paymentAmount.isNotBlank() ||
@@ -62,11 +65,12 @@ internal data class StockAdjustmentDraft(
 
 internal fun hasUnsavedStockAdjustment(draft: StockAdjustmentDraft): Boolean =
     draft.isOpen && (
-        if (draft.stocktakeMode) {
-            draft.countedQuantity != draft.currentStock || draft.note.isNotBlank()
-        } else {
-            draft.quantityDelta.isNotBlank() || draft.note.isNotBlank()
-        }
+        draft.unitCost != draft.originalUnitCost ||
+            (if (draft.stocktakeMode) {
+                draft.countedQuantity != draft.currentStock || draft.note.isNotBlank()
+            } else {
+                draft.quantityDelta.isNotBlank() || draft.note.isNotBlank()
+            })
     )
 
 internal fun hasUnsavedCashDraft(amount: String, description: String): Boolean =
@@ -120,3 +124,9 @@ internal fun hasUnsavedCategoryForm(
 
 internal fun hasUnsavedUnitDraft(name: String, factor: String): Boolean =
     name.isNotBlank() || factor != "1"
+
+internal fun hasUnsavedPartyPaymentDraft(
+    isFormOpen: Boolean,
+    amount: String,
+    note: String
+): Boolean = isFormOpen && (amount.isNotBlank() || note.isNotBlank())

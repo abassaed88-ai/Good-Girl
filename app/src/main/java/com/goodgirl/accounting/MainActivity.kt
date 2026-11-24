@@ -214,7 +214,7 @@ private fun GoodGirlApp() {
     val requestNavigation: (String) -> Unit = { destination ->
         if (activePage in setOf(
                 "sales", "purchases", "products", "cash", "daily_sales",
-                "price_settings", "parties", "categories", "product_units"
+                "price_settings", "parties", "categories", "product_units", "settings", "statement"
             ) && hasUnsavedChanges) {
             pendingNavigationPage = destination
             showUnsavedChangesDialog = true
@@ -303,12 +303,13 @@ private fun GoodGirlApp() {
                 "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
                 "backup" -> BackupManagementScreen(onBack = { activePage = "dashboard" })
                 "settings" -> SettingsScreen(
-                    onBack = { activePage = "dashboard" },
+                    onBack = { requestNavigation("dashboard") },
                     isDarkTheme = darkThemeEnabled,
                     onDarkThemeChanged = { enabled ->
                         settingsPreferences.edit().putBoolean("dark_theme_enabled", enabled).apply()
                         darkThemeEnabled = enabled
-                    }
+                    },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "sales" -> InvoiceManagementScreen(
                     kind = "SALE",
@@ -381,7 +382,8 @@ private fun GoodGirlApp() {
                 )
                 "statement" -> PartyStatementScreen(
                     partyId = statementPartyId.orEmpty(),
-                    onBack = { activePage = statementReturnPage }
+                    onBack = { requestNavigation(statementReturnPage) },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 else -> DashboardScreen(
                     onOpenDailySales = { activePage = "daily_sales" },
@@ -817,7 +819,8 @@ private fun ProductPriceManagementScreen(
 private fun SettingsScreen(
     onBack: () -> Unit,
     isDarkTheme: Boolean,
-    onDarkThemeChanged: (Boolean) -> Unit
+    onDarkThemeChanged: (Boolean) -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
@@ -826,6 +829,9 @@ private fun SettingsScreen(
         context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
     }
     var exchangeRate by remember {
+        mutableStateOf(preferences.getString("usd_syp_rate", "1") ?: "1")
+    }
+    var savedExchangeRate by remember {
         mutableStateOf(preferences.getString("usd_syp_rate", "1") ?: "1")
     }
     var lastUpdated by remember {
@@ -847,7 +853,16 @@ private fun SettingsScreen(
     val latestRateId = rateHistory.maxWithOrNull(
         compareBy<com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity> { it.effectiveAt }
             .thenBy { it.recordedAt }
+            .thenBy { it.id }
     )?.id
+    val selectedCorrectionRate = rateHistory.firstOrNull { it.id == selectedCorrectionRateId }
+    val hasUnsavedSettingsChanges =
+        exchangeRate != savedExchangeRate ||
+            (selectedCorrectionRate != null &&
+                (correctionRate != selectedCorrectionRate.rate || correctionReason.isNotBlank()))
+    LaunchedEffect(hasUnsavedSettingsChanges) {
+        onUnsavedChangesChanged(hasUnsavedSettingsChanges)
+    }
 
     LaunchedEffect(database) {
         runCatching {
@@ -943,6 +958,7 @@ private fun SettingsScreen(
                                         enteredRate = cleanRate
                                     )
                                     exchangeRate = cleanRate
+                                    savedExchangeRate = cleanRate
                                     lastUpdated = savedAt
                                     message = "تم حفظ السعر في السجل الدائم. سيُستخدم للعمليات الجديدة فقط، دون تعديل العمليات السابقة."
                                 } catch (error: Exception) {
@@ -1353,12 +1369,11 @@ private fun InvoiceManagementScreen(
     var invoiceDiscount by remember { mutableStateOf("0") }
     var paidAmount by remember { mutableStateOf("0") }
     var currencyCode by remember { mutableStateOf("SYP") }
-    var exchangeRate by remember {
-        mutableStateOf(
-            context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
-                .getString("usd_syp_rate", "1") ?: "1"
-        )
+    val defaultExchangeRate = remember(context) {
+        context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+            .getString("usd_syp_rate", "1") ?: "1"
     }
+    var exchangeRate by remember { mutableStateOf(defaultExchangeRate) }
     var note by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
@@ -1397,6 +1412,8 @@ private fun InvoiceManagementScreen(
             invoiceDiscount = invoiceDiscount,
             paidAmount = paidAmount,
             currencyCode = currencyCode,
+            exchangeRate = exchangeRate,
+            defaultExchangeRate = defaultExchangeRate,
             note = note,
             paymentPanelOpen = paymentInvoiceId != null,
             paymentAmount = paymentAmount,
@@ -2565,7 +2582,11 @@ private fun AccountsAndDebtsScreen(
 }
 
 @Composable
-private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
+private fun PartyStatementScreen(
+    partyId: String,
+    onBack: () -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { PartyRepository(database) }
@@ -2582,6 +2603,27 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
     var paymentNote by remember { mutableStateOf("") }
     var paymentMessage by remember { mutableStateOf("") }
     var isSavingPayment by remember { mutableStateOf(false) }
+    var showDiscardPaymentDialog by remember { mutableStateOf(false) }
+    val hasUnsavedPaymentDraft = hasUnsavedPartyPaymentDraft(
+        isFormOpen = showPaymentForm,
+        amount = paymentAmount,
+        note = paymentNote
+    )
+    LaunchedEffect(hasUnsavedPaymentDraft) {
+        onUnsavedChangesChanged(hasUnsavedPaymentDraft)
+    }
+    fun requestClosePaymentForm() {
+        if (hasUnsavedPartyPaymentDraft(
+                isFormOpen = showPaymentForm,
+                amount = paymentAmount,
+                note = paymentNote
+            )
+        ) {
+            showDiscardPaymentDialog = true
+        } else {
+            showPaymentForm = false
+        }
+    }
 
     val statementEntries = remember(entries, party?.kind) {
         val relevantTypes = if (party?.kind == "CUSTOMER") {
@@ -2667,14 +2709,18 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                 Text(statementPdfMessage.orEmpty(), color = if (statementPdfMessage!!.startsWith("تم")) SoftGreen else SoftRed)
             }
             Button(onClick = {
-                showPaymentForm = !showPaymentForm
-                paymentMessage = ""
-                if (party?.currencyCode == "SYP") {
-                    paymentCurrency = "SYP"
-                    paymentRate = "1"
-                } else if (party?.currencyCode == "USD") {
-                    paymentCurrency = "USD"
-                    paymentRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1"
+                if (showPaymentForm) {
+                    requestClosePaymentForm()
+                } else {
+                    showPaymentForm = true
+                    paymentMessage = ""
+                    if (party?.currencyCode == "SYP") {
+                        paymentCurrency = "SYP"
+                        paymentRate = "1"
+                    } else if (party?.currencyCode == "USD") {
+                        paymentCurrency = "USD"
+                        paymentRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1"
+                    }
                 }
             }, modifier = Modifier.fillMaxWidth()) {
                 Text(if (party?.kind == "CUSTOMER") "تسجيل تحصيل مستقل" else "تسجيل دفعة مستقلة")
@@ -2751,7 +2797,7 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                         ) {
                             Text(if (isSavingPayment) "جارٍ الحفظ..." else "تأكيد الحركة")
                         }
-                        TextButton(onClick = { showPaymentForm = false }) { Text("إغلاق") }
+                        TextButton(onClick = { requestClosePaymentForm() }) { Text("إغلاق") }
                     }
                 }
             }
@@ -2788,6 +2834,28 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
                 }
             }
         }
+    }
+    if (showDiscardPaymentDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardPaymentDialog = false },
+            title = { Text("لديك حركة غير محفوظة") },
+            text = { Text("هل تريد إغلاق نموذج الحركة والتخلص من المبلغ أو الملاحظات المدخلة؟") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardPaymentDialog = false
+                        showPaymentForm = false
+                        paymentAmount = ""
+                        paymentNote = ""
+                    }
+                ) { Text("إغلاق دون حفظ") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardPaymentDialog = false }) {
+                    Text("متابعة الإدخال")
+                }
+            }
+        )
     }
 }
 
