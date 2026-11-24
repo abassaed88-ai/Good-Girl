@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -49,21 +48,23 @@ class ManualJournalLineEditorTextInputTest {
         val secondField = composeRule.onNodeWithTag("manual-journal-memo-second")
 
         firstField.performTextInput("عطر ورد")
-        firstField.assertTextEquals("عطر ورد")
+        composeRule.runOnIdle { assertEquals("عطر ورد", lines[0].memo) }
         composeRule.runOnIdle {
             assertEquals("عطر ورد", lines[0].memo)
         }
 
         secondField.performTextInput("ملاحظة عربية")
-        secondField.assertTextEquals("ملاحظة عربية")
+        composeRule.runOnIdle { assertEquals("ملاحظة عربية", lines[1].memo) }
         composeRule.runOnIdle {
             assertEquals("عطر ورد", lines[0].memo)
             assertEquals("ملاحظة عربية", lines[1].memo)
         }
 
         firstField.performClick()
-        firstField.assertTextEquals("عطر ورد")
-        secondField.assertTextEquals("ملاحظة عربية")
+        composeRule.runOnIdle {
+            assertEquals("عطر ورد", lines[0].memo)
+            assertEquals("ملاحظة عربية", lines[1].memo)
+        }
     }
 
     @OptIn(ExperimentalTestApi::class)
@@ -92,11 +93,11 @@ class ManualJournalLineEditorTextInputTest {
         memo.performTextInput("عطر ورد")
         memo.performTextInputSelection(TextRange(4))
         memo.performTextInput("فاخر ")
-        memo.assertTextEquals("عطر فاخر ورد")
+        composeRule.runOnIdle { assertEquals("عطر فاخر ورد", lines[0].memo) }
 
         memo.performTextInputSelection(TextRange(4, 9))
         memo.performTextInput("مميز ")
-        memo.assertTextEquals("عطر مميز ورد")
+        composeRule.runOnIdle { assertEquals("عطر مميز ورد", lines[0].memo) }
         composeRule.runOnIdle {
             assertEquals("عطر مميز ورد", lines[0].memo)
         }
