@@ -116,8 +116,8 @@ class UnsavedChangesRulesTest {
 
 
     @Test
-    fun invoiceExchangeRateChangesAreTrackedOnlyForUsd() {
-        assertFalse(
+    fun invoiceCurrencyAndExchangeRateDraftsAreTracked() {
+        assertTrue(
             hasUnsavedInvoiceDraft(
                 InvoiceDraftState(
                     currencyCode = "USD",
@@ -144,6 +144,9 @@ class UnsavedChangesRulesTest {
                 )
             )
         )
+        assertFalse(hasUnsavedInvoiceExchangeRateChanged("USD", "15000", "15000"))
+        assertTrue(hasUnsavedInvoiceExchangeRateChanged("USD", "15100", "15000"))
+        assertFalse(hasUnsavedInvoiceExchangeRateChanged("SYP", "15100", "15000"))
     }
 
     @Test

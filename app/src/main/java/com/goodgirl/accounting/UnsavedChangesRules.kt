@@ -28,7 +28,12 @@ internal fun hasUnsavedInvoiceDraft(state: InvoiceDraftState): Boolean =
         state.invoiceDiscount != "0" ||
         state.paidAmount != "0" ||
         state.currencyCode != "SYP" ||
-        (state.currencyCode == "USD" && state.exchangeRate != state.defaultExchangeRate) ||
+        (state.currencyCode == "USD" &&
+            hasUnsavedInvoiceExchangeRateChanged(
+                currencyCode = state.currencyCode,
+                exchangeRate = state.exchangeRate,
+                defaultExchangeRate = state.defaultExchangeRate
+            )) ||
         state.note.isNotBlank() ||
         state.paymentPanelOpen ||
         state.paymentAmount.isNotBlank() ||
@@ -124,6 +129,12 @@ internal fun hasUnsavedCategoryForm(
 
 internal fun hasUnsavedUnitDraft(name: String, factor: String): Boolean =
     name.isNotBlank() || factor != "1"
+
+internal fun hasUnsavedInvoiceExchangeRateChanged(
+    currencyCode: String,
+    exchangeRate: String,
+    defaultExchangeRate: String
+): Boolean = currencyCode == "USD" && exchangeRate != defaultExchangeRate
 
 internal fun hasUnsavedPartyPaymentDraft(
     isFormOpen: Boolean,
