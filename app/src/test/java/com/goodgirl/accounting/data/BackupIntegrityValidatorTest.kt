@@ -8,6 +8,7 @@ import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
@@ -22,6 +23,7 @@ class BackupIntegrityValidatorTest {
 
     private fun validate(
         products: List<ProductEntity> = emptyList(),
+        barcodes: List<ProductBarcodeEntity> = emptyList(),
         units: List<ProductUnitEntity> = emptyList(),
         parties: List<PartyEntity> = emptyList(),
         invoices: List<InvoiceEntity> = emptyList(),
@@ -37,6 +39,7 @@ class BackupIntegrityValidatorTest {
     ) = BackupIntegrityValidator.validate(
         categories = empty,
         products = products,
+        productBarcodes = barcodes,
         units = units,
         parties = parties,
         invoices = invoices,
@@ -109,6 +112,59 @@ class BackupIntegrityValidatorTest {
         unitFactorSnapshot = "2",
         baseQuantity = "4"
     )
+
+    @Test
+    fun acceptsUniqueBarcodeLinkedToAnExistingProduct() {
+        validate(
+            products = listOf(product()),
+            barcodes = listOf(ProductBarcodeEntity(
+                id = "barcode-1",
+                productId = "p1",
+                barcodeValue = "6291234567890",
+                format = "EAN_13",
+                origin = "ORIGINAL",
+                createdAt = 10L
+            )),
+            units = listOf(baseUnit()),
+            movements = listOf(
+                StockMovementEntity(
+                    id = "m-opening", productId = "p1", quantityDelta = "4",
+                    unitCostSnapshot = "3", currencyCode = "SYP",
+                    sourceType = "OPENING_BALANCE", sourceId = "p1", occurredAt = 1L
+                )
+            )
+        )
+    }
+
+    @Test
+    fun rejectsDuplicateBarcodeValuesAcrossProducts() {
+        val secondProduct = product().copy(id = "p2", name = "شامبو", stockQuantity = "0")
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(
+                products = listOf(product(), secondProduct),
+                barcodes = listOf(
+                    ProductBarcodeEntity("b1", "p1", "123456789012", "CODE_128", "INTERNAL", 1L),
+                    ProductBarcodeEntity("b2", "p2", "123456789012", "CODE_128", "INTERNAL", 2L)
+                ),
+                units = listOf(baseUnit(), ProductUnitEntity("u2", "p2", "قطعة", "1", true)),
+                movements = listOf(
+                    StockMovementEntity("m1", "p1", "4", "3", "SYP", "OPENING_BALANCE", "p1", 1L),
+                    StockMovementEntity("m2", "p2", "0.5", "3", "SYP", "OPENING_BALANCE", "p2", 1L)
+                )
+            )
+        }
+    }
+
+    @Test
+    fun rejectsBarcodeLinkedToMissingProduct() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(
+                barcodes = listOf(ProductBarcodeEntity(
+                    "barcode-orphan", "missing", "12345678", "EAN_8", "ORIGINAL", 1L
+                ))
+            )
+        }
+    }
 
     @Test
     fun acceptsAnEmptyBackup() {
