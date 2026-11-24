@@ -214,7 +214,7 @@ private fun GoodGirlApp() {
     val requestNavigation: (String) -> Unit = { destination ->
         if (activePage in setOf(
                 "sales", "purchases", "products", "cash", "daily_sales",
-                "price_settings", "parties", "categories", "product_units", "settings", "statement"
+                "price_settings", "parties", "categories", "product_units", "settings", "statement", "backup"
             ) && hasUnsavedChanges) {
             pendingNavigationPage = destination
             showUnsavedChangesDialog = true
@@ -301,7 +301,10 @@ private fun GoodGirlApp() {
                     onBack = { activePage = journalReturnPage }
                 )
                 "reports" -> FinancialReportsScreen(onBack = { activePage = "dashboard" })
-                "backup" -> BackupManagementScreen(onBack = { activePage = "dashboard" })
+                "backup" -> BackupManagementScreen(
+                    onBack = { requestNavigation("dashboard") },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
+                )
                 "settings" -> SettingsScreen(
                     onBack = { requestNavigation("dashboard") },
                     isDarkTheme = darkThemeEnabled,
@@ -1304,8 +1307,11 @@ private fun SettingsScreen(
 }
 
 @Composable
-private fun BackupManagementScreen(onBack: () -> Unit) {
-    EncryptedBackupManagementScreen(onBack)
+private fun BackupManagementScreen(
+    onBack: () -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
+    EncryptedBackupManagementScreen(onBack, onUnsavedChangesChanged)
 }
 @Composable
 private fun InvoiceManagementScreen(

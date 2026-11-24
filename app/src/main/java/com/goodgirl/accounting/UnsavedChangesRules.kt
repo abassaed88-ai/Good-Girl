@@ -165,3 +165,14 @@ internal fun hasUnsavedManualJournalDraft(
         hasLineContent
 
 internal fun hasUnsavedReversalDraft(reason: String): Boolean = reason.isNotBlank()
+
+internal fun hasUnsavedBackupDraft(
+    exportPassword: String,
+    confirmExportPassword: String,
+    restorePassword: String,
+    confirmRestore: Boolean
+): Boolean =
+    exportPassword.isNotBlank() ||
+        confirmExportPassword.isNotBlank() ||
+        restorePassword.isNotBlank() ||
+        confirmRestore

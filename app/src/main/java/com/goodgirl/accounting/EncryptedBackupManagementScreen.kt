@@ -19,6 +19,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,7 +45,10 @@ private val BackupSuccessTextColor get() = SoftGreen
 private val BackupErrorTextColor get() = SoftRed
 
 @Composable
-internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
+internal fun EncryptedBackupManagementScreen(
+    onBack: () -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val manager = remember(context, database) { AccountingBackupManager(context, database) }
@@ -55,6 +60,22 @@ internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
     var confirmExportPassword by remember { mutableStateOf("") }
     var restorePassword by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
+    val hasUnsavedBackupChanges = hasUnsavedBackupDraft(
+        exportPassword = exportPassword,
+        confirmExportPassword = confirmExportPassword,
+        restorePassword = restorePassword,
+        confirmRestore = confirmRestore
+    )
+    LaunchedEffect(hasUnsavedBackupChanges) {
+        onUnsavedChangesChanged(hasUnsavedBackupChanges)
+    }
+    DisposableEffect(Unit) {
+        onDispose {
+            exportPassword = ""
+            confirmExportPassword = ""
+            restorePassword = ""
+        }
+    }
 
     val exportReady = exportPassword.length >= EncryptedBackupCodec.MIN_PASSWORD_LENGTH &&
         exportPassword == confirmExportPassword

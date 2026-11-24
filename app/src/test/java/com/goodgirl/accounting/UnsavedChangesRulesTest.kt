@@ -258,4 +258,49 @@ class UnsavedChangesRulesTest {
         assertFalse(hasUnsavedReversalDraft("   "))
         assertTrue(hasUnsavedReversalDraft("تصحيح قيد خاطئ"))
     }
+
+
+    @Test
+    fun backupScreenTracksPasswordsAndRestoreConfirmation() {
+        assertFalse(
+            hasUnsavedBackupDraft(
+                exportPassword = "",
+                confirmExportPassword = "",
+                restorePassword = "",
+                confirmRestore = false
+            )
+        )
+        assertTrue(
+            hasUnsavedBackupDraft(
+                exportPassword = "password123",
+                confirmExportPassword = "",
+                restorePassword = "",
+                confirmRestore = false
+            )
+        )
+        assertTrue(
+            hasUnsavedBackupDraft(
+                exportPassword = "",
+                confirmExportPassword = "password123",
+                restorePassword = "",
+                confirmRestore = false
+            )
+        )
+        assertTrue(
+            hasUnsavedBackupDraft(
+                exportPassword = "",
+                confirmExportPassword = "",
+                restorePassword = "password123",
+                confirmRestore = false
+            )
+        )
+        assertTrue(
+            hasUnsavedBackupDraft(
+                exportPassword = "",
+                confirmExportPassword = "",
+                restorePassword = "",
+                confirmRestore = true
+            )
+        )
+    }
 }
