@@ -171,6 +171,8 @@ internal fun normalizeAppFontScale(value: Float): Float = value.coerceIn(0.9f, 1
 internal fun normalizeAppPaletteId(value: String): String =
     if (value in setOf("ocean", "mint", "rose")) value else "ocean"
 
+internal fun sanitizeHomeShortcutLabel(value: String): String = value.take(32)
+
 internal fun hasUnsavedBackupDraft(
     exportPassword: String,
     confirmExportPassword: String,

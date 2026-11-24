@@ -307,6 +307,12 @@ class UnsavedChangesRulesTest {
 
 
     @Test
+    fun homeShortcutLabelsAreLimitedToThirtyTwoCharacters() {
+        assertEquals("المبيعات اليومية", sanitizeHomeShortcutLabel("المبيعات اليومية"))
+        assertEquals(32, sanitizeHomeShortcutLabel("x".repeat(50)).length)
+    }
+
+    @Test
     fun unknownPaletteFallsBackToOceanAndKnownPalettesArePreserved() {
         assertEquals("ocean", normalizeAppPaletteId("unexpected"))
         assertEquals("ocean", normalizeAppPaletteId("ocean"))

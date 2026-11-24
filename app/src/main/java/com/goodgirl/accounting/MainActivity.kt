@@ -262,6 +262,13 @@ private fun GoodGirlApp() {
                 .intersect(defaultHomeShortcutIds)
         )
     }
+    var homeShortcutLabels by remember {
+        mutableStateOf(
+            homeShortcutOptions.associate { (id, defaultLabel) ->
+                id to (settingsPreferences.getString("home_shortcut_label_$id", defaultLabel) ?: defaultLabel)
+            }
+        )
+    }
     val selectedPalette = appPaletteFor(darkThemeEnabled, paletteId)
     SideEffect {
         activePalette = selectedPalette
@@ -426,6 +433,12 @@ private fun GoodGirlApp() {
                         settingsPreferences.edit().putStringSet("home_shortcuts", normalized.toMutableSet()).apply()
                         visibleShortcutIds = normalized
                     },
+                    homeShortcutLabels = homeShortcutLabels,
+                    onHomeShortcutLabelChanged = { id, label ->
+                        val safeLabel = sanitizeHomeShortcutLabel(label)
+                        settingsPreferences.edit().putString("home_shortcut_label_$id", safeLabel).apply()
+                        homeShortcutLabels = homeShortcutLabels + (id to safeLabel)
+                    },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "sales" -> InvoiceManagementScreen(
@@ -504,6 +517,7 @@ private fun GoodGirlApp() {
                 )
                 else -> DashboardScreen(
                     visibleShortcutIds = visibleShortcutIds,
+                    homeShortcutLabels = homeShortcutLabels,
                     onOpenDailySales = { activePage = "daily_sales" },
                     onOpenPriceSettings = { activePage = "price_settings" },
                     onOpenSales = {
@@ -621,7 +635,8 @@ private fun DashboardScreen(
     onOpenReports: () -> Unit,
     onOpenBackup: () -> Unit,
     onOpenSettings: () -> Unit,
-    visibleShortcutIds: Set<String>
+    visibleShortcutIds: Set<String>,
+    homeShortcutLabels: Map<String, String>
 ) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
@@ -738,28 +753,40 @@ private fun DashboardScreen(
 
         Text("الأقسام الرئيسية", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
         if ("daily_sales" in visibleShortcutIds) {
-            SectionRow(number = 0, title = "المبيعات اليومية", icon = "🧾", onClick = onOpenDailySales)
+            SectionRow(
+                number = 0,
+                title = homeShortcutLabels["daily_sales"].orEmpty().ifBlank { "المبيعات اليومية" },
+                icon = "🧾",
+                onClick = onOpenDailySales
+            )
         }
         if ("price_settings" in visibleShortcutIds) {
-            SectionRow(number = 0, title = "تحديد سعر البيع", icon = "🏷️", onClick = onOpenPriceSettings)
+            SectionRow(
+                number = 0,
+                title = homeShortcutLabels["price_settings"].orEmpty().ifBlank { "تحديد سعر البيع" },
+                icon = "🏷️",
+                onClick = onOpenPriceSettings
+            )
         }
         val sections = listOf(
-            Triple("sales", "المبيعات والفواتير", onOpenSales),
-            Triple("purchases", "المشتريات", onOpenPurchases),
-            Triple("products", "المنتجات والمخزون", onOpenProducts),
-            Triple("parties", "العملاء والموردون", onOpenParties),
-            Triple("accounts", "الحسابات والديون", onOpenAccounts),
-            Triple("cash", "الصندوق والمصروفات", onOpenCash),
-            Triple("reports", "التقارير والأرباح", onOpenReports),
-            Triple("backup", "النسخ الاحتياطي والاستعادة", onOpenBackup),
-            Triple("general_accounting", "المحاسبة العامة", onOpenGeneralAccounting)
+            "sales" to onOpenSales,
+            "purchases" to onOpenPurchases,
+            "products" to onOpenProducts,
+            "parties" to onOpenParties,
+            "accounts" to onOpenAccounts,
+            "cash" to onOpenCash,
+            "reports" to onOpenReports,
+            "backup" to onOpenBackup,
+            "general_accounting" to onOpenGeneralAccounting
         )
         sections.forEachIndexed { index, section ->
-            if (section.first in visibleShortcutIds) {
+            val (id, action) = section
+            if (id in visibleShortcutIds) {
+                val defaultLabel = homeShortcutOptions.first { it.first == id }.second
                 SectionRow(
                     number = index + 1,
-                    title = section.second,
-                    onClick = section.third
+                    title = homeShortcutLabels[id].orEmpty().ifBlank { defaultLabel },
+                    onClick = action
                 )
             }
         }
@@ -948,6 +975,8 @@ private fun SettingsScreen(
     onPaletteChanged: (String) -> Unit,
     visibleShortcutIds: Set<String>,
     onVisibleShortcutIdsChanged: (Set<String>) -> Unit,
+    homeShortcutLabels: Map<String, String>,
+    onHomeShortcutLabelChanged: (String, String) -> Unit,
     onUnsavedChangesChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -1101,7 +1130,7 @@ private fun SettingsScreen(
             ) {
                 Text("اختصارات الصفحة الرئيسية", color = Ink, fontWeight = FontWeight.Bold)
                 Text(
-                    "اختر الأقسام التي تريد ظهورها في لوحة التحكم. لن يؤدي إخفاء الاختصار إلى حذف بيانات القسم.",
+                    "يمكنك إظهار أو إخفاء كل اختصار وتعديل اسمه الظاهر في لوحة التحكم. لا يؤدي ذلك إلى حذف بيانات القسم.",
                     color = MutedText,
                     fontSize = 12.sp
                 )
@@ -1109,9 +1138,15 @@ private fun SettingsScreen(
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(title, color = Ink, modifier = Modifier.weight(1f), fontSize = 13.sp)
+                        OutlinedTextField(
+                            value = homeShortcutLabels[id] ?: title,
+                            onValueChange = { onHomeShortcutLabelChanged(id, it) },
+                            modifier = Modifier.weight(1f),
+                            label = { Text(title) },
+                            singleLine = true
+                        )
                         Checkbox(
                             checked = id in visibleShortcutIds,
                             onCheckedChange = { checked ->
