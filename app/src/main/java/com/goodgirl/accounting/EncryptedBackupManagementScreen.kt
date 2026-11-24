@@ -25,7 +25,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -39,9 +38,9 @@ import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.launch
 
-private val BackupWarningTextColor = Color(0xFFE7A2C1)
-private val BackupSuccessTextColor = Color(0xFF78C9A0)
-private val BackupErrorTextColor = Color(0xFFE58A9B)
+private val BackupWarningTextColor get() = SoftPurple
+private val BackupSuccessTextColor get() = SoftGreen
+private val BackupErrorTextColor get() = SoftRed
 
 @Composable
 internal fun EncryptedBackupManagementScreen(onBack: () -> Unit) {
