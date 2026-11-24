@@ -141,3 +141,25 @@ internal fun hasUnsavedPartyPaymentDraft(
     amount: String,
     note: String
 ): Boolean = isFormOpen && (amount.isNotBlank() || note.isNotBlank())
+
+internal fun hasUnsavedLedgerAccountDraft(
+    code: String,
+    name: String,
+    type: String
+): Boolean = code.isNotBlank() || name.isNotBlank() || type != "ASSET"
+
+internal fun hasUnsavedManualJournalDraft(
+    journalNumberChanged: Boolean,
+    description: String,
+    currencyCode: String,
+    exchangeRate: String,
+    defaultExchangeRate: String,
+    lineCount: Int,
+    hasLineContent: Boolean
+): Boolean =
+    journalNumberChanged ||
+        description.isNotBlank() ||
+        currencyCode != "SYP" ||
+        (currencyCode == "USD" && exchangeRate != defaultExchangeRate) ||
+        lineCount != 2 ||
+        hasLineContent

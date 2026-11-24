@@ -15,6 +15,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -275,9 +276,14 @@ private fun AddLedgerAccountDialog(
     var type by remember { mutableStateOf("ASSET") }
     var typeMenuExpanded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var showDiscardConfirmation by remember { mutableStateOf(false) }
+    val hasUnsavedDraft = hasUnsavedLedgerAccountDraft(code, name, type)
     val types = listOf("ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE")
+    fun requestDismiss() {
+        if (hasUnsavedDraft) showDiscardConfirmation = true else onDismiss()
+    }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = { requestDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier = Modifier.fillMaxWidth(0.94f).heightIn(max = 620.dp),
             shape = RoundedCornerShape(18.dp),
@@ -306,7 +312,7 @@ private fun AddLedgerAccountDialog(
                 Text("الطبيعة المحاسبية: " + if (type == "ASSET" || type == "EXPENSE") "مدينة" else "دائنة", color = AccountingMuted, fontSize = 12.sp)
                 error?.let { Text(it, color = AccountingBad, fontSize = 12.sp) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("إلغاء") }
+                    TextButton(onClick = { requestDismiss() }, modifier = Modifier.weight(1f)) { Text("إلغاء") }
                     Button(onClick = {
                         if (code.isBlank() || name.isBlank()) error = "أدخل رمز الحساب واسمه."
                         else onSave(code, name, type)
@@ -314,6 +320,26 @@ private fun AddLedgerAccountDialog(
                 }
             }
         }
+    }
+    if (showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmation = false },
+            title = { Text("بيانات حساب غير محفوظة") },
+            text = { Text("هل تريد إغلاق النافذة والتخلص من رمز الحساب أو اسمه؟") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardConfirmation = false
+                        onDismiss()
+                    }
+                ) { Text("إغلاق دون حفظ") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirmation = false }) {
+                    Text("متابعة الإدخال")
+                }
+            }
+        )
     }
 }
 
@@ -532,20 +558,38 @@ private fun ManualJournalEntryDialog(
     onDismiss: () -> Unit,
     onSave: (String, String, String, String, List<JournalLineDraft>) -> Unit
 ) {
-    var journalNumber by remember { mutableStateOf("MAN-" + System.currentTimeMillis().toString().takeLast(8)) }
+    val initialJournalNumber = remember {
+        "MAN-" + System.currentTimeMillis().toString().takeLast(8)
+    }
+    var journalNumber by remember { mutableStateOf(initialJournalNumber) }
     var description by remember { mutableStateOf("") }
     val context = LocalContext.current
     var currency by remember { mutableStateOf("SYP") }
-    var exchangeRate by remember(context) {
-        mutableStateOf(
-            context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
-                .getString("usd_syp_rate", "1") ?: "1"
-        )
+    val defaultExchangeRate = remember(context) {
+        context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+            .getString("usd_syp_rate", "1") ?: "1"
     }
+    var exchangeRate by remember { mutableStateOf(defaultExchangeRate) }
     var error by remember { mutableStateOf<String?>(null) }
+    var showDiscardConfirmation by remember { mutableStateOf(false) }
     val lines = remember { mutableStateListOf(ManualJournalLineInput(), ManualJournalLineInput()) }
+    val hasUnsavedDraft = hasUnsavedManualJournalDraft(
+        journalNumberChanged = journalNumber != initialJournalNumber,
+        description = description,
+        currencyCode = currency,
+        exchangeRate = exchangeRate,
+        defaultExchangeRate = defaultExchangeRate,
+        lineCount = lines.size,
+        hasLineContent = lines.any { line ->
+            line.accountId.isNotBlank() || line.debit.isNotBlank() ||
+                line.credit.isNotBlank() || line.memo.isNotBlank()
+        }
+    )
+    fun requestDismiss() {
+        if (hasUnsavedDraft) showDiscardConfirmation = true else onDismiss()
+    }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = { requestDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(
             modifier = Modifier.fillMaxWidth(0.96f).heightIn(max = 760.dp),
             shape = RoundedCornerShape(18.dp),
@@ -591,7 +635,7 @@ private fun ManualJournalEntryDialog(
                 }
                 error?.let { Text(it, color = AccountingBad, fontSize = 12.sp) }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("إلغاء") }
+                    TextButton(onClick = { requestDismiss() }, modifier = Modifier.weight(1f)) { Text("إلغاء") }
                     Button(
                         onClick = {
                             val drafts = lines.map { line ->
@@ -615,6 +659,26 @@ private fun ManualJournalEntryDialog(
                 }
             }
         }
+    }
+    if (showDiscardConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirmation = false },
+            title = { Text("قيد يومية غير محفوظ") },
+            text = { Text("هل تريد إغلاق القيد والتخلص من البيانات المدخلة في أسطر اليومية؟") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardConfirmation = false
+                        onDismiss()
+                    }
+                ) { Text("إغلاق دون حفظ") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirmation = false }) {
+                    Text("متابعة الإدخال")
+                }
+            }
+        )
     }
 }
 

@@ -182,4 +182,72 @@ class UnsavedChangesRulesTest {
         assertTrue(hasUnsavedPartyPaymentDraft(isFormOpen = true, amount = "100", note = ""))
         assertTrue(hasUnsavedPartyPaymentDraft(isFormOpen = true, amount = "", note = "تحصيل نقدي"))
     }
+
+
+    @Test
+    fun ledgerAccountDraftDetectsCodeNameAndType() {
+        assertFalse(hasUnsavedLedgerAccountDraft(code = "", name = "", type = "ASSET"))
+        assertTrue(hasUnsavedLedgerAccountDraft(code = "101", name = "", type = "ASSET"))
+        assertTrue(hasUnsavedLedgerAccountDraft(code = "", name = "صندوق", type = "ASSET"))
+        assertTrue(hasUnsavedLedgerAccountDraft(code = "", name = "", type = "LIABILITY"))
+    }
+
+    @Test
+    fun manualJournalDraftTracksHeaderCurrencyAndLines() {
+        assertFalse(
+            hasUnsavedManualJournalDraft(
+                journalNumberChanged = false,
+                description = "",
+                currencyCode = "SYP",
+                exchangeRate = "15000",
+                defaultExchangeRate = "15000",
+                lineCount = 2,
+                hasLineContent = false
+            )
+        )
+        assertTrue(
+            hasUnsavedManualJournalDraft(
+                journalNumberChanged = false,
+                description = "قيد افتتاحي",
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                defaultExchangeRate = "1",
+                lineCount = 2,
+                hasLineContent = false
+            )
+        )
+        assertTrue(
+            hasUnsavedManualJournalDraft(
+                journalNumberChanged = false,
+                description = "",
+                currencyCode = "USD",
+                exchangeRate = "15000",
+                defaultExchangeRate = "15000",
+                lineCount = 2,
+                hasLineContent = false
+            )
+        )
+        assertTrue(
+            hasUnsavedManualJournalDraft(
+                journalNumberChanged = false,
+                description = "",
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                defaultExchangeRate = "1",
+                lineCount = 3,
+                hasLineContent = false
+            )
+        )
+        assertTrue(
+            hasUnsavedManualJournalDraft(
+                journalNumberChanged = false,
+                description = "",
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                defaultExchangeRate = "1",
+                lineCount = 2,
+                hasLineContent = true
+            )
+        )
+    }
 }
