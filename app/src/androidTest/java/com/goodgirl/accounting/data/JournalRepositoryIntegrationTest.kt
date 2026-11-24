@@ -105,6 +105,68 @@ class JournalRepositoryIntegrationTest {
         }
     }
 
+
+    @Test
+    fun manualJournalLineArabicMemoSurvivesDatabaseReopen() = runBlocking {
+        val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "journal-memo-reopen-" + java.util.UUID.randomUUID() + ".db"
+        var database: AccountingDatabase? = null
+        var reopenedDatabase: AccountingDatabase? = null
+
+        try {
+            database = Room.databaseBuilder(context, AccountingDatabase::class.java, databaseName)
+                .allowMainThreadQueries()
+                .build()
+            val repository = JournalRepository(database)
+            repository.ensureSystemAccounts()
+            val accounts = database.accountDao().getAll().associateBy { it.code }
+
+            val entryId = repository.postJournalEntry(
+                journalNumber = "JE-MEMO-REOPEN",
+                sourceType = "MANUAL_JOURNAL",
+                sourceId = "manual-memo-reopen",
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                occurredAt = 3_000L,
+                description = "اختبار حفظ بيان عربي",
+                lines = listOf(
+                    JournalLineDraft(
+                        accountId = accounts.getValue("1000").id,
+                        debit = "25",
+                        memo = "عطر فاخر ورد"
+                    ),
+                    JournalLineDraft(
+                        accountId = accounts.getValue("4000").id,
+                        credit = "25",
+                        memo = "ملاحظة عربية"
+                    )
+                )
+            )
+
+            database.close()
+            database = null
+
+            reopenedDatabase = Room.databaseBuilder(
+                context,
+                AccountingDatabase::class.java,
+                databaseName
+            ).allowMainThreadQueries().build()
+
+            val restoredEntry = reopenedDatabase.journalEntryDao().findById(entryId)
+            assertTrue("The posted journal should exist after reopening the database", restoredEntry != null)
+            assertEquals("اختبار حفظ بيان عربي", restoredEntry!!.description)
+
+            val restoredLines = JournalRepository(reopenedDatabase).getLines(entryId)
+            assertEquals(2, restoredLines.size)
+            assertEquals("عطر فاخر ورد", restoredLines[0].memo)
+            assertEquals("ملاحظة عربية", restoredLines[1].memo)
+        } finally {
+            database?.close()
+            reopenedDatabase?.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
+
     private fun newDatabase(): AccountingDatabase {
         val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
         return Room.inMemoryDatabaseBuilder(context, AccountingDatabase::class.java)
