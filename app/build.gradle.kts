@@ -68,6 +68,14 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     debugImplementation("androidx.compose.ui:ui-tooling")
 
+    // CameraX preview and lifecycle binding for the offline barcode reader.
+    implementation("androidx.camera:camera-camera2:1.4.2")
+    implementation("androidx.camera:camera-lifecycle:1.4.2")
+    implementation("androidx.camera:camera-view:1.4.2")
+
+    // Bundled ML Kit model: barcode scanning works immediately, including offline.
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+
     implementation("androidx.room:room-runtime:2.7.1")
     implementation("androidx.room:room-ktx:2.7.1")
     kapt("androidx.room:room-compiler:2.7.1")
