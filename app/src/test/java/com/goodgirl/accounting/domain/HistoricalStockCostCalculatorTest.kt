@@ -222,6 +222,47 @@ class HistoricalStockCostCalculatorTest {
     }
 
     @Test
+    fun rejectsMovementRecordedBeforeBaselineEvenWhenItsBusinessDateIsLater() {
+        val baseline = HistoricalStockCostBaseline(
+            productId = "product-1",
+            quantity = "5",
+            averageCost = "10",
+            currencyCode = "SYP",
+            effectiveAt = 100,
+            recordedAt = 200
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            HistoricalStockCostCalculator.recalculate(
+                baseline,
+                listOf(event("known-before-baseline", "PURCHASE_INVOICE", "1", "8", "SYP", 150, 199))
+            )
+        }
+    }
+
+    @Test
+    fun rejectsCurrencyMismatchWhenInventoryIsTemporarilyEmpty() {
+        val baseline = HistoricalStockCostBaseline(
+            productId = "product-1",
+            quantity = "1",
+            averageCost = "10",
+            currencyCode = "SYP",
+            effectiveAt = 100,
+            recordedAt = 200
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            HistoricalStockCostCalculator.recalculate(
+                baseline,
+                listOf(
+                    event("sale-to-zero", "SALE_INVOICE", "-1", "10", "SYP", 110, 210),
+                    event("wrong-currency-purchase", "PURCHASE_INVOICE", "1", "10", "USD", 120, 220)
+                )
+            )
+        }
+    }
+
+    @Test
     fun rejectsInvalidTrustedBaseline() {
         val baseline = HistoricalStockCostBaseline(
             productId = "product-1",
