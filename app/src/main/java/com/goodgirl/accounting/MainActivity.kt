@@ -118,8 +118,8 @@ private data class AppPalette(
 )
 
 private val LightPalette = AppPalette(
-    brandBlue = Color(0xFF438DA8),
-    background = Color(0xFFEAF3F7),
+    brandBlue = Color(0xFF18AFC3),
+    background = Color(0xFFEAF6FA),
     cardSurface = Color(0xFFFFFFFF),
     softGreen = Color(0xFF34865A),
     softRed = Color(0xFFC34D5A),
@@ -191,11 +191,8 @@ private val DarkRosePalette = AppPalette(
 )
 
 private fun appPaletteFor(isDark: Boolean, paletteId: String): AppPalette =
-    when (normalizeAppPaletteId(paletteId)) {
-        "mint" -> if (isDark) DarkMintPalette else LightMintPalette
-        "rose" -> if (isDark) DarkRosePalette else LightRosePalette
-        else -> if (isDark) DarkPalette else LightPalette
-    }
+    if (isDark) DarkPalette else LightPalette
+
 
 private val homeShortcutOptions = listOf(
     "daily_sales" to "المبيعات اليومية",
@@ -1131,21 +1128,10 @@ private fun SettingsScreen(
             ) {
                 Text("ألوان التطبيق", color = Ink, fontWeight = FontWeight.Bold)
                 Text(
-                    "اختر مجموعة ألوان للخلفية والأزرار وبطاقات الجداول. ويمكنك التبديل بين الفاتح والداكن من خيار المظهر أعلاه.",
+                    "تم اعتماد التصميم الأزرق الجليدي الفاتح مع البطاقات البيضاء واللمسات التركوازية، والوضع الداكن الكحلي. سيُطبّق النمط نفسه على جميع الشاشات.",
                     color = MutedText,
                     fontSize = 12.sp
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
-                    TextButton(onClick = { onPaletteChanged("ocean") }, modifier = Modifier.weight(1f)) {
-                        Text(if (paletteId == "ocean") "✓ أزرق" else "أزرق")
-                    }
-                    TextButton(onClick = { onPaletteChanged("mint") }, modifier = Modifier.weight(1f)) {
-                        Text(if (paletteId == "mint") "✓ أخضر" else "أخضر")
-                    }
-                    TextButton(onClick = { onPaletteChanged("rose") }, modifier = Modifier.weight(1f)) {
-                        Text(if (paletteId == "rose") "✓ وردي" else "وردي")
-                    }
-                }
             }
         }
         Card(
