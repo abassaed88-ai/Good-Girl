@@ -24,12 +24,20 @@ class FinancialReportCalculatorTest {
             createdAt = 100L
         )
 
-    private fun line(invoiceId: String, quantity: String, price: String, cost: String, discount: String = "0") =
+    private fun line(
+        invoiceId: String,
+        quantity: String,
+        price: String,
+        cost: String,
+        discount: String = "0",
+        productId: String? = "product-1",
+        productName: String = "كريم"
+    ) =
         InvoiceLineEntity(
             id = invoiceId + "-line",
             invoiceId = invoiceId,
-            productId = "product-1",
-            productNameSnapshot = "كريم",
+            productId = productId,
+            productNameSnapshot = productName,
             unitSnapshot = "قطعة",
             quantity = quantity,
             unitCostSnapshot = cost,
@@ -146,5 +154,71 @@ class FinancialReportCalculatorTest {
             emptyList()
         )
         assertEquals(setOf("SYP", "USD"), report.currencySummaries.map { it.currencyCode }.toSet())
+    }
+
+    @Test
+    fun keepsDifferentProductsSeparateWhenTheirNamesMatch() {
+        val first = line("sale-same-name", "1", "10", "4")
+            .copy(id = "line-product-1", productId = "product-1", productNameSnapshot = "كريم")
+        val second = line("sale-same-name", "1", "20", "8")
+            .copy(id = "line-product-2", productId = "product-2", productNameSnapshot = "كريم")
+
+        val report = FinancialReportCalculator.calculate(
+            0L, 200L,
+            listOf(invoice("sale-same-name", "SALE", "30")),
+            listOf(first, second),
+            emptyList()
+        )
+
+        assertEquals(2, report.products.size)
+        assertEquals(setOf("product-1", "product-2"), report.products.mapNotNull { it.productId }.toSet())
+        assertEquals(setOf("10", "20"), report.products.map { it.revenue.stripTrailingZeros().toPlainString() }.toSet())
+        assertEquals(setOf("6", "12"), report.products.map { it.profit.stripTrailingZeros().toPlainString() }.toSet())
+    }
+
+    @Test
+    fun combinesRenamedSnapshotsForTheSameProductAndUsesLatestName() {
+        val olderInvoice = invoice("sale-old-name", "SALE", "10").copy(issuedAt = 100L, createdAt = 100L)
+        val newerInvoice = invoice("sale-new-name", "SALE", "20").copy(issuedAt = 200L, createdAt = 200L)
+        val olderLine = line("sale-old-name", "1", "10", "4", productName = "الاسم القديم")
+            .copy(id = "old-line", productId = "stable-product-id")
+        val newerLine = line("sale-new-name", "1", "20", "8", productName = "الاسم الجديد")
+            .copy(id = "new-line", productId = "stable-product-id")
+
+        val report = FinancialReportCalculator.calculate(
+            0L, 300L,
+            listOf(olderInvoice, newerInvoice),
+            listOf(olderLine, newerLine),
+            emptyList()
+        )
+
+        val product = report.products.single()
+        assertEquals("stable-product-id", product.productId)
+        assertEquals("الاسم الجديد", product.productName)
+        assertEquals("2", product.quantity.stripTrailingZeros().toPlainString())
+        assertEquals("30", product.revenue.stripTrailingZeros().toPlainString())
+        assertEquals("12", product.cost.stripTrailingZeros().toPlainString())
+        assertEquals("18", product.profit.stripTrailingZeros().toPlainString())
+    }
+
+    @Test
+    fun legacyLinesWithoutProductIdsStillGroupByTheirSavedNameAndCurrency() {
+        val first = line("sale-legacy-1", "1", "10", "4", productId = null, productName = "مادة قديمة")
+        val second = line("sale-legacy-2", "1", "15", "6", productId = null, productName = "مادة قديمة")
+
+        val report = FinancialReportCalculator.calculate(
+            0L, 200L,
+            listOf(
+                invoice("sale-legacy-1", "SALE", "10"),
+                invoice("sale-legacy-2", "SALE", "15")
+            ),
+            listOf(first, second),
+            emptyList()
+        )
+
+        assertEquals(1, report.products.size)
+        assertEquals("مادة قديمة", report.products.single().productName)
+        assertEquals(null, report.products.single().productId)
+        assertEquals("25", report.products.single().revenue.stripTrailingZeros().toPlainString())
     }
 }

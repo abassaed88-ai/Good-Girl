@@ -4,7 +4,6 @@ import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import java.math.BigDecimal
-import java.math.RoundingMode
 
 data class CurrencyFinancialSummary(
     val currencyCode: String,
@@ -23,12 +22,30 @@ data class ProductFinancialSummary(
     val quantity: BigDecimal,
     val revenue: BigDecimal,
     val cost: BigDecimal,
-    val profit: BigDecimal
+    val profit: BigDecimal,
+    /** Stable product identity; null only for legacy invoice lines without a product link. */
+    val productId: String? = null
 )
 
 data class FinancialReport(
     val currencySummaries: List<CurrencyFinancialSummary>,
     val products: List<ProductFinancialSummary>
+)
+
+private data class ProductFinancialKey(
+    val productId: String?,
+    /** Legacy rows without productId are grouped by their saved name snapshot. */
+    val legacyName: String?,
+    val currencyCode: String
+)
+
+private data class ProductFinancialTotals(
+    var productName: String,
+    var latestIssuedAt: Long,
+    var latestCreatedAt: Long,
+    var quantity: BigDecimal = BigDecimal.ZERO,
+    var revenue: BigDecimal = BigDecimal.ZERO,
+    var cost: BigDecimal = BigDecimal.ZERO
 )
 
 object FinancialReportCalculator {
@@ -97,7 +114,10 @@ object FinancialReportCalculator {
             )
         }
 
-        val productTotals = mutableMapOf<Pair<String, String>, MutableList<BigDecimal>>()
+        // Product reports must group by stable product identity, not by a mutable
+        // display-name snapshot. This prevents unrelated products with equal names
+        // from being merged and keeps one product together after it is renamed.
+        val productTotals = mutableMapOf<ProductFinancialKey, ProductFinancialTotals>()
         salesInvoices.forEach { invoice ->
             val invoiceLines = salesLines.filter { it.invoiceId == invoice.id }
             val lineDiscountSum = invoiceLines.fold(BigDecimal.ZERO) { total, line ->
@@ -115,25 +135,47 @@ object FinancialReportCalculator {
                 val lineNet = line.lineTotal.toBigDecimal()
                 val revenue = lineNet.subtract(allocatedDiscounts[index])
                 val cost = line.baseQuantity.toBigDecimal().multiply(line.unitCostSnapshot.toBigDecimal())
-                val key = line.productNameSnapshot to invoice.currencyCode
+                val key = ProductFinancialKey(
+                    productId = line.productId,
+                    legacyName = if (line.productId == null) line.productNameSnapshot else null,
+                    currencyCode = invoice.currencyCode
+                )
                 val totals = productTotals.getOrPut(key) {
-                    mutableListOf(BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO)
+                    ProductFinancialTotals(
+                        productName = line.productNameSnapshot,
+                        latestIssuedAt = Long.MIN_VALUE,
+                        latestCreatedAt = Long.MIN_VALUE
+                    )
                 }
-                totals[0] = totals[0].add(line.baseQuantity.toBigDecimal())
-                totals[1] = totals[1].add(revenue)
-                totals[2] = totals[2].add(cost)
+                totals.quantity = totals.quantity.add(line.baseQuantity.toBigDecimal())
+                totals.revenue = totals.revenue.add(revenue)
+                totals.cost = totals.cost.add(cost)
+                if (
+                    invoice.issuedAt > totals.latestIssuedAt ||
+                    (invoice.issuedAt == totals.latestIssuedAt && invoice.createdAt >= totals.latestCreatedAt)
+                ) {
+                    totals.productName = line.productNameSnapshot
+                    totals.latestIssuedAt = invoice.issuedAt
+                    totals.latestCreatedAt = invoice.createdAt
+                }
             }
         }
-        val products = productTotals.map { (key, values) ->
+
+        val products = productTotals.map { (key, totals) ->
             ProductFinancialSummary(
-                productName = key.first,
-                currencyCode = key.second,
-                quantity = values[0],
-                revenue = values[1],
-                cost = values[2],
-                profit = values[1].subtract(values[2])
+                productName = totals.productName,
+                currencyCode = key.currencyCode,
+                quantity = totals.quantity,
+                revenue = totals.revenue,
+                cost = totals.cost,
+                profit = totals.revenue.subtract(totals.cost),
+                productId = key.productId
             )
-        }.sortedByDescending { it.revenue }
+        }.sortedWith(
+            compareByDescending<ProductFinancialSummary> { it.revenue }
+                .thenBy { it.productName }
+                .thenBy { it.productId.orEmpty() }
+        )
         return FinancialReport(summaries, products)
     }
 }
