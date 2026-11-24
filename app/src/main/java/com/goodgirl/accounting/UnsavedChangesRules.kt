@@ -168,6 +168,9 @@ internal fun hasUnsavedReversalDraft(reason: String): Boolean = reason.isNotBlan
 
 internal fun normalizeAppFontScale(value: Float): Float = value.coerceIn(0.9f, 1.2f)
 
+internal fun normalizeAppPaletteId(value: String): String =
+    if (value in setOf("ocean", "mint", "rose")) value else "ocean"
+
 internal fun hasUnsavedBackupDraft(
     exportPassword: String,
     confirmExportPassword: String,

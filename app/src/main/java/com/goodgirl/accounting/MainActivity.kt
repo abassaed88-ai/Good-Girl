@@ -29,6 +29,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Slider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -50,6 +51,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
@@ -136,6 +138,77 @@ private val DarkPalette = AppPalette(
     surfaceVariant = Color(0xFF2A3D46)
 )
 
+
+private val LightMintPalette = AppPalette(
+    brandBlue = Color(0xFF398F82),
+    background = Color(0xFFEAF5F1),
+    cardSurface = Color(0xFFFFFFFF),
+    softGreen = Color(0xFF34865A),
+    softRed = Color(0xFFC34D5A),
+    softPurple = Color(0xFF398F82),
+    ink = Color(0xFF203A37),
+    mutedText = Color(0xFF607A75),
+    surfaceVariant = Color(0xFFDCEDE7)
+)
+
+private val DarkMintPalette = AppPalette(
+    brandBlue = Color(0xFF85D4C1),
+    background = Color(0xFF101F1C),
+    cardSurface = Color(0xFF1D302B),
+    softGreen = Color(0xFF83D3A8),
+    softRed = Color(0xFFFF929A),
+    softPurple = Color(0xFF9BDACA),
+    ink = Color(0xFFE7F3EF),
+    mutedText = Color(0xFFA9C2B9),
+    surfaceVariant = Color(0xFF2C443E)
+)
+
+private val LightRosePalette = AppPalette(
+    brandBlue = Color(0xFFB87596),
+    background = Color(0xFFF7EEF3),
+    cardSurface = Color(0xFFFFFFFF),
+    softGreen = Color(0xFF34865A),
+    softRed = Color(0xFFC34D5A),
+    softPurple = Color(0xFFB87596),
+    ink = Color(0xFF43313C),
+    mutedText = Color(0xFF7A6672),
+    surfaceVariant = Color(0xFFEEDFE7)
+)
+
+private val DarkRosePalette = AppPalette(
+    brandBlue = Color(0xFFD9A7BE),
+    background = Color(0xFF201821),
+    cardSurface = Color(0xFF302431),
+    softGreen = Color(0xFF8ACDAA),
+    softRed = Color(0xFFFFA0AC),
+    softPurple = Color(0xFFE0B4C9),
+    ink = Color(0xFFF4EAF0),
+    mutedText = Color(0xFFC0AAB7),
+    surfaceVariant = Color(0xFF443543)
+)
+
+private fun appPaletteFor(isDark: Boolean, paletteId: String): AppPalette =
+    when (normalizeAppPaletteId(paletteId)) {
+        "mint" -> if (isDark) DarkMintPalette else LightMintPalette
+        "rose" -> if (isDark) DarkRosePalette else LightRosePalette
+        else -> if (isDark) DarkPalette else LightPalette
+    }
+
+private val homeShortcutOptions = listOf(
+    "daily_sales" to "المبيعات اليومية",
+    "price_settings" to "تحديد سعر البيع",
+    "sales" to "المبيعات والفواتير",
+    "purchases" to "المشتريات",
+    "products" to "المنتجات والمخزون",
+    "parties" to "العملاء والموردون",
+    "accounts" to "الحسابات والديون",
+    "cash" to "الصندوق والمصروفات",
+    "reports" to "التقارير والأرباح",
+    "backup" to "النسخ الاحتياطي والاستعادة",
+    "general_accounting" to "المحاسبة العامة"
+)
+private val defaultHomeShortcutIds = homeShortcutOptions.map { it.first }.toSet()
+
 private var activePalette by mutableStateOf(LightPalette)
 internal val BrandBlue get() = activePalette.brandBlue
 internal val LightGray get() = activePalette.background
@@ -145,7 +218,12 @@ internal val SoftRed get() = activePalette.softRed
 internal val SoftPurple get() = activePalette.softPurple
 internal val Ink get() = activePalette.ink
 internal val MutedText get() = activePalette.mutedText
-private val BrandOnPrimary get() = if (activePalette == DarkPalette) Color(0xFF10232C) else Color.White
+private val BrandOnPrimary get() =
+    if (activePalette == DarkPalette || activePalette == DarkMintPalette || activePalette == DarkRosePalette) {
+        Color(0xFF10232C)
+    } else {
+        Color.White
+    }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -175,15 +253,20 @@ private fun GoodGirlApp() {
     var fontScale by remember {
         mutableStateOf(normalizeAppFontScale(settingsPreferences.getFloat("font_scale", 1.0f)))
     }
-    val selectedPalette = if (darkThemeEnabled) DarkPalette else LightPalette
+    var paletteId by remember {
+        mutableStateOf(normalizeAppPaletteId(settingsPreferences.getString("palette_id", "ocean") ?: "ocean"))
+    }
+    var visibleShortcutIds by remember {
+        mutableStateOf(
+            (settingsPreferences.getStringSet("home_shortcuts", null)?.toSet() ?: defaultHomeShortcutIds)
+                .intersect(defaultHomeShortcutIds)
+        )
+    }
+    val selectedPalette = appPaletteFor(darkThemeEnabled, paletteId)
     SideEffect {
         activePalette = selectedPalette
         (context as? MainActivity)?.window?.let { window ->
-            val systemBarColor = if (darkThemeEnabled) {
-                android.graphics.Color.rgb(16, 26, 32)
-            } else {
-                android.graphics.Color.rgb(234, 243, 247)
-            }
+            val systemBarColor = selectedPalette.background.toArgb()
             window.statusBarColor = systemBarColor
             window.navigationBarColor = systemBarColor
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
@@ -331,6 +414,18 @@ private fun GoodGirlApp() {
                         settingsPreferences.edit().putFloat("font_scale", normalized).apply()
                         fontScale = normalized
                     },
+                    paletteId = paletteId,
+                    onPaletteChanged = { id ->
+                        val normalized = normalizeAppPaletteId(id)
+                        settingsPreferences.edit().putString("palette_id", normalized).apply()
+                        paletteId = normalized
+                    },
+                    visibleShortcutIds = visibleShortcutIds,
+                    onVisibleShortcutIdsChanged = { ids ->
+                        val normalized = ids.intersect(defaultHomeShortcutIds)
+                        settingsPreferences.edit().putStringSet("home_shortcuts", normalized.toMutableSet()).apply()
+                        visibleShortcutIds = normalized
+                    },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "sales" -> InvoiceManagementScreen(
@@ -408,6 +503,7 @@ private fun GoodGirlApp() {
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 else -> DashboardScreen(
+                    visibleShortcutIds = visibleShortcutIds,
                     onOpenDailySales = { activePage = "daily_sales" },
                     onOpenPriceSettings = { activePage = "price_settings" },
                     onOpenSales = {
@@ -524,7 +620,8 @@ private fun DashboardScreen(
     onOpenGeneralAccounting: () -> Unit,
     onOpenReports: () -> Unit,
     onOpenBackup: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    visibleShortcutIds: Set<String>
 ) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
@@ -640,35 +737,37 @@ private fun DashboardScreen(
         }
 
         Text("الأقسام الرئيسية", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
-        SectionRow(number = 0, title = "المبيعات اليومية", icon = "🧾", onClick = onOpenDailySales)
-        SectionRow(number = 0, title = "تحديد سعر البيع", icon = "🏷️", onClick = onOpenPriceSettings)
+        if ("daily_sales" in visibleShortcutIds) {
+            SectionRow(number = 0, title = "المبيعات اليومية", icon = "🧾", onClick = onOpenDailySales)
+        }
+        if ("price_settings" in visibleShortcutIds) {
+            SectionRow(number = 0, title = "تحديد سعر البيع", icon = "🏷️", onClick = onOpenPriceSettings)
+        }
         val sections = listOf(
-            "المبيعات والفواتير",
-            "المشتريات",
-            "المنتجات والمخزون",
-            "العملاء والموردون",
-            "الحسابات والديون",
-            "الصندوق والمصروفات",
-            "التقارير والأرباح",
-            "النسخ الاحتياطي والاستعادة",
-            "المحاسبة العامة"
+            Triple("sales", "المبيعات والفواتير", onOpenSales),
+            Triple("purchases", "المشتريات", onOpenPurchases),
+            Triple("products", "المنتجات والمخزون", onOpenProducts),
+            Triple("parties", "العملاء والموردون", onOpenParties),
+            Triple("accounts", "الحسابات والديون", onOpenAccounts),
+            Triple("cash", "الصندوق والمصروفات", onOpenCash),
+            Triple("reports", "التقارير والأرباح", onOpenReports),
+            Triple("backup", "النسخ الاحتياطي والاستعادة", onOpenBackup),
+            Triple("general_accounting", "المحاسبة العامة", onOpenGeneralAccounting)
         )
-        sections.forEachIndexed { index, title ->
-            SectionRow(
-                number = index + 1,
-                title = title,
-                onClick = when (index) {
-                    0 -> onOpenSales
-                    1 -> onOpenPurchases
-                    2 -> onOpenProducts
-                    3 -> onOpenParties
-                    4 -> onOpenAccounts
-                    5 -> onOpenCash
-                    6 -> onOpenReports
-                    7 -> onOpenBackup
-                    8 -> onOpenGeneralAccounting
-                    else -> null
-                }
+        sections.forEachIndexed { index, section ->
+            if (section.first in visibleShortcutIds) {
+                SectionRow(
+                    number = index + 1,
+                    title = section.second,
+                    onClick = section.third
+                )
+            }
+        }
+        if (visibleShortcutIds.isEmpty()) {
+            Text(
+                "لا توجد اختصارات ظاهرة. يمكنك اختيار الاختصارات من الإعدادات.",
+                color = MutedText,
+                fontSize = 12.sp
             )
         }
 
@@ -845,6 +944,10 @@ private fun SettingsScreen(
     onDarkThemeChanged: (Boolean) -> Unit,
     fontScale: Float,
     onFontScaleChanged: (Float) -> Unit,
+    paletteId: String,
+    onPaletteChanged: (String) -> Unit,
+    visibleShortcutIds: Set<String>,
+    onVisibleShortcutIdsChanged: (Set<String>) -> Unit,
     onUnsavedChangesChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -941,6 +1044,34 @@ private fun SettingsScreen(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
+                Text("ألوان التطبيق", color = Ink, fontWeight = FontWeight.Bold)
+                Text(
+                    "اختر مجموعة ألوان للخلفية والأزرار وبطاقات الجداول. ويمكنك التبديل بين الفاتح والداكن من خيار المظهر أعلاه.",
+                    color = MutedText,
+                    fontSize = 12.sp
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                    TextButton(onClick = { onPaletteChanged("ocean") }, modifier = Modifier.weight(1f)) {
+                        Text(if (paletteId == "ocean") "✓ أزرق" else "أزرق")
+                    }
+                    TextButton(onClick = { onPaletteChanged("mint") }, modifier = Modifier.weight(1f)) {
+                        Text(if (paletteId == "mint") "✓ أخضر" else "أخضر")
+                    }
+                    TextButton(onClick = { onPaletteChanged("rose") }, modifier = Modifier.weight(1f)) {
+                        Text(if (paletteId == "rose") "✓ وردي" else "وردي")
+                    }
+                }
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Text("حجم الخط", color = Ink, fontWeight = FontWeight.Bold)
                 Text(
                     "${(fontScale * 100).toInt()}% — يتغير حجم النص في جميع شاشات التطبيق",
@@ -956,6 +1087,39 @@ private fun SettingsScreen(
                 Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                     Text("90%", color = MutedText, fontSize = 11.sp)
                     Text("120%", color = MutedText, fontSize = 11.sp)
+                }
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("اختصارات الصفحة الرئيسية", color = Ink, fontWeight = FontWeight.Bold)
+                Text(
+                    "اختر الأقسام التي تريد ظهورها في لوحة التحكم. لن يؤدي إخفاء الاختصار إلى حذف بيانات القسم.",
+                    color = MutedText,
+                    fontSize = 12.sp
+                )
+                homeShortcutOptions.forEach { (id, title) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(title, color = Ink, modifier = Modifier.weight(1f), fontSize = 13.sp)
+                        Checkbox(
+                            checked = id in visibleShortcutIds,
+                            onCheckedChange = { checked ->
+                                val updated = if (checked) visibleShortcutIds + id else visibleShortcutIds - id
+                                onVisibleShortcutIdsChanged(updated)
+                            }
+                        )
+                    }
                 }
             }
         }

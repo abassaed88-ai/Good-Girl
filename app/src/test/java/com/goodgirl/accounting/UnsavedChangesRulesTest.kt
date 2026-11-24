@@ -307,6 +307,14 @@ class UnsavedChangesRulesTest {
 
 
     @Test
+    fun unknownPaletteFallsBackToOceanAndKnownPalettesArePreserved() {
+        assertEquals("ocean", normalizeAppPaletteId("unexpected"))
+        assertEquals("ocean", normalizeAppPaletteId("ocean"))
+        assertEquals("mint", normalizeAppPaletteId("mint"))
+        assertEquals("rose", normalizeAppPaletteId("rose"))
+    }
+
+    @Test
     fun fontScaleIsClampedToReadableSupportedRange() {
         assertEquals(0.9f, normalizeAppFontScale(0.5f))
         assertEquals(1.0f, normalizeAppFontScale(1.0f))
