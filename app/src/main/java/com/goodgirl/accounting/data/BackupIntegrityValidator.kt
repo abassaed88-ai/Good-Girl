@@ -9,6 +9,7 @@ import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
@@ -31,6 +32,7 @@ object BackupIntegrityValidator {
     fun validate(
         categories: List<CategoryEntity>,
         products: List<ProductEntity>,
+        productBarcodes: List<ProductBarcodeEntity> = emptyList(),
         units: List<ProductUnitEntity>,
         parties: List<PartyEntity>,
         invoices: List<InvoiceEntity>,
@@ -46,6 +48,8 @@ object BackupIntegrityValidator {
     ) {
         ensureUnique(categories.map { it.id }, "معرّفات التصنيفات")
         ensureUnique(products.map { it.id }, "معرّفات المنتجات")
+        ensureUnique(productBarcodes.map { it.id }, "معرّفات الباركود")
+        ensureUnique(productBarcodes.map { it.barcodeValue }, "أرقام الباركود")
         ensureUnique(units.map { it.id }, "معرّفات وحدات القياس")
         ensureUnique(parties.map { it.id }, "معرّفات الحسابات")
         ensureUnique(invoices.map { it.id }, "معرّفات الفواتير")
@@ -74,6 +78,19 @@ object BackupIntegrityValidator {
         val productById = products.associateBy { it.id }
         val partyById = parties.associateBy { it.id }
         val invoiceById = invoices.associateBy { it.id }
+
+        productBarcodes.forEach { barcode ->
+            require(barcode.productId in productById) {
+                "باركود مرتبط بمنتج غير موجود"
+            }
+            require(barcode.barcodeValue.isNotBlank()) { "يوجد رقم باركود فارغ" }
+            require(barcode.format in setOf("EAN_13", "EAN_8", "UPC_A", "CODE_128")) {
+                "صيغة باركود غير مدعومة"
+            }
+            require(barcode.origin in setOf("ORIGINAL", "INTERNAL")) {
+                "مصدر الباركود غير مدعوم"
+            }
+        }
 
         products.forEach { product ->
             require(product.name.isNotBlank()) { "يوجد منتج بلا اسم في النسخة الاحتياطية" }
