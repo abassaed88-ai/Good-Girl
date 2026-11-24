@@ -9,6 +9,7 @@ import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
@@ -31,6 +32,7 @@ object BackupIntegrityValidator {
     fun validate(
         categories: List<CategoryEntity>,
         products: List<ProductEntity>,
+        productBarcodes: List<ProductBarcodeEntity> = emptyList(),
         units: List<ProductUnitEntity>,
         parties: List<PartyEntity>,
         invoices: List<InvoiceEntity>,
@@ -46,6 +48,8 @@ object BackupIntegrityValidator {
     ) {
         ensureUnique(categories.map { it.id }, "معرّفات التصنيفات")
         ensureUnique(products.map { it.id }, "معرّفات المنتجات")
+        ensureUnique(productBarcodes.map { it.id }, "معرّفات الباركود")
+        ensureUnique(productBarcodes.map { it.barcodeValue }, "أرقام الباركود")
         ensureUnique(units.map { it.id }, "معرّفات وحدات القياس")
         ensureUnique(parties.map { it.id }, "معرّفات الحسابات")
         ensureUnique(invoices.map { it.id }, "معرّفات الفواتير")
