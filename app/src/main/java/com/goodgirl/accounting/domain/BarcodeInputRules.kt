@@ -17,7 +17,7 @@ object BarcodeInputRules {
     }
 
     fun isValidEan(value: String, expectedLength: Int): Boolean {
-        if (value.length != expectedLength || value.any { !it.isDigit() }) return false
+        if (value.length != expectedLength || value.any { it !in '0'..'9' }) return false
         val body = value.dropLast(1)
         val expectedCheckDigit = calculateCheckDigit(body)
         return value.last() == expectedCheckDigit
