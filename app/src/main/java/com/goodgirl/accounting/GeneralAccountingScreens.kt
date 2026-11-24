@@ -762,7 +762,7 @@ internal fun ManualJournalLineEditor(
 }
 
 @Composable
-fun JournalEntryDetailScreen,
+fun JournalEntryDetailScreen(
     entryId: String,
     onBack: () -> Unit
 ) {
