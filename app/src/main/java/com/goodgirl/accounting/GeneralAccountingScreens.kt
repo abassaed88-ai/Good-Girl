@@ -556,7 +556,7 @@ internal data class ManualJournalLineInput(
 )
 
 @Composable
-private fun ManualJournalEntryDialog(
+internal fun ManualJournalEntryDialog(
     accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
     onSave: (String, String, String, String, List<JournalLineDraft>) -> Unit
@@ -603,8 +603,8 @@ private fun ManualJournalEntryDialog(
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 Text("قيد يومية يدوي", color = AccountingText, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                OutlinedTextField(value = journalNumber, onValueChange = { journalNumber = it; error = null }, label = { Text("رقم القيد") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = description, onValueChange = { description = it; error = null }, label = { Text("شرح القيد") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = journalNumber, onValueChange = { journalNumber = it; error = null }, label = { Text("رقم القيد") }, singleLine = true, modifier = Modifier.fillMaxWidth().testTag("manual-journal-number"))
+                OutlinedTextField(value = description, onValueChange = { description = it; error = null }, label = { Text("شرح القيد") }, modifier = Modifier.fillMaxWidth().testTag("manual-journal-description"))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
                     TextButton(onClick = { currency = "SYP"; exchangeRate = "1" }, modifier = Modifier.weight(1f)) {
                         Text(if (currency == "SYP") "✓ ليرة سورية" else "ليرة سورية")
@@ -659,7 +659,7 @@ private fun ManualJournalEntryDialog(
                                 onSave(journalNumber.trim(), description.trim(), currency, exchangeRate, drafts)
                             }
                         },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f).testTag("manual-journal-submit")
                     ) { Text("ترحيل القيد") }
                 }
             }
@@ -708,7 +708,7 @@ internal fun ManualJournalLineEditor(
                 if (index >= 2) TextButton(onClick = onRemove) { Text("حذف السطر", color = AccountingBad) }
             }
             Box {
-                TextButton(onClick = { menuExpanded = true }) {
+                TextButton(onClick = { menuExpanded = true }, modifier = Modifier.testTag("manual-journal-account-$index")) {
                     Text(
                         selectedAccount?.let { it.code + " — " + it.name } ?: "اختيار الحساب",
                         color = if (selectedAccount == null) AccountingAccent else AccountingText
@@ -717,6 +717,7 @@ internal fun ManualJournalLineEditor(
                 DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
                     accounts.forEach { account ->
                         DropdownMenuItem(
+                            modifier = Modifier.testTag("manual-journal-account-option-${account.code}"),
                             text = { Text(account.code + " — " + account.name) },
                             onClick = {
                                 onChange(line.copy(accountId = account.id))
@@ -735,7 +736,7 @@ internal fun ManualJournalLineEditor(
                     label = { Text("مدين") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
-                    modifier = Modifier.weight(1f).testTag("manual-journal-debit-${line.id}")
+                    modifier = Modifier.weight(1f).testTag("manual-journal-debit-$index")
                 )
                 OutlinedTextField(
                     value = line.credit,
@@ -745,7 +746,7 @@ internal fun ManualJournalLineEditor(
                     label = { Text("دائن") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     singleLine = true,
-                    modifier = Modifier.weight(1f).testTag("manual-journal-credit-${line.id}")
+                    modifier = Modifier.weight(1f).testTag("manual-journal-credit-$index")
                 )
             }
             OutlinedTextField(
@@ -755,7 +756,7 @@ internal fun ManualJournalLineEditor(
                 },
                 label = { Text("بيان السطر (اختياري)") },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth().testTag("manual-journal-memo-${line.id}")
+                modifier = Modifier.fillMaxWidth().testTag("manual-journal-memo-$index")
             )
         }
     }

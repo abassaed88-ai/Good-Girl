@@ -45,8 +45,8 @@ class ManualJournalLineEditorTextInputTest {
             }
         }
 
-        val firstTag = "manual-journal-memo-first"
-        val secondTag = "manual-journal-memo-second"
+        val firstTag = "manual-journal-memo-0"
+        val secondTag = "manual-journal-memo-1"
         val firstField = composeRule.onNodeWithTag(firstTag)
         val secondField = composeRule.onNodeWithTag(secondTag)
 
@@ -98,7 +98,7 @@ class ManualJournalLineEditorTextInputTest {
             }
         }
 
-        val memoTag = "manual-journal-memo-first"
+        val memoTag = "manual-journal-memo-0"
         val memo = composeRule.onNodeWithTag(memoTag)
         "عطر ورد".forEach { memo.performTextInput(it.toString()) }
         assertEditableText(memoTag, "عطر ورد")
