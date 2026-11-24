@@ -163,3 +163,5 @@ internal fun hasUnsavedManualJournalDraft(
         (currencyCode == "USD" && exchangeRate != defaultExchangeRate) ||
         lineCount != 2 ||
         hasLineContent
+
+internal fun hasUnsavedReversalDraft(reason: String): Boolean = reason.isNotBlank()

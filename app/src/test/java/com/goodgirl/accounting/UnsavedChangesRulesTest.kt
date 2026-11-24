@@ -250,4 +250,12 @@ class UnsavedChangesRulesTest {
             )
         )
     }
+
+
+    @Test
+    fun reversalDialogOnlyWarnsAfterReasonIsEntered() {
+        assertFalse(hasUnsavedReversalDraft(""))
+        assertFalse(hasUnsavedReversalDraft("   "))
+        assertTrue(hasUnsavedReversalDraft("تصحيح قيد خاطئ"))
+    }
 }

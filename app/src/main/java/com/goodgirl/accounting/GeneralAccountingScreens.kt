@@ -769,6 +769,16 @@ fun JournalEntryDetailScreen(
     var reversalReason by remember { mutableStateOf("") }
     var reversalMessage by remember { mutableStateOf<String?>(null) }
     var isReversing by remember { mutableStateOf(false) }
+    var showDiscardReversalConfirmation by remember { mutableStateOf(false) }
+    fun requestCloseReversalDialog() {
+        if (!isReversing) {
+            if (hasUnsavedReversalDraft(reversalReason)) {
+                showDiscardReversalConfirmation = true
+            } else {
+                showReversalDialog = false
+            }
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -837,7 +847,7 @@ fun JournalEntryDetailScreen(
 
     if (showReversalDialog) {
         Dialog(
-            onDismissRequest = { if (!isReversing) showReversalDialog = false },
+            onDismissRequest = { requestCloseReversalDialog() },
             properties = DialogProperties(usePlatformDefaultWidth = false)
         ) {
             Surface(
@@ -867,7 +877,7 @@ fun JournalEntryDetailScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         TextButton(
-                            onClick = { showReversalDialog = false },
+                            onClick = { requestCloseReversalDialog() },
                             enabled = !isReversing,
                             modifier = Modifier.weight(1f)
                         ) { Text("إلغاء") }
@@ -905,6 +915,27 @@ fun JournalEntryDetailScreen(
                 }
             }
         }
+    }
+    if (showDiscardReversalConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDiscardReversalConfirmation = false },
+            title = { Text("سبب غير محفوظ") },
+            text = { Text("كتبت سبباً لعكس القيد. هل تريد إغلاق النافذة والتخلص من السبب المدخل؟") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardReversalConfirmation = false
+                        reversalReason = ""
+                        showReversalDialog = false
+                    }
+                ) { Text("إغلاق دون حفظ") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardReversalConfirmation = false }) {
+                    Text("متابعة الإدخال")
+                }
+            }
+        )
     }
 }
 
