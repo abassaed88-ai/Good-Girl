@@ -212,7 +212,10 @@ private fun GoodGirlApp() {
     var showUnsavedChangesDialog by remember { mutableStateOf(false) }
     var pendingNavigationPage by remember { mutableStateOf<String?>(null) }
     val requestNavigation: (String) -> Unit = { destination ->
-        if (activePage in setOf("sales", "purchases", "products") && hasUnsavedChanges) {
+        if (activePage in setOf(
+                "sales", "purchases", "products", "cash", "daily_sales",
+                "price_settings", "parties", "categories", "product_units"
+            ) && hasUnsavedChanges) {
             pendingNavigationPage = destination
             showUnsavedChangesDialog = true
         } else {
@@ -260,7 +263,10 @@ private fun GoodGirlApp() {
         Surface(modifier = Modifier.fillMaxSize(), color = LightGray) {
             Box(modifier = Modifier.fillMaxSize()) {
             when (activePage) {
-                "cash" -> CashManagementScreen(onBack = { activePage = "dashboard" })
+                "cash" -> CashManagementScreen(
+                    onBack = { requestNavigation("dashboard") },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
+                )
                 "general_accounting" -> GeneralAccountingHubScreen(
                     onBack = { activePage = "dashboard" },
                     onOpenChart = { activePage = "chart_of_accounts" },
@@ -310,13 +316,17 @@ private fun GoodGirlApp() {
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "daily_sales" -> DailySalesScreen(
-                    onBack = { activePage = "dashboard" },
+                    onBack = { requestNavigation("dashboard") },
                     onOpenFullInvoice = {
                         salesReturnPage = "daily_sales"
-                        activePage = "sales"
-                    }
+                        requestNavigation("sales")
+                    },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
-                "price_settings" -> ProductPriceManagementScreen(onBack = { activePage = "dashboard" })
+                "price_settings" -> ProductPriceManagementScreen(
+                    onBack = { requestNavigation("dashboard") },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
+                )
                 "purchases" -> InvoiceManagementScreen(
                     kind = "PURCHASE",
                     onBack = { requestNavigation("dashboard") },
@@ -335,10 +345,14 @@ private fun GoodGirlApp() {
                     },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
-                "categories" -> ProductCategoriesScreen(onBack = { activePage = "products" })
+                "categories" -> ProductCategoriesScreen(
+                    onBack = { requestNavigation("products") },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
+                )
                 "product_units" -> ProductUnitsScreen(
                     productId = unitsProductId.orEmpty(),
-                    onBack = { activePage = "products" }
+                    onBack = { requestNavigation("products") },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "stock_history" -> StockHistoryScreen(
                     productId = historyProductId.orEmpty(),
@@ -357,12 +371,13 @@ private fun GoodGirlApp() {
                     }
                 )
                 "parties" -> PartyManagementScreen(
-                    onBack = { activePage = partiesReturnPage },
+                    onBack = { requestNavigation(partiesReturnPage) },
                     onOpenStatement = { partyId ->
                         statementPartyId = partyId
                         statementReturnPage = "parties"
-                        activePage = "statement"
-                    }
+                        requestNavigation("statement")
+                    },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "statement" -> PartyStatementScreen(
                     partyId = statementPartyId.orEmpty(),
@@ -644,7 +659,10 @@ private fun DashboardScreen(
 
 
 @Composable
-private fun ProductPriceManagementScreen(onBack: () -> Unit) {
+private fun ProductPriceManagementScreen(
+    onBack: () -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { ProductRepository(database) }
@@ -655,6 +673,11 @@ private fun ProductPriceManagementScreen(onBack: () -> Unit) {
     var priceInputs by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var messages by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var savingIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var savedPriceBaselines by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var dirtyPriceIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+    LaunchedEffect(dirtyPriceIds) {
+        onUnsavedChangesChanged(dirtyPriceIds.isNotEmpty())
+    }
 
     val filteredProducts = products.filter { product ->
         searchQuery.isBlank() ||
@@ -731,6 +754,12 @@ private fun ProductPriceManagementScreen(onBack: () -> Unit) {
                                     candidate.count { it == '.' } <= 1
                                 ) {
                                     priceInputs = priceInputs + (product.id to candidate)
+                                    val savedBaseline = savedPriceBaselines[product.id] ?: product.salePrice
+                                    dirtyPriceIds = if (candidate == savedBaseline) {
+                                        dirtyPriceIds - product.id
+                                    } else {
+                                        dirtyPriceIds + product.id
+                                    }
                                     messages = messages - product.id
                                 }
                             },
@@ -753,6 +782,8 @@ private fun ProductPriceManagementScreen(onBack: () -> Unit) {
                                         val updated = repository.updateSalePrice(product.id, cleanPrice)
                                         check(updated) { "تعذر العثور على المادة لتحديث سعرها" }
                                         priceInputs = priceInputs + (product.id to cleanPrice)
+                                        savedPriceBaselines = savedPriceBaselines + (product.id to cleanPrice)
+                                        dirtyPriceIds = dirtyPriceIds - product.id
                                         messages = messages + (product.id to "تم تحديث سعر البيع للمبيعات الجديدة.")
                                     } catch (error: Exception) {
                                         messages = messages + (
@@ -2238,7 +2269,10 @@ private fun ReportValueRow(label: String, value: BigDecimal, currencyCode: Strin
 }
 
 @Composable
-private fun CashManagementScreen(onBack: () -> Unit) {
+private fun CashManagementScreen(
+    onBack: () -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { CashTransactionRepository(database) }
@@ -2254,6 +2288,10 @@ private fun CashManagementScreen(onBack: () -> Unit) {
     var description by remember { mutableStateOf("") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    val hasUnsavedCashDraft = hasUnsavedCashDraft(amount, description)
+    LaunchedEffect(hasUnsavedCashDraft) {
+        onUnsavedChangesChanged(hasUnsavedCashDraft)
+    }
 
     val cashMovements = remember(entries) {
         entries.filter { it.entryType == "CASH_IN" || it.entryType == "CASH_OUT" }
@@ -2754,7 +2792,11 @@ private fun PartyStatementScreen(partyId: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) -> Unit) {
+private fun PartyManagementScreen(
+    onBack: () -> Unit,
+    onOpenStatement: (String) -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { PartyRepository(database) }
@@ -2774,6 +2816,34 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
 
+    val editingParty = parties.firstOrNull { it.id == editingId }
+    val partyDraftValues = PartyFormValues(
+        name = name,
+        phone = phone,
+        address = address,
+        note = note,
+        openingBalance = openingBalance,
+        openingCurrency = openingCurrency,
+        openingExchangeRate = openingExchangeRate
+    )
+    val originalPartyDraftValues = editingParty?.let { party ->
+        PartyFormValues(
+            name = party.name,
+            phone = party.phone,
+            address = party.address,
+            note = party.note,
+            openingBalance = party.openingBalance,
+            openingCurrency = party.currencyCode,
+            openingExchangeRate = party.openingExchangeRate
+        )
+    }
+    val hasUnsavedPartyChanges =
+        (editingId != null && editingParty == null) ||
+            hasUnsavedPartyForm(partyDraftValues, originalPartyDraftValues)
+    LaunchedEffect(hasUnsavedPartyChanges) {
+        onUnsavedChangesChanged(hasUnsavedPartyChanges)
+    }
+
     fun clearForm() {
         editingId = null
         openingBalance = "0"
@@ -2786,6 +2856,10 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
     }
 
     fun loadParty(party: PartyEntity) {
+        if (hasUnsavedPartyChanges) {
+            message = "احفظ أو ألغِ البيانات الحالية قبل فتح جهة تعامل أخرى."
+            return
+        }
         editingId = party.id
         openingBalance = party.openingBalance
         openingCurrency = party.currencyCode
@@ -2807,11 +2881,27 @@ private fun PartyManagementScreen(onBack: () -> Unit, onOpenStatement: (String) 
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
-                onClick = { selectedKind = "CUSTOMER"; clearForm(); message = null },
+                onClick = {
+                    if (hasUnsavedPartyChanges) {
+                        message = "احفظ أو ألغِ البيانات الحالية قبل التبديل بين العملاء والموردين."
+                    } else {
+                        selectedKind = "CUSTOMER"
+                        clearForm()
+                        message = null
+                    }
+                },
                 modifier = Modifier.weight(1f)
             ) { Text("العملاء") }
             Button(
-                onClick = { selectedKind = "SUPPLIER"; clearForm(); message = null },
+                onClick = {
+                    if (hasUnsavedPartyChanges) {
+                        message = "احفظ أو ألغِ البيانات الحالية قبل التبديل بين العملاء والموردين."
+                    } else {
+                        selectedKind = "SUPPLIER"
+                        clearForm()
+                        message = null
+                    }
+                },
                 modifier = Modifier.weight(1f)
             ) { Text("الموردون") }
         }
@@ -3008,7 +3098,10 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun ProductCategoriesScreen(onBack: () -> Unit) {
+private fun ProductCategoriesScreen(
+    onBack: () -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { CategoryRepository(database) }
@@ -3021,6 +3114,18 @@ private fun ProductCategoriesScreen(onBack: () -> Unit) {
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
 
+    val editingCategory = categories.firstOrNull { it.id == editingId }
+    val categoryDraftValues = CategoryFormValues(name = name, note = note)
+    val originalCategoryDraftValues = editingCategory?.let {
+        CategoryFormValues(name = it.name, note = it.note)
+    }
+    val hasUnsavedCategoryChanges =
+        (editingId != null && editingCategory == null) ||
+            hasUnsavedCategoryForm(categoryDraftValues, originalCategoryDraftValues)
+    LaunchedEffect(hasUnsavedCategoryChanges) {
+        onUnsavedChangesChanged(hasUnsavedCategoryChanges)
+    }
+
     fun clearForm() {
         editingId = null
         name = ""
@@ -3028,6 +3133,10 @@ private fun ProductCategoriesScreen(onBack: () -> Unit) {
     }
 
     fun loadCategory(category: CategoryEntity) {
+        if (hasUnsavedCategoryChanges) {
+            message = "احفظ أو ألغِ بيانات التصنيف الحالية قبل فتح تصنيف آخر."
+            return
+        }
         editingId = category.id
         name = category.name
         note = category.note
@@ -3095,7 +3204,11 @@ private fun ProductCategoriesScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun ProductUnitsScreen(productId: String, onBack: () -> Unit) {
+private fun ProductUnitsScreen(
+    productId: String,
+    onBack: () -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { ProductUnitRepository(database) }
@@ -3107,6 +3220,10 @@ private fun ProductUnitsScreen(productId: String, onBack: () -> Unit) {
     var factor by remember { mutableStateOf("1") }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
+    val hasUnsavedUnitChanges = hasUnsavedUnitDraft(unitName, factor)
+    LaunchedEffect(hasUnsavedUnitChanges) {
+        onUnsavedChangesChanged(hasUnsavedUnitChanges)
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -3282,6 +3399,15 @@ private fun ProductManagementScreen(
     }
 
     fun startEditing(product: ProductEntity) {
+        if (hasUnsavedProductChanges) {
+            if (adjustingProductId != null) {
+                stockMessage = "احفظ أو ألغِ حركة المخزون الحالية قبل اختيار منتج آخر."
+            } else {
+                message = "احفظ أو ألغِ مسودة المنتج الحالية قبل اختيار منتج آخر."
+            }
+            return
+        }
+        resetForm()
         adjustingProductId = null
         stockMessage = null
         editingId = product.id
@@ -3298,7 +3424,15 @@ private fun ProductManagementScreen(
     }
 
     fun startStockAdjustment(product: ProductEntity) {
-        editingId = null
+        if (hasUnsavedProductChanges) {
+            if (adjustingProductId != null) {
+                stockMessage = "احفظ أو ألغِ حركة المخزون الحالية قبل اختيار منتج آخر."
+            } else {
+                message = "احفظ أو ألغِ مسودة المنتج الحالية قبل بدء حركة مخزون."
+            }
+            return
+        }
+        resetForm()
         adjustingProductId = product.id
         adjustmentDelta = ""
         adjustmentCost = product.purchaseCost
@@ -3771,7 +3905,11 @@ private data class DailySaleRow(
 )
 
 @Composable
-private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) {
+private fun DailySalesScreen(
+    onBack: () -> Unit,
+    onOpenFullInvoice: () -> Unit,
+    onUnsavedChangesChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { InvoiceRepository(database) }
@@ -3826,6 +3964,21 @@ private fun DailySalesScreen(onBack: () -> Unit, onOpenFullInvoice: () -> Unit) 
         .multiply(runCatching { BigDecimal(selectedProduct?.purchaseCost ?: "0") }.getOrDefault(BigDecimal.ZERO))
     val previewProfit = previewSales.subtract(previewCost)
     val effectivePaidAmount = if (paidAmountTouched) paidAmount else previewSales.stripTrailingZeros().toPlainString()
+    val hasUnsavedDailySaleChanges = hasUnsavedDailySaleDraft(
+        DailySaleDraftState(
+            hasSelectedProduct = selectedProductId != null,
+            hasSelectedParty = selectedPartyId != null,
+            quantity = quantity,
+            salePrice = salePrice,
+            lineDiscount = lineDiscount,
+            paidAmountTouched = paidAmountTouched,
+            paidAmount = paidAmount,
+            note = note
+        )
+    )
+    LaunchedEffect(hasUnsavedDailySaleChanges) {
+        onUnsavedChangesChanged(hasUnsavedDailySaleChanges)
+    }
 
     val dayBounds = remember(selectedDay) {
         val start = Calendar.getInstance().apply { timeInMillis = selectedDay }

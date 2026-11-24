@@ -68,3 +68,55 @@ internal fun hasUnsavedStockAdjustment(draft: StockAdjustmentDraft): Boolean =
             draft.quantityDelta.isNotBlank() || draft.note.isNotBlank()
         }
     )
+
+internal fun hasUnsavedCashDraft(amount: String, description: String): Boolean =
+    amount.isNotBlank() || description.isNotBlank()
+
+internal data class DailySaleDraftState(
+    val hasSelectedProduct: Boolean = false,
+    val hasSelectedParty: Boolean = false,
+    val quantity: String = "1",
+    val salePrice: String = "0",
+    val lineDiscount: String = "0",
+    val paidAmountTouched: Boolean = false,
+    val paidAmount: String = "",
+    val note: String = ""
+)
+
+internal fun hasUnsavedDailySaleDraft(state: DailySaleDraftState): Boolean =
+    state.hasSelectedProduct ||
+        state.hasSelectedParty ||
+        state.quantity != "1" ||
+        state.salePrice != "0" ||
+        state.lineDiscount != "0" ||
+        state.paidAmountTouched ||
+        state.paidAmount.isNotBlank() ||
+        state.note.isNotBlank()
+
+internal data class PartyFormValues(
+    val name: String = "",
+    val phone: String = "",
+    val address: String = "",
+    val note: String = "",
+    val openingBalance: String = "0",
+    val openingCurrency: String = "SYP",
+    val openingExchangeRate: String = "1"
+)
+
+internal fun hasUnsavedPartyForm(
+    current: PartyFormValues,
+    original: PartyFormValues? = null
+): Boolean = current != (original ?: PartyFormValues())
+
+internal data class CategoryFormValues(
+    val name: String = "",
+    val note: String = ""
+)
+
+internal fun hasUnsavedCategoryForm(
+    current: CategoryFormValues,
+    original: CategoryFormValues? = null
+): Boolean = current != (original ?: CategoryFormValues())
+
+internal fun hasUnsavedUnitDraft(name: String, factor: String): Boolean =
+    name.isNotBlank() || factor != "1"

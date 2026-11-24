@@ -78,4 +78,39 @@ class UnsavedChangesRulesTest {
             )
         )
     }
+
+    @Test
+    fun cashFormOnlyWarnsWhenAmountOrDescriptionExists() {
+        assertFalse(hasUnsavedCashDraft("", ""))
+        assertTrue(hasUnsavedCashDraft("250", ""))
+        assertTrue(hasUnsavedCashDraft("", "مصاريف"))
+    }
+
+    @Test
+    fun dailySaleDraftTracksProductAndEditedFields() {
+        assertFalse(hasUnsavedDailySaleDraft(DailySaleDraftState()))
+        assertTrue(hasUnsavedDailySaleDraft(DailySaleDraftState(hasSelectedProduct = true)))
+        assertTrue(hasUnsavedDailySaleDraft(DailySaleDraftState(note = "مبيعة نقدية")))
+        assertTrue(hasUnsavedDailySaleDraft(DailySaleDraftState(paidAmountTouched = true)))
+    }
+
+    @Test
+    fun untouchedPartyFormIsCleanAndChangedFieldsAreDirty() {
+        assertFalse(hasUnsavedPartyForm(PartyFormValues()))
+        assertTrue(hasUnsavedPartyForm(PartyFormValues(name = "عميل")))
+        val original = PartyFormValues(name = "عميل", phone = "123")
+        assertFalse(hasUnsavedPartyForm(original, original))
+        assertTrue(hasUnsavedPartyForm(original.copy(phone = "456"), original))
+    }
+
+    @Test
+    fun categoryFormAndUnitDraftDetectEdits() {
+        assertFalse(hasUnsavedCategoryForm(CategoryFormValues()))
+        assertTrue(hasUnsavedCategoryForm(CategoryFormValues(name = "عناية")))
+        val original = CategoryFormValues(name = "عطور")
+        assertFalse(hasUnsavedCategoryForm(original, original))
+        assertTrue(hasUnsavedCategoryForm(original.copy(note = "ملاحظات"), original))
+        assertFalse(hasUnsavedUnitDraft("", "1"))
+        assertTrue(hasUnsavedUnitDraft("كرتونة", "12"))
+    }
 }
