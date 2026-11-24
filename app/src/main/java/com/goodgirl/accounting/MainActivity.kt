@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -56,6 +57,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Density
@@ -127,15 +129,15 @@ private val LightPalette = AppPalette(
 )
 
 private val DarkPalette = AppPalette(
-    brandBlue = Color(0xFF80C2DA),
-    background = Color(0xFF101A20),
-    cardSurface = Color(0xFF1B2930),
+    brandBlue = Color(0xFF36BCE0),
+    background = Color(0xFF071F36),
+    cardSurface = Color(0xFF0E3554),
     softGreen = Color(0xFF83D3A8),
     softRed = Color(0xFFFF929A),
-    softPurple = Color(0xFF9BCFE2),
-    ink = Color(0xFFE7F0F4),
-    mutedText = Color(0xFFA9BDC6),
-    surfaceVariant = Color(0xFF2A3D46)
+    softPurple = Color(0xFF72CBE4),
+    ink = Color(0xFFEAF7FC),
+    mutedText = Color(0xFFB2D6E3),
+    surfaceVariant = Color(0xFF164B6C)
 )
 
 
@@ -695,41 +697,92 @@ private fun DashboardScreen(
     }
     val postedInvoiceCount = remember(invoices) { invoices.count { it.status == "POSTED" } }
 
+    val dashboardTiles = listOf(
+        Triple("daily_sales", homeShortcutLabels["daily_sales"].orEmpty().ifBlank { "المبيعات اليومية" }, "📊") to onOpenDailySales,
+        Triple("sales", homeShortcutLabels["sales"].orEmpty().ifBlank { "إضافة مبيع" }, "🛒") to onOpenSales,
+        Triple("products", homeShortcutLabels["products"].orEmpty().ifBlank { "إدارة المخزون" }, "📦") to onOpenProducts,
+        Triple("accounts", homeShortcutLabels["accounts"].orEmpty().ifBlank { "قائمة الحسابات" }, "📒") to onOpenAccounts,
+        Triple("reports", homeShortcutLabels["reports"].orEmpty().ifBlank { "التقارير" }, "📈") to onOpenReports,
+        Triple("settings", "الإعدادات", "⚙️") to onOpenSettings,
+        Triple("purchases", homeShortcutLabels["purchases"].orEmpty().ifBlank { "المشتريات" }, "🧾") to onOpenPurchases,
+        Triple("parties", homeShortcutLabels["parties"].orEmpty().ifBlank { "العملاء والموردون" }, "👥") to onOpenParties,
+        Triple("cash", homeShortcutLabels["cash"].orEmpty().ifBlank { "الصندوق والمصروفات" }, "💼") to onOpenCash,
+        Triple("general_accounting", homeShortcutLabels["general_accounting"].orEmpty().ifBlank { "المحاسبة العامة" }, "🧮") to onOpenGeneralAccounting,
+        Triple("backup", homeShortcutLabels["backup"].orEmpty().ifBlank { "النسخ الاحتياطي" }, "💾") to onOpenBackup,
+        Triple("price_settings", homeShortcutLabels["price_settings"].orEmpty().ifBlank { "تحديد سعر البيع" }, "🏷️") to onOpenPriceSettings
+    ).filter { (tile, _) -> tile.first == "settings" || tile.first in visibleShortcutIds }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(BrandBlue, RoundedCornerShape(22.dp))
-                .padding(20.dp)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = BrandBlue),
+            elevation = CardDefaults.cardElevation(defaultElevation = 3.dp)
         ) {
-            Text("Good Girl", color = BrandOnPrimary, fontSize = 25.sp, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(5.dp))
-            Text("نظام إدارة ومحاسبة متكامل", color = BrandOnPrimary, fontSize = 16.sp)
-            Spacer(Modifier.height(12.dp))
-            Text(
-                "تُحدّث مؤشرات اللوحة من السجلات المحفوظة على هذا الجهاز، مع فصل العملات",
-                color = BrandOnPrimary.copy(alpha = 0.88f),
-                fontSize = 12.sp
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("Good Girl", color = BrandOnPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    Text("نظام إدارة ومحاسبة متكامل", color = BrandOnPrimary, fontSize = 14.sp)
+                }
+                Text("☰", color = BrandOnPrimary, fontSize = 27.sp)
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("▤", color = BrandBlue, fontSize = 35.sp)
+                Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("قاعدة البيانات الأساسية", color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                        "تُحفظ بياناتك على هذا الجهاز، ويمكنك إدارة النسخ الاحتياطية من هنا",
+                        color = MutedText,
+                        fontSize = 12.sp
+                    )
+                }
+            }
         }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("لوحة التحكم", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
-            TextButton(onClick = onOpenSettings) {
-                Text("⚙️ الإعدادات", color = BrandBlue, fontWeight = FontWeight.Bold)
+            Button(
+                onClick = onOpenBackup,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = SoftGreen)
+            ) {
+                Text("إجراء نسخة احتياطية", maxLines = 1, fontSize = 12.sp)
+            }
+            Button(
+                onClick = onOpenSettings,
+                modifier = Modifier.weight(1f).height(48.dp),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("الإعدادات", maxLines = 1)
             }
         }
 
+        Text("ملخص اليوم", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -744,62 +797,32 @@ private fun DashboardScreen(
             SummaryCard("أرصدة العملاء", formatCurrencyTotals(customerBalances), "مستحق لنا", SoftRed, Modifier.weight(1f))
             SummaryCard("أرصدة الموردين", formatCurrencyTotals(supplierBalances), "مستحق علينا", SoftPurple, Modifier.weight(1f))
         }
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            SummaryCard("الفواتير المرحلة", postedInvoiceCount.toString(), "فاتورة", BrandBlue, Modifier.weight(1f))
-        }
+        SummaryCard("الفواتير المرحلة", postedInvoiceCount.toString(), "فاتورة", BrandBlue, Modifier.fillMaxWidth())
 
         Text("الأقسام الرئيسية", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
-        if ("daily_sales" in visibleShortcutIds) {
-            SectionRow(
-                number = 0,
-                title = homeShortcutLabels["daily_sales"].orEmpty().ifBlank { "المبيعات اليومية" },
-                icon = "🧾",
-                onClick = onOpenDailySales
-            )
-        }
-        if ("price_settings" in visibleShortcutIds) {
-            SectionRow(
-                number = 0,
-                title = homeShortcutLabels["price_settings"].orEmpty().ifBlank { "تحديد سعر البيع" },
-                icon = "🏷️",
-                onClick = onOpenPriceSettings
-            )
-        }
-        val sections = listOf(
-            "sales" to onOpenSales,
-            "purchases" to onOpenPurchases,
-            "products" to onOpenProducts,
-            "parties" to onOpenParties,
-            "accounts" to onOpenAccounts,
-            "cash" to onOpenCash,
-            "reports" to onOpenReports,
-            "backup" to onOpenBackup,
-            "general_accounting" to onOpenGeneralAccounting
-        )
-        sections.forEachIndexed { index, section ->
-            val (id, action) = section
-            if (id in visibleShortcutIds) {
-                val defaultLabel = homeShortcutOptions.first { it.first == id }.second
-                SectionRow(
-                    number = index + 1,
-                    title = homeShortcutLabels[id].orEmpty().ifBlank { defaultLabel },
-                    onClick = action
-                )
+        dashboardTiles.chunked(2).forEach { tileRow ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                tileRow.forEach { (tile, action) ->
+                    DashboardTile(
+                        title = tile.second,
+                        icon = tile.third,
+                        onClick = action,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (tileRow.size == 1) Spacer(Modifier.weight(1f))
             }
         }
-        if (visibleShortcutIds.isEmpty()) {
-            Text(
-                "لا توجد اختصارات ظاهرة. يمكنك اختيار الاختصارات من الإعدادات.",
-                color = MutedText,
-                fontSize = 12.sp
-            )
+
+        if (dashboardTiles.isEmpty()) {
+            Text("لا توجد اختصارات ظاهرة. يمكنك اختيار الاختصارات من الإعدادات.", color = MutedText, fontSize = 12.sp)
         }
 
         Text(
-            "تعتمد المؤشرات على الفواتير والحركات المسجلة؛ أدخل العمليات أولاً لتظهر نتائجها في الملخصات.",
+            "تعتمد المؤشرات على الفواتير والحركات المسجلة؛ تبقى أرصدة الليرة والدولار منفصلة.",
             color = MutedText,
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
@@ -807,7 +830,39 @@ private fun DashboardScreen(
     }
 }
 
-
+@Composable
+private fun DashboardTile(
+    title: String,
+    icon: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier
+            .height(112.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(17.dp),
+        colors = CardDefaults.cardColors(containerColor = CardSurface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(icon, fontSize = 27.sp)
+            Spacer(Modifier.height(5.dp))
+            Text(
+                title,
+                color = Ink,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 2
+            )
+        }
+    }
+}
 
 @Composable
 private fun ProductPriceManagementScreen(
@@ -2584,36 +2639,104 @@ private fun CashManagementScreen(
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
         Text("الصندوق والمصروفات", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
-        Text("تسجيل الإيرادات والمصروفات ومتابعة حركات القبض والصرف المسجلة", color = MutedText, fontSize = 13.sp)
+        Text("تسجيل الإيرادات والمصروفات ومتابعة حركات القبض والصرف", color = MutedText, fontSize = 13.sp)
 
-        Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 Text("حركة مالية جديدة", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Ink)
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { selectedKind = "INCOME"; message = null }, modifier = Modifier.weight(1f)) {
-                        Text(if (selectedKind == "INCOME") "✓ إيراد" else "إيراد")
-                    }
-                    Button(onClick = { selectedKind = "EXPENSE"; message = null }, modifier = Modifier.weight(1f)) {
-                        Text(if (selectedKind == "EXPENSE") "✓ مصروف" else "مصروف")
-                    }
+                    Button(
+                        onClick = { selectedKind = "INCOME"; message = null },
+                        modifier = Modifier.weight(1f).height(46.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedKind == "INCOME") SoftGreen else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (selectedKind == "INCOME") Color.White else Ink
+                        )
+                    ) { Text(if (selectedKind == "INCOME") "✓ إيراد" else "إيراد") }
+                    Button(
+                        onClick = { selectedKind = "EXPENSE"; message = null },
+                        modifier = Modifier.weight(1f).height(46.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (selectedKind == "EXPENSE") SoftRed else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (selectedKind == "EXPENSE") Color.White else Ink
+                        )
+                    ) { Text(if (selectedKind == "EXPENSE") "✓ مصروف" else "مصروف") }
                 }
-                OutlinedTextField(amount, { amount = it }, modifier = Modifier.fillMaxWidth(), label = { Text("المبلغ") }, singleLine = true)
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = { currencyCode = "SYP"; exchangeRate = "1" }) {
-                        Text(if (currencyCode == "SYP") "✓ ليرة سورية" else "ليرة سورية")
-                    }
-                    TextButton(onClick = { currencyCode = "USD"; exchangeRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1" }) {
-                        Text(if (currencyCode == "USD") "✓ دولار أمريكي" else "دولار أمريكي")
-                    }
+
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("المبلغ") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { currencyCode = "SYP"; exchangeRate = "1" },
+                        modifier = Modifier.weight(1f).height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (currencyCode == "SYP") BrandBlue else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (currencyCode == "SYP") Color.White else Ink
+                        )
+                    ) { Text(if (currencyCode == "SYP") "✓ ليرة سورية" else "ليرة سورية", fontSize = 12.sp) }
+                    Button(
+                        onClick = {
+                            currencyCode = "USD"
+                            exchangeRate = context.getSharedPreferences(
+                                "good_girl_settings",
+                                android.content.Context.MODE_PRIVATE
+                            ).getString("usd_syp_rate", "1") ?: "1"
+                        },
+                        modifier = Modifier.weight(1f).height(44.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (currencyCode == "USD") BrandBlue else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (currencyCode == "USD") Color.White else Ink
+                        )
+                    ) { Text(if (currencyCode == "USD") "✓ دولار أمريكي" else "دولار أمريكي", fontSize = 12.sp) }
                 }
+
                 if (currencyCode == "USD") {
-                    OutlinedTextField(exchangeRate, { exchangeRate = it }, modifier = Modifier.fillMaxWidth(), label = { Text("سعر صرف الدولار مقابل الليرة") }, singleLine = true)
+                    OutlinedTextField(
+                        value = exchangeRate,
+                        onValueChange = { exchangeRate = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("سعر صرف الدولار مقابل الليرة") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        shape = RoundedCornerShape(12.dp)
+                    )
                 }
-                OutlinedTextField(description, { description = it }, modifier = Modifier.fillMaxWidth(), label = { Text("البيان أو سبب الحركة") }, minLines = 2)
+
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("البيان أو سبب الحركة") },
+                    minLines = 2,
+                    shape = RoundedCornerShape(12.dp)
+                )
+
                 Button(
                     onClick = {
                         scope.launch {
@@ -2638,7 +2761,9 @@ private fun CashManagementScreen(
                         }
                     },
                     enabled = !isSaving,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BrandBlue)
                 ) {
                     Text(if (isSaving) "جارٍ الحفظ..." else if (selectedKind == "INCOME") "تسجيل الإيراد" else "تسجيل المصروف")
                 }
@@ -2650,13 +2775,24 @@ private fun CashManagementScreen(
 
         Text("ملخص الصندوق حسب العملة", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
         if (totals.isEmpty()) {
-            Text("لا توجد حركات نقدية مسجلة بعد.", color = MutedText, fontSize = 13.sp)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
+            ) {
+                Text("لا توجد حركات نقدية مسجلة بعد.", modifier = Modifier.padding(18.dp), color = MutedText)
+            }
         } else {
             totals.forEach { (currency, pair) ->
                 val net = pair.first.subtract(pair.second)
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
-                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Text(currency, color = BrandBlue, fontWeight = FontWeight.Bold)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text(currency, color = BrandBlue, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Text("إجمالي المقبوض: " + pair.first.stripTrailingZeros().toPlainString(), color = SoftGreen, fontSize = 13.sp)
                         Text("إجمالي المصروف: " + pair.second.stripTrailingZeros().toPlainString(), color = SoftRed, fontSize = 13.sp)
                         Text("صافي الحركات: " + net.stripTrailingZeros().toPlainString(), color = Ink, fontWeight = FontWeight.Bold)
@@ -2667,7 +2803,11 @@ private fun CashManagementScreen(
 
         Text("آخر حركات الصندوق", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
         if (cashMovements.isEmpty()) {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
+            ) {
                 Text("لا توجد حركات بعد.", modifier = Modifier.padding(18.dp), color = MutedText)
             }
         } else {
@@ -2676,8 +2816,12 @@ private fun CashManagementScreen(
                 val date = remember(entry.occurredAt) {
                     SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(entry.occurredAt))
                 }
-                Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(12.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(if (isIn) "قبض" else "صرف", color = if (isIn) SoftGreen else SoftRed, fontWeight = FontWeight.Bold)
                         Text(entry.amount + " " + entry.currencyCode, color = Ink, fontWeight = FontWeight.SemiBold)
                         Text(date, color = MutedText, fontSize = 11.sp)
