@@ -85,10 +85,10 @@ object HistoricalStockCostCalculator {
         }
 
         events.forEach { event ->
-            require(
-                event.occurredAt > baseline.effectiveAt ||
-                    (event.occurredAt == baseline.effectiveAt && event.recordedAt > baseline.recordedAt)
-            ) {
+            require(event.recordedAt > baseline.recordedAt) {
+                "هذه الحركة مسجلة قبل نقطة البداية أو ضمن رصيدها الافتتاحي"
+            }
+            require(event.occurredAt >= baseline.effectiveAt) {
                 "تاريخ الحركة يسبق نقطة البداية الموثوقة للمخزون؛ لا يمكن إعادة احتساب هذه الفترة بأمان"
             }
         }
@@ -145,6 +145,11 @@ object HistoricalStockCostCalculator {
 
             if (delta > ZERO) {
                 if (quantity.compareTo(ZERO) == 0) {
+                    if (currency != null) {
+                        require(currency == eventCurrency) {
+                            "عملة حركة الإضافة لا تطابق عملة المنتج؛ سجّل تصحيح العملة أولاً"
+                        }
+                    }
                     currency = eventCurrency
                     averageCost = unitCost
                 } else {
