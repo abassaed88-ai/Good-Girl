@@ -95,6 +95,7 @@ import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
 import com.goodgirl.accounting.domain.ProductInputRules
+import com.goodgirl.accounting.domain.ProductSearchRules
 import com.goodgirl.accounting.domain.StockInputRules
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
@@ -4382,6 +4383,7 @@ private fun DailySalesScreen(
     val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
     val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
     val products by database.productDao().observeActiveProducts().collectAsState(initial = emptyList())
+    val categories by database.categoryDao().observeAll().collectAsState(initial = emptyList())
     val customers by database.partyDao().observeByKind("CUSTOMER").collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
@@ -4399,6 +4401,9 @@ private fun DailySalesScreen(
     var selectedUnitName by remember { mutableStateOf<String?>(null) }
     var selectedPartyId by remember { mutableStateOf<String?>(null) }
     var productMenuExpanded by remember { mutableStateOf(false) }
+    var productSearchQuery by remember { mutableStateOf("") }
+    var selectedProductCategoryId by remember { mutableStateOf<String?>(null) }
+    var categoryMenuExpanded by remember { mutableStateOf(false) }
     var unitMenuExpanded by remember { mutableStateOf(false) }
     var partyMenuExpanded by remember { mutableStateOf(false) }
     var quantity by remember { mutableStateOf("1") }
@@ -4416,6 +4421,17 @@ private fun DailySalesScreen(
     val productUnits by database.productUnitDao()
         .observeForProduct(selectedProductId ?: "")
         .collectAsState(initial = emptyList())
+    val filteredProducts = remember(products, productSearchQuery, selectedProductCategoryId) {
+        products.filter { product ->
+            ProductSearchRules.matches(
+                name = product.name,
+                sku = product.sku,
+                productCategoryId = product.categoryId,
+                query = productSearchQuery,
+                selectedCategoryId = selectedProductCategoryId
+            )
+        }
+    }
     val selectedProduct = products.firstOrNull { it.id == selectedProductId }
     val selectedUnit = productUnits.firstOrNull { it.unitName == selectedUnitName }
         ?: productUnits.firstOrNull { it.isBaseUnit }
@@ -4555,6 +4571,36 @@ private fun DailySalesScreen(
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 Text("إضافة مبيعة", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                OutlinedTextField(
+                    value = productSearchQuery,
+                    onValueChange = { productSearchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("البحث باسم المادة أو رمزها") },
+                    singleLine = true
+                )
+                Box {
+                    Button(
+                        onClick = { categoryMenuExpanded = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(categories.firstOrNull { it.id == selectedProductCategoryId }?.name ?: "كل التصنيفات")
+                    }
+                    DropdownMenu(
+                        expanded = categoryMenuExpanded,
+                        onDismissRequest = { categoryMenuExpanded = false }
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text("كل التصنيفات") },
+                            onClick = { selectedProductCategoryId = null; categoryMenuExpanded = false }
+                        )
+                        categories.forEach { category ->
+                            DropdownMenuItem(
+                                text = { Text(category.name) },
+                                onClick = { selectedProductCategoryId = category.id; categoryMenuExpanded = false }
+                            )
+                        }
+                    }
+                }
                 Box {
                     Button(
                         onClick = { productMenuExpanded = true },
@@ -4566,7 +4612,7 @@ private fun DailySalesScreen(
                         expanded = productMenuExpanded,
                         onDismissRequest = { productMenuExpanded = false }
                     ) {
-                        products.forEach { product ->
+                        filteredProducts.forEach { product ->
                             DropdownMenuItem(
                                 text = { Text(product.name + " — المتوفر: " + product.stockQuantity + " " + product.baseUnit) },
                                 onClick = {
@@ -4583,6 +4629,13 @@ private fun DailySalesScreen(
                             )
                         }
                     }
+                }
+                if (filteredProducts.isEmpty()) {
+                    Text(
+                        if (products.isEmpty()) "لا توجد مواد مسجلة." else "لا توجد مواد تطابق البحث أو التصنيف.",
+                        color = MutedText,
+                        fontSize = 12.sp
+                    )
                 }
 
                 if (selectedProduct != null) {
