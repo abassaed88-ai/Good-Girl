@@ -17,6 +17,19 @@ data class HistoricalStockCostEvent(
     val recordedAt: Long
 )
 
+/**
+ * A trusted stock-cost starting point. It represents the inventory state after
+ * every movement at or before the (effectiveAt, recordedAt) boundary.
+ */
+data class HistoricalStockCostBaseline(
+    val productId: String,
+    val quantity: String,
+    val averageCost: String,
+    val currencyCode: String,
+    val effectiveAt: Long,
+    val recordedAt: Long
+)
+
 data class HistoricalStockCostResult(
     val endingQuantity: String,
     val endingAverageCost: String,
@@ -39,14 +52,68 @@ object HistoricalStockCostCalculator {
     private const val CURRENCY_CORRECTION = "PRODUCT_CURRENCY_CORRECTION"
     private const val COST_RECALCULATION_AUDIT = "STOCK_COST_RECALCULATION_AUDIT"
 
-    fun recalculate(events: List<HistoricalStockCostEvent>): HistoricalStockCostResult {
+    /**
+     * Compatibility replay from an empty inventory. New repository code must
+     * use the baseline overload so incomplete legacy history cannot be treated
+     * as a complete stock ledger by accident.
+     */
+    fun recalculate(events: List<HistoricalStockCostEvent>): HistoricalStockCostResult =
+        replay(
+            events = events,
+            initialQuantity = ZERO,
+            initialAverageCost = ZERO,
+            initialCurrency = null
+        )
+
+    /**
+     * Replays only post-baseline events. An event dated before the trusted
+     * boundary (or already included at that exact boundary) is rejected.
+     */
+    fun recalculate(
+        baseline: HistoricalStockCostBaseline,
+        events: List<HistoricalStockCostEvent>
+    ): HistoricalStockCostResult {
+        require(baseline.productId.isNotBlank()) { "معرّف المنتج مطلوب لنقطة بداية المخزون" }
+        require(baseline.effectiveAt >= 0L && baseline.recordedAt >= 0L) {
+            "تاريخ نقطة بداية المخزون غير صالح"
+        }
+        val initialQuantity = nonNegative(baseline.quantity, "كمية نقطة بداية المخزون")
+        val initialAverageCost = nonNegative(baseline.averageCost, "متوسط كلفة نقطة بداية المخزون")
+        val initialCurrency = baseline.currencyCode.trim().uppercase()
+        require(initialCurrency == "SYP" || initialCurrency == "USD") {
+            "عملة نقطة بداية المخزون غير مدعومة"
+        }
+
+        events.forEach { event ->
+            require(
+                event.occurredAt > baseline.effectiveAt ||
+                    (event.occurredAt == baseline.effectiveAt && event.recordedAt > baseline.recordedAt)
+            ) {
+                "تاريخ الحركة يسبق نقطة البداية الموثوقة للمخزون؛ لا يمكن إعادة احتساب هذه الفترة بأمان"
+            }
+        }
+
+        return replay(
+            events = events,
+            initialQuantity = initialQuantity,
+            initialAverageCost = initialAverageCost,
+            initialCurrency = initialCurrency
+        )
+    }
+
+    private fun replay(
+        events: List<HistoricalStockCostEvent>,
+        initialQuantity: BigDecimal,
+        initialAverageCost: BigDecimal,
+        initialCurrency: String?
+    ): HistoricalStockCostResult {
         require(events.map { it.id }.toSet().size == events.size) {
             "معرّفات حركات المخزون يجب أن تكون فريدة"
         }
 
-        var quantity = ZERO
-        var averageCost = ZERO
-        var currency: String? = null
+        var quantity = initialQuantity
+        var averageCost = initialAverageCost
+        var currency: String? = initialCurrency
         val stockOutCosts = linkedMapOf<String, String>()
 
         events.sortedWith(
