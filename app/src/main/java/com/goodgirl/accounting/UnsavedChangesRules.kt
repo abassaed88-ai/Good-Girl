@@ -166,6 +166,8 @@ internal fun hasUnsavedManualJournalDraft(
 
 internal fun hasUnsavedReversalDraft(reason: String): Boolean = reason.isNotBlank()
 
+internal fun normalizeAppFontScale(value: Float): Float = value.coerceIn(0.9f, 1.2f)
+
 internal fun hasUnsavedBackupDraft(
     exportPassword: String,
     confirmExportPassword: String,

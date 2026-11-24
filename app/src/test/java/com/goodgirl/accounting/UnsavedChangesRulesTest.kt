@@ -1,6 +1,7 @@
 package com.goodgirl.accounting
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -302,5 +303,13 @@ class UnsavedChangesRulesTest {
                 confirmRestore = true
             )
         )
+    }
+
+
+    @Test
+    fun fontScaleIsClampedToReadableSupportedRange() {
+        assertEquals(0.9f, normalizeAppFontScale(0.5f))
+        assertEquals(1.0f, normalizeAppFontScale(1.0f))
+        assertEquals(1.2f, normalizeAppFontScale(1.8f))
     }
 }

@@ -29,6 +29,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Slider
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -51,9 +52,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.goodgirl.accounting.data.AccountingBackupManager
@@ -169,6 +172,9 @@ private fun GoodGirlApp() {
     var darkThemeEnabled by remember {
         mutableStateOf(settingsPreferences.getBoolean("dark_theme_enabled", false))
     }
+    var fontScale by remember {
+        mutableStateOf(normalizeAppFontScale(settingsPreferences.getFloat("font_scale", 1.0f)))
+    }
     val selectedPalette = if (darkThemeEnabled) DarkPalette else LightPalette
     SideEffect {
         activePalette = selectedPalette
@@ -233,6 +239,13 @@ private fun GoodGirlApp() {
     BackHandler(enabled = activePage != "dashboard") {
         requestNavigation(backTargetPage)
     }
+    val baseDensity = LocalDensity.current
+    CompositionLocalProvider(
+        LocalDensity provides Density(
+            density = baseDensity.density,
+            fontScale = baseDensity.fontScale * fontScale
+        )
+    ) {
     MaterialTheme(
         colorScheme = if (darkThemeEnabled) {
             darkColorScheme(
@@ -311,6 +324,12 @@ private fun GoodGirlApp() {
                     onDarkThemeChanged = { enabled ->
                         settingsPreferences.edit().putBoolean("dark_theme_enabled", enabled).apply()
                         darkThemeEnabled = enabled
+                    },
+                    fontScale = fontScale,
+                    onFontScaleChanged = { scale ->
+                        val normalized = normalizeAppFontScale(scale)
+                        settingsPreferences.edit().putFloat("font_scale", normalized).apply()
+                        fontScale = normalized
                     },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
@@ -466,6 +485,7 @@ private fun GoodGirlApp() {
             }
             }
         }
+    }
     }
 }
 
@@ -823,6 +843,8 @@ private fun SettingsScreen(
     onBack: () -> Unit,
     isDarkTheme: Boolean,
     onDarkThemeChanged: (Boolean) -> Unit,
+    fontScale: Float,
+    onFontScaleChanged: (Float) -> Unit,
     onUnsavedChangesChanged: (Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -908,6 +930,33 @@ private fun SettingsScreen(
                     checked = isDarkTheme,
                     onCheckedChange = onDarkThemeChanged
                 )
+            }
+        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = CardSurface)
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text("حجم الخط", color = Ink, fontWeight = FontWeight.Bold)
+                Text(
+                    "${(fontScale * 100).toInt()}% — يتغير حجم النص في جميع شاشات التطبيق",
+                    color = MutedText,
+                    fontSize = 12.sp
+                )
+                Slider(
+                    value = fontScale,
+                    onValueChange = onFontScaleChanged,
+                    valueRange = 0.9f..1.2f,
+                    steps = 5
+                )
+                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                    Text("90%", color = MutedText, fontSize = 11.sp)
+                    Text("120%", color = MutedText, fontSize = 11.sp)
+                }
             }
         }
         Card(
