@@ -148,8 +148,7 @@ class BackupIntegrityValidatorTest {
                 ),
                 units = listOf(baseUnit(), ProductUnitEntity("u2", "p2", "قطعة", "1", true)),
                 movements = listOf(
-                    StockMovementEntity("m1", "p1", "4", "3", "SYP", "OPENING_BALANCE", "p1", 1L),
-                    StockMovementEntity("m2", "p2", "0.5", "3", "SYP", "OPENING_BALANCE", "p2", 1L)
+                    StockMovementEntity("m1", "p1", "4", "3", "SYP", "OPENING_BALANCE", "p1", 1L)
                 )
             )
         }
