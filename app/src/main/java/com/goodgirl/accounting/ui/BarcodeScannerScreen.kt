@@ -83,12 +83,14 @@ fun BarcodeScannerScreen(
         if (!hasPermission) permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    DisposableEffect(scanner, executor, cameraProvider) {
+    DisposableEffect(scanner, executor) {
         onDispose {
-            cameraProvider?.unbindAll()
             scanner.close()
             executor.shutdown()
         }
+    }
+    DisposableEffect(cameraProvider) {
+        onDispose { cameraProvider?.unbindAll() }
     }
 
     Column(
