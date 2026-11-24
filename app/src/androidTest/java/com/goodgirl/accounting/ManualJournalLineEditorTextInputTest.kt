@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -44,23 +45,31 @@ class ManualJournalLineEditorTextInputTest {
             }
         }
 
-        val firstField = composeRule.onNodeWithTag("manual-journal-memo-first")
-        val secondField = composeRule.onNodeWithTag("manual-journal-memo-second")
+        val firstTag = "manual-journal-memo-first"
+        val secondTag = "manual-journal-memo-second"
+        val firstField = composeRule.onNodeWithTag(firstTag)
+        val secondField = composeRule.onNodeWithTag(secondTag)
 
-        firstField.performTextInput("عطر ورد")
-        composeRule.runOnIdle { assertEquals("عطر ورد", lines[0].memo) }
-        composeRule.runOnIdle {
-            assertEquals("عطر ورد", lines[0].memo)
+        var firstExpected = ""
+        "عطر ورد".forEach { character ->
+            firstExpected += character
+            firstField.performTextInput(character.toString())
+            assertEditableText(firstTag, firstExpected)
+            composeRule.runOnIdle {
+                assertEquals(firstExpected, lines[0].memo)
+            }
         }
 
-        secondField.performTextInput("ملاحظة عربية")
-        composeRule.runOnIdle { assertEquals("ملاحظة عربية", lines[1].memo) }
-        composeRule.runOnIdle {
-            assertEquals("عطر ورد", lines[0].memo)
-            assertEquals("ملاحظة عربية", lines[1].memo)
+        var secondExpected = ""
+        "ملاحظة عربية".forEach { character ->
+            secondExpected += character
+            secondField.performTextInput(character.toString())
+            assertEditableText(secondTag, secondExpected)
         }
 
         firstField.performClick()
+        assertEditableText(firstTag, "عطر ورد")
+        assertEditableText(secondTag, "ملاحظة عربية")
         composeRule.runOnIdle {
             assertEquals("عطر ورد", lines[0].memo)
             assertEquals("ملاحظة عربية", lines[1].memo)
@@ -89,18 +98,33 @@ class ManualJournalLineEditorTextInputTest {
             }
         }
 
-        val memo = composeRule.onNodeWithTag("manual-journal-memo-first")
-        memo.performTextInput("عطر ورد")
+        val memoTag = "manual-journal-memo-first"
+        val memo = composeRule.onNodeWithTag(memoTag)
+        "عطر ورد".forEach { memo.performTextInput(it.toString()) }
+        assertEditableText(memoTag, "عطر ورد")
+
         memo.performTextInputSelection(TextRange(4))
         memo.performTextInput("فاخر ")
-        composeRule.runOnIdle { assertEquals("عطر فاخر ورد", lines[0].memo) }
+        assertEditableText(memoTag, "عطر فاخر ورد")
+        composeRule.runOnIdle {
+            assertEquals("عطر فاخر ورد", lines[0].memo)
+        }
 
         memo.performTextInputSelection(TextRange(4, 9))
         memo.performTextInput("مميز ")
-        composeRule.runOnIdle { assertEquals("عطر مميز ورد", lines[0].memo) }
+        assertEditableText(memoTag, "عطر مميز ورد")
         composeRule.runOnIdle {
             assertEquals("عطر مميز ورد", lines[0].memo)
         }
+    }
+
+    private fun assertEditableText(tag: String, expected: String) {
+        composeRule.waitForIdle()
+        val actual = composeRule.onNodeWithTag(tag)
+            .fetchSemanticsNode()
+            .config[SemanticsProperties.EditableText]
+            .text
+        assertEquals("Editable text for $tag", expected, actual)
     }
 
     private fun testLines() = mutableStateListOf(
