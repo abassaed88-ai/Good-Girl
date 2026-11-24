@@ -140,6 +140,103 @@ class HistoricalStockCostCalculatorTest {
         }
     }
 
+    @Test
+    fun replaysEventsFromTrustedBaselineWithoutReplayingLegacyRows() {
+        val baseline = HistoricalStockCostBaseline(
+            productId = "product-1",
+            quantity = "8",
+            averageCost = "12",
+            currencyCode = "SYP",
+            effectiveAt = 100,
+            recordedAt = 200
+        )
+        val result = HistoricalStockCostCalculator.recalculate(
+            baseline,
+            listOf(
+                event("purchase-after-baseline", "PURCHASE_INVOICE", "2", "20", "SYP", 120, 210),
+                event("sale-after-purchase", "SALE_INVOICE", "-3", "12", "SYP", 150, 220)
+            )
+        )
+
+        assertDecimal("7", result.endingQuantity)
+        assertDecimal("13.6", result.endingAverageCost)
+        assertDecimal("13.6", result.stockOutUnitCosts.getValue("sale-after-purchase"))
+        assertEquals("SYP", result.currencyCode)
+    }
+
+    @Test
+    fun rejectsBackdatedMovementBeforeTrustedBaseline() {
+        val baseline = HistoricalStockCostBaseline(
+            productId = "product-1",
+            quantity = "5",
+            averageCost = "10",
+            currencyCode = "SYP",
+            effectiveAt = 100,
+            recordedAt = 200
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            HistoricalStockCostCalculator.recalculate(
+                baseline,
+                listOf(event("too-old", "PURCHASE_INVOICE", "1", "8", "SYP", 99, 300))
+            )
+        }
+    }
+
+    @Test
+    fun rejectsMovementAlreadyIncludedAtExactBaselineBoundary() {
+        val baseline = HistoricalStockCostBaseline(
+            productId = "product-1",
+            quantity = "5",
+            averageCost = "10",
+            currencyCode = "SYP",
+            effectiveAt = 100,
+            recordedAt = 200
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            HistoricalStockCostCalculator.recalculate(
+                baseline,
+                listOf(event("already-included", "PURCHASE_INVOICE", "1", "8", "SYP", 100, 200))
+            )
+        }
+    }
+
+    @Test
+    fun allowsSameBusinessTimestampOnlyWhenRecordedAfterBaselineSnapshot() {
+        val baseline = HistoricalStockCostBaseline(
+            productId = "product-1",
+            quantity = "1",
+            averageCost = "10",
+            currencyCode = "SYP",
+            effectiveAt = 100,
+            recordedAt = 200
+        )
+        val result = HistoricalStockCostCalculator.recalculate(
+            baseline,
+            listOf(event("same-time-later-record", "PURCHASE_INVOICE", "1", "20", "SYP", 100, 201))
+        )
+
+        assertDecimal("2", result.endingQuantity)
+        assertDecimal("15", result.endingAverageCost)
+    }
+
+    @Test
+    fun rejectsInvalidTrustedBaseline() {
+        val baseline = HistoricalStockCostBaseline(
+            productId = "product-1",
+            quantity = "-1",
+            averageCost = "10",
+            currencyCode = "SYP",
+            effectiveAt = 100,
+            recordedAt = 200
+        )
+
+        assertThrows(IllegalArgumentException::class.java) {
+            HistoricalStockCostCalculator.recalculate(baseline, emptyList())
+        }
+    }
+
     private fun event(
         id: String,
         sourceType: String,
