@@ -8,6 +8,7 @@ class NavigationRulesTest {
     @Test
     fun detailScreensReturnToTheirParentScreen() {
         assertEquals("general_accounting", previousAppPage("chart_of_accounts"))
+        assertEquals("general_accounting", previousAppPage("period_close"))
         assertEquals("chart_of_accounts", previousAppPage("account_ledger"))
         assertEquals("products", previousAppPage("categories"))
         assertEquals("products", previousAppPage("product_units"))
