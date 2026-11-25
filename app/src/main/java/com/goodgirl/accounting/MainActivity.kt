@@ -1754,6 +1754,7 @@ private fun InvoiceManagementScreen(
     var isSavingPayment by remember { mutableStateOf(false) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
+    var showInventoryLookupScanner by remember { mutableStateOf(false) }
 
     val productUnits by database.productUnitDao()
         .observeForProduct(selectedProductId ?: "")
@@ -4867,6 +4868,10 @@ private fun ProductManagementScreen(
             label = { Text("بحث باسم المنتج أو الرمز أو التصنيف") },
             singleLine = true
         )
+        TextButton(
+            onClick = { showInventoryLookupScanner = true },
+            modifier = Modifier.fillMaxWidth()
+        ) { Text("مسح الباركود للعثور على المادة وفتح الجرد") }
         TextButton(onClick = { showLowStockOnly = !showLowStockOnly }) {
             Text(if (showLowStockOnly) "عرض جميع المنتجات" else "عرض المواد منخفضة المخزون فقط")
         }
@@ -4912,6 +4917,40 @@ private fun ProductManagementScreen(
             }
         }
     }
+    if (showInventoryLookupScanner) {
+        Dialog(
+            onDismissRequest = { showInventoryLookupScanner = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = activePalette.background) {
+                BarcodeScannerScreen(
+                    onBarcodeDetected = { value, _ ->
+                        scope.launch {
+                            try {
+                                val product = barcodeRepository.findProductByBarcode(value)
+                                    ?.takeIf { it.isActive }
+                                    ?: throw IllegalArgumentException("لا توجد مادة فعالة مرتبطة بهذا الباركود")
+                                if (hasUnsavedProductChanges) {
+                                    throw IllegalStateException("احفظ أو ألغِ مسودة المادة الحالية قبل فتح الجرد بالباركود")
+                                }
+                                searchQuery = product.name
+                                startStockAdjustment(product)
+                                stocktakeMode = true
+                                countedQuantity = product.stockQuantity
+                                stockMessage = "تم العثور على " + product.name + "؛ أدخل الكمية الفعلية لإكمال الجرد."
+                            } catch (error: Exception) {
+                                message = error.message ?: "تعذر العثور على المادة بالباركود"
+                            } finally {
+                                showInventoryLookupScanner = false
+                            }
+                        }
+                    },
+                    onClose = { showInventoryLookupScanner = false }
+                )
+            }
+        }
+    }
+
     if (showBarcodeScanner && barcodeProductId != null) {
         Dialog(
             onDismissRequest = { showBarcodeScanner = false },
