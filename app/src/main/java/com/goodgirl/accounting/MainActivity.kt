@@ -398,7 +398,11 @@ private fun GoodGirlApp() {
                 "general_accounting" -> GeneralAccountingHubScreen(
                     onBack = { activePage = "dashboard" },
                     onOpenChart = { activePage = "chart_of_accounts" },
-                    onOpenJournal = { activePage = "journal_book" }
+                    onOpenJournal = { activePage = "journal_book" },
+                    onOpenPeriodClose = { activePage = "period_close" }
+                )
+                "period_close" -> PeriodClosingScreen(
+                    onBack = { activePage = "general_accounting" }
                 )
                 "chart_of_accounts" -> ChartOfAccountsScreen(
                     onBack = { activePage = "general_accounting" },
