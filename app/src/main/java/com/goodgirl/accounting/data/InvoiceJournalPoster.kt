@@ -39,6 +39,7 @@ internal object InvoiceJournalPoster {
             account(INVENTORY, "1200", "المخزون", "ASSET", "DEBIT"),
             account(PAYABLES, "2000", "ذمم الموردين", "LIABILITY", "CREDIT"),
             account("SYS-3000", "3000", "رأس المال", "EQUITY", "CREDIT"),
+            account("SYS-3100", "3100", "الأرباح المحتجزة", "EQUITY", "CREDIT"),
             account(SALES, "4000", "المبيعات", "REVENUE", "CREDIT"),
             account(COST_OF_GOODS_SOLD, "5000", "تكلفة البضاعة المباعة", "EXPENSE", "DEBIT"),
             account("SYS-6000", "6000", "إيرادات أخرى", "REVENUE", "CREDIT"),
