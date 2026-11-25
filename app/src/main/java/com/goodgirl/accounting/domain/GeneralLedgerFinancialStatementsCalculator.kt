@@ -98,7 +98,7 @@ object GeneralLedgerFinancialStatementsCalculator {
                 balance[0] = balance[0].add(debit)
                 balance[1] = balance[1].add(credit)
 
-                if (entry.occurredAt in periodStartInclusive..periodEndInclusive) {
+                if (entry.occurredAt in periodStartInclusive..periodEndInclusive && entry.sourceType != "PERIOD_CLOSE") {
                     val flow = periodFlows.getOrPut(key) { mutableListOf(BigDecimal.ZERO, BigDecimal.ZERO) }
                     flow[0] = flow[0].add(debit)
                     flow[1] = flow[1].add(credit)
