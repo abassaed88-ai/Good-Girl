@@ -45,6 +45,8 @@ class PeriodClosingRepositoryIntegrationTest {
             assertEquals("PERIOD_CLOSE", closing.sourceType)
             val closingLines = database.journalLineDao().getForEntry(closingId)
             assertEquals(3, closingLines.size)
+            assertTrue(closingLines.any { it.accountId == accounts.getValue("3100").id })
+            assertTrue(closingLines.none { it.accountId == accounts.getValue("3000").id })
             assertEquals(
                 0,
                 closingLines.fold(java.math.BigDecimal.ZERO) { total, line -> total.add(line.debit.toBigDecimal()) }
