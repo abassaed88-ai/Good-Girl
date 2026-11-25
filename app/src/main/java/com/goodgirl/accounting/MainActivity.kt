@@ -4783,7 +4783,30 @@ private fun DailySalesScreen(
                 }.timeInMillis
             }) { Text("اليوم السابق") }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(dayLabel, color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                TextButton(
+                    onClick = {
+                        val selectedDate = Calendar.getInstance().apply { timeInMillis = selectedDay }
+                        val dialog = android.app.DatePickerDialog(
+                            context,
+                            { _, year, month, dayOfMonth ->
+                                selectedDay = Calendar.getInstance().apply {
+                                    set(Calendar.YEAR, year)
+                                    set(Calendar.MONTH, month)
+                                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                    set(Calendar.HOUR_OF_DAY, 0)
+                                    set(Calendar.MINUTE, 0)
+                                    set(Calendar.SECOND, 0)
+                                    set(Calendar.MILLISECOND, 0)
+                                }.timeInMillis
+                            },
+                            selectedDate.get(Calendar.YEAR),
+                            selectedDate.get(Calendar.MONTH),
+                            selectedDate.get(Calendar.DAY_OF_MONTH)
+                        )
+                        dialog.datePicker.maxDate = System.currentTimeMillis()
+                        dialog.show()
+                    }
+                ) { Text(dayLabel, color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp) }
                 TextButton(onClick = {
                     selectedDay = Calendar.getInstance().apply {
                         set(Calendar.HOUR_OF_DAY, 0)
@@ -4801,6 +4824,11 @@ private fun DailySalesScreen(
             }) { Text("اليوم التالي") }
         }
 
+        Text(
+            "سيتم تسجيل المبيعة الجديدة بتاريخ $dayLabel",
+            color = MutedText,
+            fontSize = 11.sp
+        )
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(18.dp),
@@ -5022,8 +5050,15 @@ private fun DailySalesScreen(
                                         "المبلغ المقبوض"
                                     )
                                     InvoicePostingRules.calculateLineTotal(cleanQuantity, cleanPrice, cleanDiscount)
-                                    val issuedAt = System.currentTimeMillis()
-                                    val invoiceNumber = "DS-" + issuedAt + "-" + UUID.randomUUID().toString().take(8)
+                                    val timeNow = Calendar.getInstance()
+                                    val issuedAt = Calendar.getInstance().apply {
+                                        timeInMillis = selectedDay
+                                        set(Calendar.HOUR_OF_DAY, timeNow.get(Calendar.HOUR_OF_DAY))
+                                        set(Calendar.MINUTE, timeNow.get(Calendar.MINUTE))
+                                        set(Calendar.SECOND, timeNow.get(Calendar.SECOND))
+                                        set(Calendar.MILLISECOND, timeNow.get(Calendar.MILLISECOND))
+                                    }.timeInMillis
+                                    val invoiceNumber = "DS-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().take(8)
                                     val result = repository.postInvoice(
                                         invoiceNumber = invoiceNumber,
                                         kind = "SALE",
@@ -5043,12 +5078,6 @@ private fun DailySalesScreen(
                                         issuedAt = issuedAt,
                                         note = note.trim()
                                     )
-                                    selectedDay = Calendar.getInstance().apply {
-                                        set(Calendar.HOUR_OF_DAY, 0)
-                                        set(Calendar.MINUTE, 0)
-                                        set(Calendar.SECOND, 0)
-                                        set(Calendar.MILLISECOND, 0)
-                                    }.timeInMillis
                                     selectedProductId = null
                                     selectedUnitName = null
                                     selectedPartyId = null
@@ -5175,6 +5204,14 @@ private fun DailySalesScreen(
                                     fontSize = 9.sp,
                                     maxLines = 1
                                 )
+                                if (row.note.isNotBlank()) {
+                                    Text(
+                                        row.note,
+                                        color = MutedText,
+                                        fontSize = 9.sp,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                             Text(
                                 row.quantity + " " + row.unitName,
