@@ -84,8 +84,10 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
         fun isClosedDate(entries: List<JournalEntryEntity>, currencyCode: String, occurredAt: Long): Boolean =
             entries.asSequence()
                 .filter { it.sourceType == SOURCE_TYPE && it.currencyCode == currencyCode }
-                .mapNotNull { decodeRange(it.sourceId) }
-                .any { occurredAt in it.first..it.second }
+                .any { entry ->
+                val range = decodeRange(entry.sourceId) ?: return@any true
+                occurredAt in range.first..range.second
+            }
 
         private fun encodeRange(currency: String, start: Long, end: Long): String {
             require(currency == "SYP" || currency == "USD") { "عملة الإغلاق غير مدعومة" }
