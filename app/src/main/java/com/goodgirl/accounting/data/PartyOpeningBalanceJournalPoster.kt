@@ -64,6 +64,7 @@ internal object PartyOpeningBalanceJournalPoster {
             )
         }
         val normalized = JournalEntryRules.normalize(currencyCode, exchangeRateSnapshot, lines)
+        PeriodClosingGuard.ensureOpen(database, normalized.currencyCode, occurredAt)
         val entryId = UUID.randomUUID().toString()
         database.journalEntryDao().insert(
             JournalEntryEntity(
