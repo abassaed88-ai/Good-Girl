@@ -103,6 +103,7 @@ internal object InvoiceJournalPoster {
         require(database.journalEntryDao().findBySource(sourceType, invoice.id) == null) {
             "تم إنشاء قيد محاسبي لهذه الفاتورة مسبقاً"
         }
+        PeriodClosingGuard.ensureOpen(database, normalized.currencyCode, occurredAt)
         val entryId = UUID.randomUUID().toString()
         database.journalEntryDao().insert(
             JournalEntryEntity(
