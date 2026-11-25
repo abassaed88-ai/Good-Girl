@@ -31,27 +31,25 @@ class ProductBarcodeLabelPdfExporterTest {
                 createdAt = 1L,
                 updatedAt = 1L
             )
-            val barcode = ProductBarcodeEntity(
-                id = "BARCODE-1",
-                productId = product.id,
-                barcodeValue = "4006381333931",
-                format = "EAN_13",
-                origin = "ORIGINAL",
-                createdAt = 1L
+            val barcodes = listOf(
+                ProductBarcodeEntity("EAN13", product.id, "4006381333931", "EAN_13", "ORIGINAL", 1L),
+                ProductBarcodeEntity("EAN8", product.id, "96385074", "EAN_8", "ORIGINAL", 1L),
+                ProductBarcodeEntity("UPCA", product.id, "036000291452", "UPC_A", "ORIGINAL", 1L),
+                ProductBarcodeEntity("CODE128", product.id, "GG123456789012", "CODE_128", "INTERNAL", 1L)
             )
 
             val labelCount = ProductBarcodeLabelPdfExporter.write(
                 context = context,
                 destination = Uri.fromFile(output),
                 product = product,
-                barcodes = listOf(barcode),
-                copiesPerBarcode = 3,
+                barcodes = barcodes,
+                copiesPerBarcode = 2,
                 includePrice = false,
                 columns = 3,
                 rows = 8
             )
 
-            assertEquals(3, labelCount)
+            assertEquals(8, labelCount)
             assertTrue(output.exists())
             assertTrue(output.length() > 500L)
             val header = output.inputStream().use {
