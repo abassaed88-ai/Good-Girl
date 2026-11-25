@@ -52,6 +52,7 @@ internal object ProductOpeningStockJournalPoster {
                 JournalLineDraft(EQUITY, credit = amount, memo = "مقابل المخزون الافتتاحي")
             )
         )
+        PeriodClosingGuard.ensureOpen(database, normalized.currencyCode, occurredAt)
         val entryId = UUID.randomUUID().toString()
         database.journalEntryDao().insert(
             JournalEntryEntity(
