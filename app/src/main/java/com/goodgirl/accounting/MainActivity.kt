@@ -3495,6 +3495,25 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val product by database.productDao().observeProduct(productId).collectAsState(initial = null)
     val movements by database.stockMovementDao().observeForProduct(productId).collectAsState(initial = emptyList())
+    val costAudits by database.stockCostRecalculationAuditDao().observeAll().collectAsState(initial = emptyList())
+    val costAuditItems by database.stockCostRecalculationItemDao().observeAll().collectAsState(initial = emptyList())
+    val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
+    val productCostAudits = remember(costAudits, productId) {
+        costAudits.filter { it.productId == productId }.sortedWith(
+            compareByDescending<com.goodgirl.accounting.data.local.StockCostRecalculationAuditEntity> { it.createdAt }
+                .thenByDescending { it.id }
+        )
+    }
+    val latestCostByMovement = remember(costAudits, costAuditItems) {
+        val auditsById = costAudits.associateBy { it.id }
+        costAuditItems.groupBy { it.movementId }.mapValues { (_, items) ->
+            items.maxWithOrNull(
+                compareBy<com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity> {
+                    auditsById[it.auditId]?.createdAt ?: Long.MIN_VALUE
+                }.thenBy { it.auditId }
+            )!!
+        }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -3518,6 +3537,91 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
                 }
             }
             Text("عدد الحركات: ${movements.size}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
+
+            if (productCostAudits.isNotEmpty()) {
+                Text(
+                    "سجل تصحيحات كلفة المخزون",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = Ink
+                )
+                productCostAudits.forEach { audit ->
+                    val auditDate = remember(audit.createdAt) {
+                        SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(audit.createdAt))
+                    }
+                    val auditItems = costAuditItems.filter { it.auditId == audit.id }
+                    val sourceInvoiceNumbers = auditItems.mapNotNull { item ->
+                        invoices.firstOrNull { it.id == item.invoiceId }?.invoiceNumber
+                    }.distinct()
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardSurface)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(14.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                if (audit.triggerType == "PURCHASE") "إعادة احتساب بعد فاتورة شراء"
+                                else if (audit.triggerType == "SALE") "إعادة احتساب بعد فاتورة بيع"
+                                else "إعادة احتساب كلفة المخزون",
+                                color = BrandBlue,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(auditDate, color = MutedText, fontSize = 11.sp)
+                            Text(
+                                "متوسط الكلفة: ${audit.oldEndingAverageCost} ← ${audit.newEndingAverageCost} ${audit.currencyCode}",
+                                color = Ink,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "الرصيد: ${audit.oldEndingQuantity} ← ${audit.newEndingQuantity}",
+                                color = MutedText,
+                                fontSize = 12.sp
+                            )
+                            Text(
+                                "عدد بنود المبيعات المتأثرة: ${audit.affectedStockOutCount}",
+                                color = MutedText,
+                                fontSize = 12.sp
+                            )
+                            if (sourceInvoiceNumbers.isNotEmpty()) {
+                                Text(
+                                    "الفواتير المتأثرة: " + sourceInvoiceNumbers.joinToString("، "),
+                                    color = Ink,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            if (audit.reason.isNotBlank()) {
+                                Text("السبب: " + audit.reason, color = MutedText, fontSize = 11.sp)
+                            }
+                            auditItems.forEach { item ->
+                                val invoiceNumber = invoices.firstOrNull { it.id == item.invoiceId }?.invoiceNumber
+                                    ?: item.invoiceId
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text("فاتورة $invoiceNumber", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    Text(
+                                        "الكلفة المعتمدة: ${item.oldUnitCost} ← ${item.newUnitCost} ${item.currencyCode}",
+                                        color = MutedText,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        "إجمالي الكلفة: ${item.oldExtendedCost} ← ${item.newExtendedCost} ${item.currencyCode}",
+                                        color = MutedText,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                Text(
+                    "لا توجد تصحيحات تاريخية لكلفة هذه المادة.",
+                    color = MutedText,
+                    fontSize = 12.sp
+                )
+            }
             if (movements.isEmpty()) {
                 Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
                     Text("لا توجد حركات مسجلة لهذا المنتج بعد.", modifier = Modifier.padding(18.dp), color = MutedText)
@@ -3551,11 +3655,26 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
                                 )
                             }
                             Text(date, color = MutedText, fontSize = 11.sp)
-                            Text(
-                                "كلفة وحدة الأساس: " + movement.unitCostSnapshot + " " + movement.currencyCode,
-                                color = MutedText,
-                                fontSize = 12.sp
-                            )
+                            val auditedCost = latestCostByMovement[movement.id]
+                            if (auditedCost != null) {
+                                Text(
+                                    "الكلفة الأصلية المسجلة: " + movement.unitCostSnapshot + " " + movement.currencyCode,
+                                    color = MutedText,
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    "الكلفة المعتمدة بعد التصحيح: " + auditedCost.newUnitCost + " " + auditedCost.currencyCode,
+                                    color = BrandBlue,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp
+                                )
+                            } else {
+                                Text(
+                                    "كلفة وحدة الأساس: " + movement.unitCostSnapshot + " " + movement.currencyCode,
+                                    color = MutedText,
+                                    fontSize = 12.sp
+                                )
+                            }
                             if (movement.note.isNotBlank()) {
                                 Text(movement.note, color = MutedText, fontSize = 12.sp)
                             }
