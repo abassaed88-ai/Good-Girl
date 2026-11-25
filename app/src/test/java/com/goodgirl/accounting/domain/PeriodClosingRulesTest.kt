@@ -54,7 +54,8 @@ class PeriodClosingRulesTest {
             line("3", "expense", "expense", "100", "0"),
             line("4", "expense", "cash", "0", "100")
         )
-        val draft = PeriodClosingRules.build(10, 20, "SYP", accounts, entries.take(2), lossLines, "equity")
+        val lossEntries = listOf(entry("sale", "SYP", 10), entry("expense", "SYP", 11))
+        val draft = PeriodClosingRules.build(10, 20, "SYP", accounts, lossEntries, lossLines, "equity")
         assertEquals(BigDecimal("-20"), draft.netIncome)
         assertEquals(BigDecimal("100"), draft.lines.fold(BigDecimal.ZERO) { a, l -> a.add(l.debit) })
         assertEquals(BigDecimal("100"), draft.lines.fold(BigDecimal.ZERO) { a, l -> a.add(l.credit) })
