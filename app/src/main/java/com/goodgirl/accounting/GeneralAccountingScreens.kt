@@ -98,7 +98,8 @@ internal fun manualJournalSourceTypeForCashFlow(activity: String): String = when
 fun GeneralAccountingHubScreen(
     onBack: () -> Unit,
     onOpenChart: () -> Unit,
-    onOpenJournal: () -> Unit
+    onOpenJournal: () -> Unit,
+    onOpenPeriodClose: () -> Unit
 ) {
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -122,6 +123,12 @@ fun GeneralAccountingHubScreen(
             description = "مراجعة القيود المرحلة وإدخال قيود يدوية متوازنة.",
             icon = Icons.Filled.MenuBook,
             onClick = onOpenJournal
+        )
+        AccountingNavigationCard(
+            title = "إغلاق الفترة المحاسبية",
+            description = "إقفال الإيرادات والمصروفات وترحيل نتيجة الفترة إلى الأرباح المحتجزة.",
+            icon = Icons.Filled.MenuBook,
+            onClick = onOpenPeriodClose
         )
         Text(
             "تُحفظ القيود المرحلة ولا تُعدّل مباشرة. تصحيح القيد المحاسبي يجب أن يتم بقيد عكسي مستقل.",
