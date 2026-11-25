@@ -243,15 +243,7 @@ class ProductRepository(private val database: AccountingDatabase) {
     suspend fun archiveProduct(id: String) {
         database.productDao().archive(id, System.currentTimeMillis())
     }
-}
 
-
-/**
- * Reclassifies the carrying value of the remaining stock when a product's
- * currency label was selected incorrectly. Historical invoices and stock
- * movements are never rewritten. Each currency receives its own balanced
- * journal because journal entries are single-currency documents.
- */
     private suspend fun nextMovementRecordedAt(productId: String, requestedAt: Long): Long {
         val latestMovement = database.stockMovementDao().getLatestRecordedAt(productId)
         val baselineRecordedAt = database.stockCostBaselineDao().findByProductId(productId)?.recordedAt
@@ -260,6 +252,12 @@ class ProductRepository(private val database: AccountingDatabase) {
     }
 }
 
+/**
+ * Reclassifies the carrying value of the remaining stock when a product's
+ * currency label was selected incorrectly. Historical invoices and stock
+ * movements are never rewritten. Each currency receives its own balanced
+ * journal because journal entries are single-currency documents.
+ */
 internal object ProductCurrencyCorrectionJournalPoster {
     private const val INVENTORY_ACCOUNT_ID = "SYS-1200"
     private const val INVENTORY_ACCOUNT_CODE = "1200"
