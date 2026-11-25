@@ -7,10 +7,15 @@ import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
 import com.goodgirl.accounting.domain.StockMovementReconciliation
+import com.goodgirl.accounting.domain.HistoricalStockCostBaseline
+import com.goodgirl.accounting.domain.HistoricalStockCostBaselineReconstructor
+import com.goodgirl.accounting.domain.HistoricalStockCostCalculator
+import com.goodgirl.accounting.domain.HistoricalStockCostCurrentState
+import com.goodgirl.accounting.domain.HistoricalStockCostEvent
 import java.math.BigDecimal
 import java.util.UUID
 
-const val ACCOUNTING_DATABASE_VERSION = 8
+const val ACCOUNTING_DATABASE_VERSION = 9
 
 private data class MigrationCurrencyBalances(
     var cash: BigDecimal = BigDecimal.ZERO,
@@ -38,6 +43,7 @@ private data class MigrationOpeningLine(
         InvoiceEntity::class,
         InvoiceLineEntity::class,
         StockMovementEntity::class,
+        StockCostBaselineEntity::class,
         LedgerEntryEntity::class,
         AccountEntity::class,
         JournalEntryEntity::class,
@@ -57,6 +63,7 @@ abstract class AccountingDatabase : RoomDatabase() {
     abstract fun partyDao(): PartyDao
     abstract fun invoiceDao(): InvoiceDao
     abstract fun stockMovementDao(): StockMovementDao
+    abstract fun stockCostBaselineDao(): StockCostBaselineDao
     abstract fun ledgerDao(): LedgerDao
     abstract fun accountDao(): AccountDao
     abstract fun journalEntryDao(): JournalEntryDao
@@ -469,6 +476,190 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Stores a reliable recording timestamp for each movement and establishes
+         * a conservative per-product cost baseline. Where the ledger-opening
+         * boundary and later movement history reconcile, the baseline is
+         * reconstructed. Otherwise the current balance becomes an explicitly
+         * limited fallback boundary; no missing historical cost is invented.
+         */
+        internal val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                val migrationAt = System.currentTimeMillis()
+                database.execSQL(
+                    "ALTER TABLE stock_movements ADD COLUMN recordedAt INTEGER NOT NULL DEFAULT 0"
+                )
+                database.execSQL(
+                    "UPDATE stock_movements SET recordedAt = COALESCE(" +
+                        "(SELECT invoices.createdAt FROM invoice_lines " +
+                        "INNER JOIN invoices ON invoices.id = invoice_lines.invoiceId " +
+                        "WHERE invoice_lines.id = stock_movements.sourceId LIMIT 1), occurredAt)"
+                )
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS stock_cost_baselines (" +
+                        "productId TEXT NOT NULL, quantity TEXT NOT NULL, averageCost TEXT NOT NULL, " +
+                        "currencyCode TEXT NOT NULL, effectiveAt INTEGER NOT NULL, " +
+                        "recordedAt INTEGER NOT NULL, source TEXT NOT NULL, PRIMARY KEY(productId))"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_stock_cost_baselines_effectiveAt " +
+                        "ON stock_cost_baselines(effectiveAt)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_stock_cost_baselines_source " +
+                        "ON stock_cost_baselines(source)"
+                )
+
+                val accountingBoundaryAt = database.query(
+                    "SELECT MAX(occurredAt) FROM journal_entries " +
+                        "WHERE sourceType = 'MIGRATION_OPENING' AND sourceId GLOB 'V5_TO_V6_*'"
+                ).use { cursor ->
+                    if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+                }
+
+                database.query(
+                    "SELECT id, stockQuantity, purchaseCost, priceCurrencyCode, createdAt " +
+                        "FROM products ORDER BY id"
+                ).use { products ->
+                    while (products.moveToNext()) {
+                        val productId = products.getString(0)
+                        val currentQuantity = products.getString(1)
+                        val currentCost = products.getString(2)
+                        val currencyCode = products.getString(3).trim().uppercase()
+                        val createdAt = products.getLong(4)
+                        require(currencyCode == "SYP" || currencyCode == "USD") {
+                            "عملة المنتج غير مدعومة أثناء إنشاء نقطة بداية كلفة المخزون"
+                        }
+                        val quantityValue = BigDecimal(currentQuantity)
+                        val costValue = BigDecimal(currentCost)
+                        require(quantityValue >= BigDecimal.ZERO && costValue >= BigDecimal.ZERO) {
+                            "رصيد أو كلفة المنتج غير صالحين أثناء ترحيل سجل كلفة المخزون"
+                        }
+
+                        val allEvents = mutableListOf<HistoricalStockCostEvent>()
+                        val previousCurrencies = mutableMapOf<String, String>()
+                        var latestOccurredAt = createdAt
+                        var latestRecordedAt = createdAt
+                        database.query(
+                            "SELECT id, sourceType, quantityDelta, unitCostSnapshot, currencyCode, " +
+                                "occurredAt, recordedAt, note FROM stock_movements " +
+                                "WHERE productId = ? ORDER BY occurredAt, recordedAt, id",
+                            arrayOf(productId)
+                        ).use { movements ->
+                            while (movements.moveToNext()) {
+                                val id = movements.getString(0)
+                                val sourceType = movements.getString(1)
+                                val quantityDelta = movements.getString(2)
+                                val unitCost = movements.getString(3)
+                                val eventCurrency = movements.getString(4)
+                                val occurredAt = movements.getLong(5)
+                                val recordedAt = movements.getLong(6)
+                                val note = movements.getString(7)
+                                latestOccurredAt = maxOf(latestOccurredAt, occurredAt)
+                                latestRecordedAt = maxOf(latestRecordedAt, recordedAt)
+                                allEvents += HistoricalStockCostEvent(
+                                    id = id,
+                                    sourceType = sourceType,
+                                    quantityDelta = quantityDelta,
+                                    unitCostSnapshot = unitCost,
+                                    currencyCode = eventCurrency,
+                                    occurredAt = occurredAt,
+                                    recordedAt = recordedAt
+                                )
+                                if (sourceType.trim().uppercase() == "PRODUCT_CURRENCY_CORRECTION") {
+                                    val oldCurrency = Regex(
+                                        """من\s+(SYP|USD)\s+إلى\s+(SYP|USD)"""
+                                    ).find(note)?.groupValues?.get(1)
+                                    if (oldCurrency != null) previousCurrencies[id] = oldCurrency
+                                }
+                            }
+                        }
+
+                        var baseline: HistoricalStockCostBaseline? = null
+                        var source = "CURRENT_SNAPSHOT_FALLBACK"
+                        val hasPreBoundaryFutureEvent = accountingBoundaryAt != null &&
+                            allEvents.any {
+                                it.recordedAt <= accountingBoundaryAt && it.occurredAt > accountingBoundaryAt
+                            }
+                        if (accountingBoundaryAt != null && accountingBoundaryAt > 0L &&
+                            !hasPreBoundaryFutureEvent
+                        ) {
+                            if (createdAt > accountingBoundaryAt) {
+                                val zeroOpening = HistoricalStockCostBaseline(
+                                    productId = productId,
+                                    quantity = "0",
+                                    averageCost = "0",
+                                    currencyCode = currencyCode,
+                                    effectiveAt = createdAt,
+                                    recordedAt = (createdAt - 1L).coerceAtLeast(0L)
+                                )
+                                val replay = runCatching {
+                                    HistoricalStockCostCalculator.recalculate(
+                                        zeroOpening,
+                                        allEvents.filter { it.recordedAt > accountingBoundaryAt }
+                                    )
+                                }.getOrNull()
+                                if (replay != null &&
+                                    BigDecimal(replay.endingQuantity).compareTo(quantityValue) == 0 &&
+                                    replay.currencyCode == currencyCode &&
+                                    (quantityValue.compareTo(BigDecimal.ZERO) == 0 ||
+                                        BigDecimal(replay.endingAverageCost).subtract(costValue).abs()
+                                            <= BigDecimal("0.00000001"))
+                                ) {
+                                    baseline = zeroOpening
+                                    source = "PRODUCT_ZERO_OPENING"
+                                }
+                            } else {
+                                baseline = runCatching {
+                                    HistoricalStockCostBaselineReconstructor.reconstruct(
+                                        current = HistoricalStockCostCurrentState(
+                                            productId = productId,
+                                            quantity = currentQuantity,
+                                            averageCost = currentCost,
+                                            currencyCode = currencyCode
+                                        ),
+                                        accountingBoundaryAt = accountingBoundaryAt,
+                                        postBoundaryEvents = allEvents.filter {
+                                            it.recordedAt > accountingBoundaryAt
+                                        },
+                                        previousCurrencyByCorrectionId = previousCurrencies
+                                    )
+                                }.getOrNull()
+                                if (baseline != null) source = "ACCOUNTING_RECONSTRUCTED"
+                            }
+                        }
+
+                        if (baseline == null) {
+                            baseline = HistoricalStockCostBaseline(
+                                productId = productId,
+                                quantity = currentQuantity,
+                                averageCost = currentCost,
+                                currencyCode = currencyCode,
+                                effectiveAt = maxOf(migrationAt, latestOccurredAt),
+                                recordedAt = maxOf(migrationAt, latestRecordedAt)
+                            )
+                            source = "CURRENT_SNAPSHOT_FALLBACK"
+                        }
+
+                        database.execSQL(
+                            "INSERT INTO stock_cost_baselines " +
+                                "(productId, quantity, averageCost, currencyCode, effectiveAt, recordedAt, source) " +
+                                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            arrayOf(
+                                baseline.productId,
+                                baseline.quantity,
+                                baseline.averageCost,
+                                baseline.currencyCode,
+                                baseline.effectiveAt,
+                                baseline.recordedAt,
+                                source
+                            )
+                        )
+                    }
+                }
+            }
+        }
+
         @Volatile
         private var INSTANCE: AccountingDatabase? = null
 
@@ -478,7 +669,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build().also { INSTANCE = it }
             }
     }
 }

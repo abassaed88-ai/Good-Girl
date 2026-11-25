@@ -178,11 +178,32 @@ interface StockMovementDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(movements: List<StockMovementEntity>)
 
-    @Query("SELECT * FROM stock_movements WHERE productId = :productId ORDER BY occurredAt DESC")
+    @Query("SELECT * FROM stock_movements WHERE productId = :productId ORDER BY occurredAt DESC, recordedAt DESC, id DESC")
     fun observeForProduct(productId: String): Flow<List<StockMovementEntity>>
+
+    @Query("SELECT MAX(recordedAt) FROM stock_movements WHERE productId = :productId")
+    suspend fun getLatestRecordedAt(productId: String): Long?
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(movement: StockMovementEntity)
+}
+
+@Dao
+interface StockCostBaselineDao {
+    @Query("SELECT * FROM stock_cost_baselines ORDER BY productId")
+    suspend fun getAll(): List<StockCostBaselineEntity>
+
+    @Query("SELECT * FROM stock_cost_baselines WHERE productId = :productId LIMIT 1")
+    suspend fun findByProductId(productId: String): StockCostBaselineEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insert(baseline: StockCostBaselineEntity)
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(baselines: List<StockCostBaselineEntity>)
+
+    @Query("DELETE FROM stock_cost_baselines")
+    suspend fun deleteAll()
 }
 
 @Dao

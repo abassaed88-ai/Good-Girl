@@ -1,6 +1,6 @@
 # Historical stock costing and correction design
 
-Status: approved engineering design for the development branch. This document is not a claim that the feature is implemented.
+Status: partially implemented on the development branch. Room v9 now persists trusted per-product stock-cost baselines and separate movement recording timestamps, with conservative reconstruction/fallback and encrypted-backup preservation. Invoice replay, append-only recalculation audits, adjustment journals, and report integration remain unfinished; this document is not a claim that the full feature is implemented.
 
 ## 1. Accounting invariants
 
@@ -13,11 +13,11 @@ Status: approved engineering design for the development branch. This document is
 
 ## 2. Trusted cost-history baseline
 
-Add an immutable per-product `stock_cost_baselines` row containing product ID, quantity, average unit cost, currency, effective timestamp, recording timestamp, and a coverage/source marker.
+Persist an immutable per-product `stock_cost_baselines` row containing product ID, quantity, average unit cost, currency, effective timestamp, recording timestamp, and a coverage/source marker.
 
 - The usable accounting-history boundary is the general-ledger opening migration (v5-to-v6), not the new v8-to-v9 schema migration. The v5-to-v6 migration records balanced `MIGRATION_OPENING` journals and snapshots the current inventory value; transactions before that opening are not individually reconstructed in the general ledger.
 - During v8-to-v9, attempt to reconstruct each existing product's quantity, weighted-average cost, and currency immediately after that opening boundary by reversing every stock movement recorded after it, in reverse chronological order. A successful reconstruction must pass a forward replay and exactly reconcile to the current product quantity, currency, and carrying cost (with a documented decimal tolerance only where the existing eight-decimal weighted-average rounding requires it).
-- Movements recorded before the opening boundary are already represented in the opening balances and must not be replayed or re-journaled. A movement recorded after the boundary but carrying a business date before it makes reconstruction unsafe and triggers fallback for that product.
+- Movements recorded before the opening boundary are already represented in the opening balances and must not be replayed or re-journaled. A movement recorded after the boundary but carrying a business date before it makes reconstruction unsafe and triggers fallback for that product. A future-dated movement recorded before the boundary also triggers fallback, because it is already included in the opening snapshot and cannot safely be separated into the post-opening timeline.
 - If reverse reconstruction, currency-boundary recovery, or forward reconciliation fails, create a per-product fallback baseline from the current saved product balance at v9 migration time. Such a product accepts only future/new transactions dated at or after that fallback boundary; older backdated transactions are rejected with a clear Arabic explanation. Do not fabricate earlier stock or profit.
 - For a product created after the accounting opening boundary, create a zero-quantity baseline immediately before its opening-stock event, then replay that event as the first stock movement. A product created with zero opening quantity still receives a baseline.
 - Existing `MIGRATION_RECONCILIATION` movements created by the v4-to-v5 migration are part of the pre-ledger opening position. Keep them for historical display, but do not mistake them for purchases or replay them after the general-ledger opening boundary.
@@ -25,7 +25,7 @@ Add an immutable per-product `stock_cost_baselines` row containing product ID, q
 
 ## 3. Stable movement ordering
 
-Add a persisted `recordedAt` value to stock movements. Backdated events retain two distinct times:
+Persist a separate `recordedAt` value on every stock movement. Backdated events retain two distinct times:
 
 - `occurredAt`: the business date selected for the invoice.
 - `recordedAt`: the time the event was saved.
@@ -76,7 +76,7 @@ One `Room.withTransaction` must contain: validation, invoice/movement insertion,
 
 The invoice/product profitability report must use the latest effective cost for each sale line while retaining the original line snapshot. General-ledger statements consume the adjustment journals. Tests must reconcile the two reports by invoice and currency. Cash-flow totals should remain unchanged by non-cash cost adjustments.
 
-Baselines and all audit tables must be included in encrypted backup export, validation, and restore. Restore must preserve the baseline boundary and correction history atomically.
+Room v9 baselines and movement recording timestamps are included in encrypted backup export, integrity validation, and transactional restore. Older backups receive an explicitly marked `LEGACY_BACKUP_FALLBACK` baseline at a conservative restore boundary. Future recalculation audit tables must be added to the same encrypted-backup cycle when introduced.
 
 ## 8. Required test matrix before adding invoice date pickers
 

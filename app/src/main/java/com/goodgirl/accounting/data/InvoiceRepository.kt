@@ -198,6 +198,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                     .stripTrailingZeros().toPlainString()
             }
 
+            val recordedAtByProduct = mutableMapOf<String, Long>()
             lines.forEachIndexed { lineIndex, draft ->
                 val product = database.productDao().findById(draft.productId)
                     ?: throw IllegalArgumentException("إحدى المواد غير موجودة")
@@ -223,6 +224,9 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 val lineId = UUID.randomUUID().toString()
                 val currentStock = ProductInputRules.normalizeNonNegativeDecimal(product.stockQuantity, "رصيد المنتج").toBigDecimal()
                 val currentCost = ProductInputRules.normalizeNonNegativeDecimal(product.purchaseCost, "كلفة المنتج").toBigDecimal()
+                val previousRecordedAt = recordedAtByProduct[product.id]
+                val recordedAt = nextMovementRecordedAt(product.id, now, previousRecordedAt)
+                recordedAtByProduct[product.id] = recordedAt
                 val unitCostSnapshot: String
 
                 if (cleanKind == "SALE") {
@@ -241,6 +245,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                             sourceType = "SALE_INVOICE",
                             sourceId = lineId,
                             occurredAt = issuedAt,
+                            recordedAt = recordedAt,
                             note = "صرف مخزون من فاتورة بيع " + cleanNumber
                         )
                     )
@@ -272,6 +277,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                             sourceType = "PURCHASE_INVOICE",
                             sourceId = lineId,
                             occurredAt = issuedAt,
+                            recordedAt = recordedAt,
                             note = "إضافة مخزون من فاتورة شراء " + cleanNumber
                         )
                     )
@@ -372,5 +378,16 @@ class InvoiceRepository(private val database: AccountingDatabase) {
             paid = totals.paid.stripTrailingZeros().toPlainString(),
             remaining = totals.remaining.stripTrailingZeros().toPlainString()
         )
+    }
+
+    private suspend fun nextMovementRecordedAt(
+        productId: String,
+        requestedAt: Long,
+        previousRecordedAt: Long? = null
+    ): Long {
+        val latestMovement = previousRecordedAt ?: database.stockMovementDao().getLatestRecordedAt(productId)
+        val baselineRecordedAt = database.stockCostBaselineDao().findByProductId(productId)?.recordedAt
+        val previous = listOfNotNull(latestMovement, baselineRecordedAt).maxOrNull()
+        return if (previous == null) requestedAt else maxOf(requestedAt, Math.addExact(previous, 1L))
     }
 }

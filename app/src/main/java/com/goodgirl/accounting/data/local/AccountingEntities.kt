@@ -123,7 +123,23 @@ data class StockMovementEntity(
     val sourceType: String,
     val sourceId: String,
     val occurredAt: Long,
+    @ColumnInfo(defaultValue = "0") val recordedAt: Long = occurredAt,
     val note: String = ""
+)
+
+@Entity(
+    tableName = "stock_cost_baselines",
+    indices = [Index("effectiveAt"), Index("source")]
+)
+data class StockCostBaselineEntity(
+    @PrimaryKey val productId: String,
+    val quantity: String,
+    val averageCost: String,
+    val currencyCode: String,
+    val effectiveAt: Long,
+    val recordedAt: Long,
+    /** ACCOUNTING_RECONSTRUCTED, PRODUCT_ZERO_OPENING, or CURRENT_SNAPSHOT_FALLBACK. */
+    val source: String
 )
 
 @Entity(

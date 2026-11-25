@@ -476,6 +476,185 @@ class AccountingDatabaseMigrationTest {
         }
     }
 
+    @Test
+    fun versionEightToNineReconstructsTrustedBaselinesAndFallsBackConservatively() {
+        val databaseName = "room-migration-v8-v9-stock-cost.db"
+        val legacy = roomMigrationHelper.createDatabase(databaseName, 8)
+        try {
+            fun insertProduct(
+                id: String,
+                quantity: String,
+                cost: String,
+                currency: String,
+                createdAt: Long
+            ) {
+                legacy.execSQL(
+                    "INSERT INTO products " +
+                        "(id, sku, name, categoryId, baseUnit, purchaseCost, salePrice, priceCurrencyCode, " +
+                        "stockQuantity, lowStockThreshold, note, isActive, createdAt, updatedAt) " +
+                        "VALUES (?, ?, ?, NULL, 'قطعة', ?, '30', ?, ?, '0', '', 1, ?, ?)",
+                    arrayOf(id, id, id, cost, currency, quantity, createdAt, createdAt)
+                )
+            }
+            fun insertMovement(
+                id: String,
+                productId: String,
+                quantity: String,
+                cost: String,
+                currency: String,
+                type: String,
+                sourceId: String,
+                occurredAt: Long
+            ) {
+                legacy.execSQL(
+                    "INSERT INTO stock_movements " +
+                        "(id, productId, quantityDelta, unitCostSnapshot, currencyCode, " +
+                        "sourceType, sourceId, occurredAt, note) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    arrayOf(id, productId, quantity, cost, currency, type, sourceId, occurredAt, "")
+                )
+            }
+            fun insertInvoice(
+                id: String,
+                number: String,
+                kind: String,
+                issuedAt: Long,
+                createdAt: Long
+            ) {
+                legacy.execSQL(
+                    "INSERT INTO invoices " +
+                        "(id, invoiceNumber, kind, partyId, currencyCode, exchangeRateSnapshot, subtotal, " +
+                        "discount, total, paid, remaining, status, issuedAt, note, createdAt) " +
+                        "VALUES (?, ?, ?, NULL, 'SYP', '1', '100', '0', '100', '100', '0', 'POSTED', ?, '', ?)",
+                    arrayOf(id, number, kind, issuedAt, createdAt)
+                )
+            }
+            fun insertLine(
+                id: String,
+                invoiceId: String,
+                productId: String,
+                quantity: String,
+                unitCost: String,
+                unitPrice: String,
+                baseQuantity: String
+            ) {
+                legacy.execSQL(
+                    "INSERT INTO invoice_lines " +
+                        "(id, invoiceId, productId, productNameSnapshot, unitSnapshot, quantity, " +
+                        "unitCostSnapshot, unitPriceSnapshot, discount, lineTotal, unitFactorSnapshot, baseQuantity) " +
+                        "VALUES (?, ?, ?, ?, 'قطعة', ?, ?, ?, '0', '100', '1', ?)",
+                    arrayOf(id, invoiceId, productId, productId, quantity, unitCost, unitPrice, baseQuantity)
+                )
+            }
+
+            insertProduct("reconstructed", "7", "13.6", "SYP", 50L)
+            insertMovement("opening-before-ledger", "reconstructed", "8", "12", "SYP", "OPENING_BALANCE", "reconstructed", 90L)
+            insertInvoice("purchase-invoice", "P-RECON-1", "PURCHASE", 120L, 121L)
+            insertLine("purchase-line", "purchase-invoice", "reconstructed", "2", "20", "20", "2")
+            insertMovement("purchase-movement", "reconstructed", "2", "20", "SYP", "PURCHASE_INVOICE", "purchase-line", 120L)
+            insertInvoice("sale-invoice", "S-RECON-1", "SALE", 150L, 151L)
+            insertLine("sale-line", "sale-invoice", "reconstructed", "3", "13.6", "30", "3")
+            insertMovement("sale-movement", "reconstructed", "-3", "13.6", "SYP", "SALE_INVOICE", "sale-line", 150L)
+
+            insertProduct("fallback", "3", "5", "SYP", 50L)
+            insertMovement("late-legacy-reconciliation", "fallback", "3", "5", "SYP", "MIGRATION_RECONCILIATION", "fallback", 130L)
+
+            insertProduct("new-product", "5", "7", "USD", 110L)
+            insertMovement("new-product-opening", "new-product", "5", "7", "USD", "OPENING_BALANCE", "new-product", 110L)
+
+            insertProduct("future-recorded-early", "2", "8", "SYP", 50L)
+            insertInvoice("future-legacy-invoice", "P-FUTURE-LEGACY", "PURCHASE", 120L, 90L)
+            insertLine("future-legacy-line", "future-legacy-invoice", "future-recorded-early", "2", "8", "8", "2")
+            insertMovement(
+                "future-legacy-movement", "future-recorded-early", "2", "8", "SYP",
+                "PURCHASE_INVOICE", "future-legacy-line", 120L
+            )
+
+            legacy.execSQL(
+                "INSERT INTO journal_entries " +
+                    "(id, journalNumber, sourceType, sourceId, currencyCode, exchangeRateSnapshot, " +
+                    "occurredAt, description, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                arrayOf("opening-syp", "MIGRATION-OPEN-SYP", "MIGRATION_OPENING", "V5_TO_V6_SYP", "SYP", "1", 100L, "opening", 100L)
+            )
+        } finally {
+            legacy.close()
+        }
+
+        val migrated = roomMigrationHelper.runMigrationsAndValidate(
+            databaseName,
+            9,
+            true,
+            AccountingDatabase.MIGRATION_8_9
+        )
+        try {
+            assertEquals(4, databaseCount(migrated, "stock_cost_baselines"))
+            migrated.query(
+                "SELECT quantity, averageCost, currencyCode, effectiveAt, recordedAt, source " +
+                    "FROM stock_cost_baselines WHERE productId = 'reconstructed'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("8", cursor.getString(0))
+                assertEquals("12", cursor.getString(1))
+                assertEquals("SYP", cursor.getString(2))
+                assertEquals(100L, cursor.getLong(3))
+                assertEquals(100L, cursor.getLong(4))
+                assertEquals("ACCOUNTING_RECONSTRUCTED", cursor.getString(5))
+            }
+            migrated.query(
+                "SELECT source, quantity, averageCost FROM stock_cost_baselines WHERE productId = 'fallback'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("CURRENT_SNAPSHOT_FALLBACK", cursor.getString(0))
+                assertEquals("3", cursor.getString(1))
+                assertEquals("5", cursor.getString(2))
+            }
+            migrated.query(
+                "SELECT source, quantity, averageCost, effectiveAt FROM stock_cost_baselines WHERE productId = 'future-recorded-early'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("CURRENT_SNAPSHOT_FALLBACK", cursor.getString(0))
+                assertEquals("2", cursor.getString(1))
+                assertEquals("8", cursor.getString(2))
+                assertTrue(cursor.getLong(3) >= 120L)
+            }
+            migrated.query(
+                "SELECT recordedAt FROM stock_movements WHERE id = 'future-legacy-movement'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(90L, cursor.getLong(0))
+            }
+            migrated.query(
+                "SELECT quantity, averageCost, currencyCode, effectiveAt, recordedAt, source " +
+                    "FROM stock_cost_baselines WHERE productId = 'new-product'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("0", cursor.getString(0))
+                assertEquals("0", cursor.getString(1))
+                assertEquals("USD", cursor.getString(2))
+                assertEquals(110L, cursor.getLong(3))
+                assertEquals(109L, cursor.getLong(4))
+                assertEquals("PRODUCT_ZERO_OPENING", cursor.getString(5))
+            }
+            migrated.query(
+                "SELECT recordedAt FROM stock_movements WHERE id = 'purchase-movement'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(121L, cursor.getLong(0))
+            }
+            migrated.query(
+                "SELECT recordedAt FROM stock_movements WHERE id = 'sale-movement'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(151L, cursor.getLong(0))
+            }
+            assertEquals(6, databaseCount(migrated, "stock_movements"))
+            assertEquals(4, databaseCount(migrated, "stock_cost_baselines"))
+        } finally {
+            migrated.close()
+            InstrumentationRegistry.getInstrumentation()
+                .targetContext.deleteDatabase(databaseName)
+        }
+    }
+
     private class VersionFourCallback : SupportSQLiteOpenHelper.Callback(4) {
         override fun onCreate(database: SupportSQLiteDatabase) {
             database.execSQL(

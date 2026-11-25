@@ -12,6 +12,7 @@ import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
+import com.goodgirl.accounting.data.local.StockCostBaselineEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
 import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
@@ -44,7 +45,8 @@ object BackupIntegrityValidator {
         journalLines: List<JournalLineEntity> = emptyList(),
         exchangeRateHistory: List<ExchangeRateHistoryEntity> = emptyList(),
         exchangeRateAudits: List<ExchangeRateAuditEntity> = emptyList(),
-        exchangeRateCorrectionItems: List<ExchangeRateCorrectionItemEntity> = emptyList()
+        exchangeRateCorrectionItems: List<ExchangeRateCorrectionItemEntity> = emptyList(),
+        stockCostBaselines: List<StockCostBaselineEntity> = emptyList()
     ) {
         ensureUnique(categories.map { it.id }, "معرّفات التصنيفات")
         ensureUnique(products.map { it.id }, "معرّفات المنتجات")
@@ -56,6 +58,7 @@ object BackupIntegrityValidator {
         ensureUnique(invoices.map { it.invoiceNumber }, "أرقام الفواتير")
         ensureUnique(invoiceLines.map { it.id }, "معرّفات بنود الفواتير")
         ensureUnique(movements.map { it.id }, "معرّفات حركات المخزون")
+        ensureUnique(stockCostBaselines.map { it.productId }, "نقاط بداية كلفة المخزون")
         ensureUnique(ledgerEntries.map { it.id }, "معرّفات القيود المالية")
         ensureUnique(accounts.map { it.id }, "معرّفات دليل الحسابات")
         ensureUnique(accounts.map { it.code }, "رموز دليل الحسابات")
@@ -244,11 +247,42 @@ object BackupIntegrityValidator {
 
         movements.forEach { movement ->
             require(movement.productId in productById) { "حركة مخزون مرتبطة بمنتج غير موجود" }
-            require(decimal(movement.quantityDelta, "كمية حركة المخزون").compareTo(BigDecimal.ZERO) != 0) {
-                "يوجد سجل حركة مخزون بكمية صفرية"
+            val movementType = movement.sourceType.trim().uppercase()
+            val movementDelta = decimal(movement.quantityDelta, "كمية حركة المخزون")
+            if (movementType == "PRODUCT_CURRENCY_CORRECTION") {
+                require(movementDelta.compareTo(BigDecimal.ZERO) == 0) {
+                    "حركة تصحيح العملة يجب أن تكون بلا تغيير في الكمية"
+                }
+            } else {
+                require(movementDelta.compareTo(BigDecimal.ZERO) != 0) {
+                    "يوجد سجل حركة مخزون بكمية صفرية"
+                }
             }
             nonNegative(movement.unitCostSnapshot, "كلفة حركة المخزون")
             requireCurrency(movement.currencyCode, "عملة حركة المخزون")
+        }
+
+        if (stockCostBaselines.isNotEmpty()) {
+            require(stockCostBaselines.size == products.size &&
+                stockCostBaselines.map { it.productId }.toSet() == productById.keys
+            ) { "نقاط بداية كلفة المخزون يجب أن تغطي كل منتج مرة واحدة" }
+            stockCostBaselines.forEach { baseline ->
+                require(baseline.productId in productById) {
+                    "نقطة بداية كلفة مرتبطة بمنتج غير موجود"
+                }
+                nonNegative(baseline.quantity, "كمية نقطة بداية المخزون")
+                nonNegative(baseline.averageCost, "متوسط كلفة نقطة بداية المخزون")
+                requireCurrency(baseline.currencyCode, "عملة نقطة بداية المخزون")
+                require(baseline.effectiveAt > 0L && baseline.recordedAt > 0L) {
+                    "تاريخ نقطة بداية المخزون غير صالح"
+                }
+                require(baseline.source in setOf(
+                    "ACCOUNTING_RECONSTRUCTED",
+                    "PRODUCT_ZERO_OPENING",
+                    "CURRENT_SNAPSHOT_FALLBACK",
+                    "LEGACY_BACKUP_FALLBACK"
+                )) { "مصدر نقطة بداية كلفة المخزون غير مدعوم" }
+            }
         }
 
         // The product's stored balance must equal the sum of its complete movement history.

@@ -44,7 +44,7 @@ class EncryptedBackupRestoreIntegrationTest {
             val productId = "restored-product-001"
             val root = JSONObject()
                 .put("format", "good-girl-accounting-backup")
-                .put("formatVersion", 5)
+                .put("formatVersion", 6)
                 .put("applicationId", "com.goodgirl.accounting")
                 .put("databaseVersion", ACCOUNTING_DATABASE_VERSION)
                 .put("exportedAt", 1_700_000_000_000L)
@@ -101,6 +101,16 @@ class EncryptedBackupRestoreIntegrationTest {
                         .put("sourceId", productId)
                         .put("occurredAt", 100L)
                         .put("note", "رصيد افتتاحي مستعاد")
+                ))
+                .put("stockCostBaselines", JSONArray().put(
+                    JSONObject()
+                        .put("productId", productId)
+                        .put("quantity", "0")
+                        .put("averageCost", "0")
+                        .put("currencyCode", "SYP")
+                        .put("effectiveAt", 99L)
+                        .put("recordedAt", 99L)
+                        .put("source", "PRODUCT_ZERO_OPENING")
                 ))
                 .put("ledgerEntries", JSONArray())
                 .put("accounts", JSONArray()
@@ -202,7 +212,7 @@ class EncryptedBackupRestoreIntegrationTest {
             val result = AccountingBackupManager(context, database)
                 .restoreBackup(android.net.Uri.fromFile(backupFile), restorePassword)
 
-            assertEquals(12, result.recordCount)
+            assertEquals(13, result.recordCount)
             assertTrue(restorePassword.all { it == '\u0000' })
 
             val products = database.productDao().getAll()
@@ -228,6 +238,14 @@ class EncryptedBackupRestoreIntegrationTest {
             assertEquals(1, movements.size)
             assertEquals(productId, movements.single().productId)
             assertEquals("7", movements.single().quantityDelta)
+            assertEquals(100L, movements.single().recordedAt)
+
+            val restoredBaselines = database.stockCostBaselineDao().getAll()
+            assertEquals(1, restoredBaselines.size)
+            assertEquals(productId, restoredBaselines.single().productId)
+            assertEquals("PRODUCT_ZERO_OPENING", restoredBaselines.single().source)
+            assertEquals("0", restoredBaselines.single().quantity)
+            assertEquals(99L, restoredBaselines.single().recordedAt)
 
             assertNotNull(database.productDao().findById(productId))
             assertTrue(products.none { it.sku == "OLD-RESTORE-001" })

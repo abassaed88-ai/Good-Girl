@@ -11,6 +11,7 @@ import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
+import com.goodgirl.accounting.data.local.StockCostBaselineEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
 import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
@@ -35,7 +36,8 @@ class BackupIntegrityValidatorTest {
         journalLines: List<JournalLineEntity> = emptyList(),
         rates: List<ExchangeRateHistoryEntity> = emptyList(),
         rateAudits: List<ExchangeRateAuditEntity> = emptyList(),
-        correctionItems: List<ExchangeRateCorrectionItemEntity> = emptyList()
+        correctionItems: List<ExchangeRateCorrectionItemEntity> = emptyList(),
+        stockCostBaselines: List<StockCostBaselineEntity> = emptyList()
     ) = BackupIntegrityValidator.validate(
         categories = empty,
         products = products,
@@ -51,7 +53,8 @@ class BackupIntegrityValidatorTest {
         journalLines = journalLines,
         exchangeRateHistory = rates,
         exchangeRateAudits = rateAudits,
-        exchangeRateCorrectionItems = correctionItems
+        exchangeRateCorrectionItems = correctionItems,
+        stockCostBaselines = stockCostBaselines
     )
 
     private fun product() = ProductEntity(
@@ -429,6 +432,104 @@ class BackupIntegrityValidatorTest {
             )
             validate(rates = listOf(rate), rateAudits = listOf(audit))
         }
+    }
+
+    @Test
+    fun acceptsACompleteTrustedStockCostBaselineSet() {
+        validate(
+            products = listOf(product()),
+            units = listOf(baseUnit()),
+            movements = listOf(
+                StockMovementEntity(
+                    id = "m-opening", productId = "p1", quantityDelta = "4",
+                    unitCostSnapshot = "3", currencyCode = "SYP",
+                    sourceType = "OPENING_BALANCE", sourceId = "p1", occurredAt = 1L
+                )
+            ),
+            stockCostBaselines = listOf(
+                StockCostBaselineEntity(
+                    productId = "p1",
+                    quantity = "0",
+                    averageCost = "0",
+                    currencyCode = "SYP",
+                    effectiveAt = 1L,
+                    recordedAt = 1L,
+                    source = "PRODUCT_ZERO_OPENING"
+                )
+            )
+        )
+    }
+
+    @Test
+    fun rejectsStockCostBaselineForMissingProduct() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(
+                stockCostBaselines = listOf(
+                    StockCostBaselineEntity(
+                        productId = "missing",
+                        quantity = "0",
+                        averageCost = "0",
+                        currencyCode = "SYP",
+                        effectiveAt = 1L,
+                        recordedAt = 1L,
+                        source = "PRODUCT_ZERO_OPENING"
+                    )
+                )
+            )
+        }
+    }
+
+    @Test
+    fun rejectsUnsupportedStockCostBaselineSource() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(
+                products = listOf(product()),
+                units = listOf(baseUnit()),
+                stockCostBaselines = listOf(
+                    StockCostBaselineEntity(
+                        productId = "p1",
+                        quantity = "4",
+                        averageCost = "3",
+                        currencyCode = "SYP",
+                        effectiveAt = 1L,
+                        recordedAt = 1L,
+                        source = "UNVERIFIED"
+                    )
+                )
+            )
+        }
+    }
+
+    @Test
+    fun acceptsZeroQuantityCurrencyCorrectionBoundaryInBackup() {
+        validate(
+            products = listOf(product().copy(priceCurrencyCode = "USD")),
+            units = listOf(baseUnit()),
+            movements = listOf(
+                StockMovementEntity(
+                    id = "m-opening", productId = "p1", quantityDelta = "4",
+                    unitCostSnapshot = "3", currencyCode = "SYP",
+                    sourceType = "OPENING_BALANCE", sourceId = "p1", occurredAt = 1L
+                ),
+                StockMovementEntity(
+                    id = "m-currency-fix", productId = "p1", quantityDelta = "0",
+                    unitCostSnapshot = "3", currencyCode = "USD",
+                    sourceType = "PRODUCT_CURRENCY_CORRECTION", sourceId = "fix-1",
+                    occurredAt = 2L
+                )
+            ),
+            stockCostBaselines = listOf(
+                StockCostBaselineEntity(
+                    productId = "p1",
+                    quantity = "0",
+                    averageCost = "0",
+                    currencyCode = "SYP",
+                    effectiveAt = 1L,
+                    recordedAt = 1L,
+                    source = "PRODUCT_ZERO_OPENING"
+                )
+            )
+        )
     }
 
 }

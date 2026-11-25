@@ -8,6 +8,7 @@ import com.goodgirl.accounting.data.local.JournalLineEntity
 import com.goodgirl.accounting.data.local.ProductEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
+import com.goodgirl.accounting.data.local.StockCostBaselineEntity
 import com.goodgirl.accounting.domain.ProductInputRules
 import com.goodgirl.accounting.domain.JournalEntryRules
 import com.goodgirl.accounting.domain.JournalLineDraft
@@ -65,6 +66,18 @@ class ProductRepository(private val database: AccountingDatabase) {
                 )
             )
 
+            database.stockCostBaselineDao().insert(
+                StockCostBaselineEntity(
+                    productId = productId,
+                    quantity = "0",
+                    averageCost = "0",
+                    currencyCode = cleanCurrency,
+                    effectiveAt = now,
+                    recordedAt = now,
+                    source = "PRODUCT_ZERO_OPENING"
+                )
+            )
+
             database.productUnitDao().insert(
                 ProductUnitEntity(
                     id = UUID.randomUUID().toString(),
@@ -86,6 +99,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                         sourceType = "OPENING_BALANCE",
                         sourceId = productId,
                         occurredAt = now,
+                        recordedAt = nextMovementRecordedAt(productId, now),
                         note = "رصيد افتتاحي عند إنشاء المنتج"
                     )
                 )
@@ -166,6 +180,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                         occurredAt = correctedAt,
                         reason = reason
                     )
+                    val correctionRecordedAt = nextMovementRecordedAt(current.id, correctedAt)
                     database.stockMovementDao().insert(
                         StockMovementEntity(
                             id = correctionId,
@@ -176,6 +191,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                             sourceType = "PRODUCT_CURRENCY_CORRECTION",
                             sourceId = correctionId,
                             occurredAt = correctedAt,
+                            recordedAt = correctionRecordedAt,
                             note = "تصحيح عملة المنتج من ${current.priceCurrencyCode} إلى $cleanCurrency. بقيت القيم الرقمية دون تحويل. الرصيد: ${current.stockQuantity}. كلفة الشراء: ${current.purchaseCost} → $trackedPurchaseCost. سعر البيع: ${current.salePrice} → $cleanPrice. السبب: $reason"
                         )
                     )
@@ -236,6 +252,14 @@ class ProductRepository(private val database: AccountingDatabase) {
  * movements are never rewritten. Each currency receives its own balanced
  * journal because journal entries are single-currency documents.
  */
+    private suspend fun nextMovementRecordedAt(productId: String, requestedAt: Long): Long {
+        val latestMovement = database.stockMovementDao().getLatestRecordedAt(productId)
+        val baselineRecordedAt = database.stockCostBaselineDao().findByProductId(productId)?.recordedAt
+        val previous = listOfNotNull(latestMovement, baselineRecordedAt).maxOrNull()
+        return if (previous == null) requestedAt else maxOf(requestedAt, Math.addExact(previous, 1L))
+    }
+}
+
 internal object ProductCurrencyCorrectionJournalPoster {
     private const val INVENTORY_ACCOUNT_ID = "SYS-1200"
     private const val INVENTORY_ACCOUNT_CODE = "1200"

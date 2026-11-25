@@ -43,6 +43,7 @@ class StockRepository(private val database: AccountingDatabase) {
                     incomingUnitCost = unitCost
                 )
                 val newBalance = StockInputRules.calculateNewBalance(product.stockQuantity, delta)
+                val recordedAt = nextMovementRecordedAt(productId, now)
                 database.productDao().update(
                     product.copy(
                         stockQuantity = newBalance,
@@ -60,6 +61,7 @@ class StockRepository(private val database: AccountingDatabase) {
                         sourceType = "STOCKTAKE_ADJUSTMENT",
                         sourceId = movementId,
                         occurredAt = now,
+                        recordedAt = recordedAt,
                         note = note.trim()
                     )
                 )
@@ -106,6 +108,7 @@ class StockRepository(private val database: AccountingDatabase) {
                 incomingUnitCost = unitCost
             )
             resultingBalance = StockInputRules.calculateNewBalance(product.stockQuantity, cleanDelta)
+            val recordedAt = nextMovementRecordedAt(productId, now)
             database.productDao().update(
                 product.copy(
                     stockQuantity = resultingBalance,
@@ -123,6 +126,7 @@ class StockRepository(private val database: AccountingDatabase) {
                     sourceType = "MANUAL_ADJUSTMENT",
                     sourceId = movementId,
                     occurredAt = now,
+                    recordedAt = recordedAt,
                     note = note.trim()
                 )
             )
@@ -142,4 +146,12 @@ class StockRepository(private val database: AccountingDatabase) {
         }
         return resultingBalance
     }
+
+    private suspend fun nextMovementRecordedAt(productId: String, requestedAt: Long): Long {
+        val latestMovement = database.stockMovementDao().getLatestRecordedAt(productId)
+        val baselineRecordedAt = database.stockCostBaselineDao().findByProductId(productId)?.recordedAt
+        val previous = listOfNotNull(latestMovement, baselineRecordedAt).maxOrNull()
+        return if (previous == null) requestedAt else maxOf(requestedAt, Math.addExact(previous, 1L))
+    }
+
 }
