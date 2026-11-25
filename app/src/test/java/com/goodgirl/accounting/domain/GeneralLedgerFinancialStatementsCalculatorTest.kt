@@ -117,6 +117,28 @@ class GeneralLedgerFinancialStatementsCalculatorTest {
         }
     }
 
+    @Test
+    fun keepsClosedPeriodIncomeVisibleWhileBalanceSheetUsesClosingEquityJournal() {
+        val closing = entry("period-close", "SYP", 40L).copy(sourceType = "PERIOD_CLOSE")
+        val closingLines = listOf(
+            line("close-sales", "period-close", "sales", "150", "0"),
+            line("close-cogs", "period-close", "cogs", "0", "60"),
+            line("close-expense", "period-close", "expense", "0", "10"),
+            line("close-equity", "period-close", "capital", "0", "80")
+        )
+        val result = GeneralLedgerFinancialStatementsCalculator.calculate(
+            30L, 40L, 40L, accounts, entries + closing, lines + closingLines
+        )
+        val income = result.incomeStatements.single { it.currencyCode == "SYP" }
+        assertEquals(BigDecimal("150"), income.totalRevenue)
+        assertEquals(BigDecimal("70"), income.totalExpenses)
+        assertEquals(BigDecimal("80"), income.netIncome)
+        val balance = result.balanceSheets.single { it.currencyCode == "SYP" }
+        assertDecimalEquals("0", balance.retainedEarnings)
+        assertDecimalEquals("1080", balance.totalEquity)
+        assertDecimalEquals("1080", balance.totalLiabilitiesAndEquity)
+    }
+
     private fun assertDecimalEquals(expected: String, actual: BigDecimal) {
         assertEquals(
             "Expected $expected but was ${actual.toPlainString()}",
