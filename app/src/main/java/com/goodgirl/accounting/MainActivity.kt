@@ -4629,7 +4629,7 @@ private fun ProductManagementScreen(
                     }
                     OutlinedTextField(
                         value = barcodeLabelCopies,
-                        onValueChange = { barcodeLabelCopies = it.filter(Char::isDigit).take(3) },
+                        onValueChange = { barcodeLabelCopies = it.filter { digit -> digit in '0'..'9' }.take(3) },
                         modifier = Modifier.fillMaxWidth(),
                         label = { Text("عدد النسخ لكل باركود") },
                         singleLine = true,
