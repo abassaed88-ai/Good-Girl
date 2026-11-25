@@ -88,9 +88,8 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
             }
     }
 
-    val equityAccounts = accounts.filter { it.accountType == "EQUITY" }
+    val equityAccounts = accounts.filter { it.accountType == "EQUITY" && it.isActive }
     val selectedEquity = equityAccounts.firstOrNull { it.id == equityAccountId }
-        ?: equityAccounts.firstOrNull()
 
     fun showDatePicker(initial: Long, onPicked: (Long) -> Unit, endOfDay: Boolean) {
         val selected = Calendar.getInstance().apply { timeInMillis = initial }
