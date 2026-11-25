@@ -487,7 +487,8 @@ private fun GoodGirlApp() {
                 )
                 "stock_history" -> StockHistoryScreen(
                     productId = historyProductId.orEmpty(),
-                    onBack = { activePage = "products" }
+                    onBack = { requestNavigation("products") },
+                    onHome = { requestNavigation("dashboard") }
                 )
                 "accounts" -> AccountsAndDebtsScreen(
                     onBack = { activePage = "dashboard" },
@@ -3490,7 +3491,7 @@ private fun PartyManagementScreen(
 }
 
 @Composable
-private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
+private fun StockHistoryScreen(productId: String, onBack: () -> Unit, onHome: () -> Unit) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val product by database.productDao().observeProduct(productId).collectAsState(initial = null)
@@ -3519,7 +3520,14 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit) {
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        TextButton(onClick = onBack) { Text("العودة إلى المنتجات") }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TextButton(onClick = onBack) { Text("العودة إلى المنتجات") }
+            TextButton(onClick = onHome) { Text("الرئيسية") }
+        }
         Text("سجل حركة المخزون", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
         if (product == null) {
             Text("المنتج غير موجود", color = SoftRed)
