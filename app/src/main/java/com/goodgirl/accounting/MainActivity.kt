@@ -1512,8 +1512,14 @@ private fun SettingsScreen(
                                                 reason = correctionReason
                                             )
                                             if (result.currentRateUpdated) {
-                                                exchangeRate = preferences.getString("usd_syp_rate", correctionRate) ?: correctionRate
-                                                lastUpdated = preferences.getLong("usd_syp_rate_updated_at", System.currentTimeMillis())
+                                                val correctedCurrentRate =
+                                                    preferences.getString("usd_syp_rate", correctionRate) ?: correctionRate
+                                                exchangeRate = correctedCurrentRate
+                                                savedExchangeRate = correctedCurrentRate
+                                                lastUpdated = preferences.getLong(
+                                                    "usd_syp_rate_updated_at",
+                                                    System.currentTimeMillis()
+                                                )
                                             }
                                             correctionMessage =
                                                 "تم التصحيح وتسجيله. الفواتير: " + result.updatedInvoiceCount +
