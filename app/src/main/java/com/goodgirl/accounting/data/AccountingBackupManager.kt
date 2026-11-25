@@ -17,6 +17,8 @@ import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.data.local.StockCostBaselineEntity
+import com.goodgirl.accounting.data.local.StockCostRecalculationAuditEntity
+import com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
 import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
@@ -67,6 +69,8 @@ class AccountingBackupManager(
             val invoiceLines = database.invoiceDao().getAllLines()
             val movements = database.stockMovementDao().getAll()
             val stockCostBaselines = database.stockCostBaselineDao().getAll()
+            val stockCostRecalculationAudits = database.stockCostRecalculationAuditDao().getAll()
+            val stockCostRecalculationItems = database.stockCostRecalculationItemDao().getAll()
             val ledgerEntries = database.ledgerDao().getAll()
             val accounts = database.accountDao().getAll()
             val journalEntries = database.journalEntryDao().getAll()
@@ -98,6 +102,8 @@ class AccountingBackupManager(
                 .put("invoiceLines", invoiceLines.toJsonArray { it.toBackupJson() })
                 .put("stockMovements", movements.toJsonArray { it.toBackupJson() })
                 .put("stockCostBaselines", stockCostBaselines.toJsonArray { it.toBackupJson() })
+                .put("stockCostRecalculationAudits", stockCostRecalculationAudits.toJsonArray { it.toBackupJson() })
+                .put("stockCostRecalculationItems", stockCostRecalculationItems.toJsonArray { it.toBackupJson() })
                 .put("ledgerEntries", ledgerEntries.toJsonArray { it.toBackupJson() })
                 .put("accounts", accounts.toJsonArray { it.toBackupJson() })
                 .put("journalEntries", journalEntries.toJsonArray { it.toBackupJson() })
@@ -109,7 +115,7 @@ class AccountingBackupManager(
             json to (
                 categories.size + products.size + productBarcodes.size + units.size + parties.size +
                     invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
-                    stockCostBaselines.size + accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
+                    stockCostBaselines.size + stockCostRecalculationAudits.size + stockCostRecalculationItems.size + accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
                     exchangeRateAudits.size + exchangeRateCorrectionItems.size
                 )
         }
@@ -234,6 +240,8 @@ class AccountingBackupManager(
         require(stockCostBaselines.size == products.size) {
             "عدد نقاط بداية كلفة المخزون لا يطابق عدد المنتجات"
         }
+        val stockCostRecalculationAudits = root.parseOptionalArray("stockCostRecalculationAudits") { it.toStockCostRecalculationAuditEntity() }
+        val stockCostRecalculationItems = root.parseOptionalArray("stockCostRecalculationItems") { it.toStockCostRecalculationItemEntity() }
         val ledgerEntries = root.parseArray("ledgerEntries") { it.toLedgerEntryEntity() }
         val accounts = root.parseOptionalArray("accounts") { it.toAccountEntity() }
         val journalEntries = root.parseOptionalArray("journalEntries") { it.toJournalEntryEntity() }
@@ -259,12 +267,14 @@ class AccountingBackupManager(
             exchangeRateHistory = exchangeRateHistory,
             exchangeRateAudits = exchangeRateAudits,
             exchangeRateCorrectionItems = exchangeRateCorrectionItems,
-            stockCostBaselines = stockCostBaselines
+            stockCostBaselines = stockCostBaselines,
+            stockCostRecalculationAudits = stockCostRecalculationAudits,
+            stockCostRecalculationItems = stockCostRecalculationItems
         )
 
         val totalRecords = categories.size + products.size + productBarcodes.size + units.size + parties.size +
             invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
-            stockCostBaselines.size + accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
+            stockCostBaselines.size + stockCostRecalculationAudits.size + stockCostRecalculationItems.size + accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
             exchangeRateAudits.size + exchangeRateCorrectionItems.size
         val exportedAt = root.getLong("exportedAt")
 
@@ -293,6 +303,8 @@ class AccountingBackupManager(
         // The replacement is atomic: an invalid insert rolls back and preserves current data.
         database.withTransaction {
             database.exchangeRateCorrectionItemDao().deleteAll()
+            database.stockCostRecalculationItemDao().deleteAll()
+            database.stockCostRecalculationAuditDao().deleteAll()
             database.exchangeRateAuditDao().deleteAll()
             database.exchangeRateHistoryDao().deleteAll()
             database.journalLineDao().deleteAll()
@@ -318,6 +330,8 @@ class AccountingBackupManager(
             database.invoiceDao().insertAllLines(invoiceLines)
             database.stockMovementDao().insertAll(movements)
             database.stockCostBaselineDao().insertAll(stockCostBaselines)
+            database.stockCostRecalculationAuditDao().insertAll(stockCostRecalculationAudits)
+            database.stockCostRecalculationItemDao().insertAll(stockCostRecalculationItems)
             database.ledgerDao().insertAll(ledgerEntries)
             database.accountDao().insertAll(accounts)
             database.journalEntryDao().insertAll(journalEntries)
@@ -411,6 +425,20 @@ class AccountingBackupManager(
         .put("productId", productId).put("quantity", quantity).put("averageCost", averageCost)
         .put("currencyCode", currencyCode).put("effectiveAt", effectiveAt)
         .put("recordedAt", recordedAt).put("source", source)
+
+    private fun StockCostRecalculationAuditEntity.toBackupJson() = JSONObject()
+        .put("id", id).put("productId", productId).put("triggerType", triggerType)
+        .put("triggerSourceId", triggerSourceId).put("reason", reason).put("createdAt", createdAt)
+        .put("currencyCode", currencyCode).put("oldEndingQuantity", oldEndingQuantity)
+        .put("newEndingQuantity", newEndingQuantity).put("oldEndingAverageCost", oldEndingAverageCost)
+        .put("newEndingAverageCost", newEndingAverageCost).put("affectedStockOutCount", affectedStockOutCount)
+
+    private fun StockCostRecalculationItemEntity.toBackupJson() = JSONObject()
+        .put("id", id).put("auditId", auditId).put("movementId", movementId)
+        .put("sourceType", sourceType).put("sourceId", sourceId).put("invoiceId", invoiceId)
+        .put("currencyCode", currencyCode).put("quantity", quantity).put("oldUnitCost", oldUnitCost)
+        .put("newUnitCost", newUnitCost).put("oldExtendedCost", oldExtendedCost)
+        .put("newExtendedCost", newExtendedCost)
 
     private fun LedgerEntryEntity.toBackupJson() = JSONObject()
         .put("id", id).put("partyId", partyId ?: JSONObject.NULL).put("entryType", entryType)
@@ -511,6 +539,22 @@ class AccountingBackupManager(
         averageCost = getString("averageCost"), currencyCode = getString("currencyCode"),
         effectiveAt = getLong("effectiveAt"), recordedAt = getLong("recordedAt"),
         source = getString("source")
+    )
+
+    private fun JSONObject.toStockCostRecalculationAuditEntity() = StockCostRecalculationAuditEntity(
+        id = getString("id"), productId = getString("productId"), triggerType = getString("triggerType"),
+        triggerSourceId = getString("triggerSourceId"), reason = getString("reason"), createdAt = getLong("createdAt"),
+        currencyCode = getString("currencyCode"), oldEndingQuantity = getString("oldEndingQuantity"),
+        newEndingQuantity = getString("newEndingQuantity"), oldEndingAverageCost = getString("oldEndingAverageCost"),
+        newEndingAverageCost = getString("newEndingAverageCost"), affectedStockOutCount = getInt("affectedStockOutCount")
+    )
+
+    private fun JSONObject.toStockCostRecalculationItemEntity() = StockCostRecalculationItemEntity(
+        id = getString("id"), auditId = getString("auditId"), movementId = getString("movementId"),
+        sourceType = getString("sourceType"), sourceId = getString("sourceId"), invoiceId = getString("invoiceId"),
+        currencyCode = getString("currencyCode"), quantity = getString("quantity"),
+        oldUnitCost = getString("oldUnitCost"), newUnitCost = getString("newUnitCost"),
+        oldExtendedCost = getString("oldExtendedCost"), newExtendedCost = getString("newExtendedCost")
     )
 
     private fun JSONObject.toLedgerEntryEntity() = LedgerEntryEntity(

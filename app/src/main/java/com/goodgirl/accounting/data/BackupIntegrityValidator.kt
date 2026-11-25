@@ -13,6 +13,8 @@ import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.data.local.StockCostBaselineEntity
+import com.goodgirl.accounting.data.local.StockCostRecalculationAuditEntity
+import com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
 import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
@@ -46,7 +48,9 @@ object BackupIntegrityValidator {
         exchangeRateHistory: List<ExchangeRateHistoryEntity> = emptyList(),
         exchangeRateAudits: List<ExchangeRateAuditEntity> = emptyList(),
         exchangeRateCorrectionItems: List<ExchangeRateCorrectionItemEntity> = emptyList(),
-        stockCostBaselines: List<StockCostBaselineEntity> = emptyList()
+        stockCostBaselines: List<StockCostBaselineEntity> = emptyList(),
+        stockCostRecalculationAudits: List<StockCostRecalculationAuditEntity> = emptyList(),
+        stockCostRecalculationItems: List<StockCostRecalculationItemEntity> = emptyList()
     ) {
         ensureUnique(categories.map { it.id }, "معرّفات التصنيفات")
         ensureUnique(products.map { it.id }, "معرّفات المنتجات")
@@ -59,6 +63,9 @@ object BackupIntegrityValidator {
         ensureUnique(invoiceLines.map { it.id }, "معرّفات بنود الفواتير")
         ensureUnique(movements.map { it.id }, "معرّفات حركات المخزون")
         ensureUnique(stockCostBaselines.map { it.productId }, "نقاط بداية كلفة المخزون")
+        ensureUnique(stockCostRecalculationAudits.map { it.id }, "معرّفات تدقيق إعادة احتساب الكلفة")
+        ensureUnique(stockCostRecalculationItems.map { it.id }, "معرّفات تفاصيل إعادة احتساب الكلفة")
+        ensureUnique(stockCostRecalculationItems.map { it.auditId + "|" + it.movementId }, "حركات تفاصيل إعادة احتساب الكلفة")
         ensureUnique(ledgerEntries.map { it.id }, "معرّفات القيود المالية")
         ensureUnique(accounts.map { it.id }, "معرّفات دليل الحسابات")
         ensureUnique(accounts.map { it.code }, "رموز دليل الحسابات")
@@ -81,6 +88,8 @@ object BackupIntegrityValidator {
         val productById = products.associateBy { it.id }
         val partyById = parties.associateBy { it.id }
         val invoiceById = invoices.associateBy { it.id }
+        val movementById = movements.associateBy { it.id }
+        val stockCostAuditById = stockCostRecalculationAudits.associateBy { it.id }
 
         productBarcodes.forEach { barcode ->
             require(barcode.productId in productById) {
@@ -282,6 +291,60 @@ object BackupIntegrityValidator {
                     "CURRENT_SNAPSHOT_FALLBACK",
                     "LEGACY_BACKUP_FALLBACK"
                 )) { "مصدر نقطة بداية كلفة المخزون غير مدعوم" }
+            }
+        }
+
+        stockCostRecalculationAudits.forEach { audit ->
+            require(audit.productId in productById) { "سجل تدقيق كلفة مرتبط بمنتج غير موجود" }
+            require(audit.triggerType.isNotBlank() && audit.triggerSourceId.isNotBlank() && audit.reason.isNotBlank()) {
+                "بيانات سبب إعادة احتساب كلفة المخزون غير مكتملة"
+            }
+            require(audit.createdAt > 0L) { "تاريخ سجل تدقيق كلفة المخزون غير صالح" }
+            requireCurrency(audit.currencyCode, "عملة سجل تدقيق كلفة المخزون")
+            nonNegative(audit.oldEndingQuantity, "الكمية السابقة في سجل تدقيق الكلفة")
+            nonNegative(audit.newEndingQuantity, "الكمية الجديدة في سجل تدقيق الكلفة")
+            nonNegative(audit.oldEndingAverageCost, "متوسط الكلفة السابق في سجل التدقيق")
+            nonNegative(audit.newEndingAverageCost, "متوسط الكلفة الجديد في سجل التدقيق")
+            require(audit.affectedStockOutCount >= 0) { "عدد حركات إخراج المخزون المتأثرة غير صالح" }
+        }
+
+        val costItemsByAudit = stockCostRecalculationItems.groupBy { it.auditId }
+        stockCostRecalculationItems.forEach { item ->
+            val audit = stockCostAuditById[item.auditId]
+                ?: throw IllegalArgumentException("تفصيل إعادة احتساب كلفة مرتبط بسجل تدقيق غير موجود")
+            val movement = movementById[item.movementId]
+                ?: throw IllegalArgumentException("تفصيل إعادة احتساب كلفة مرتبط بحركة مخزون غير موجود")
+            require(movement.productId == audit.productId) {
+                "حركة المخزون في سجل التدقيق لا تخص المنتج نفسه"
+            }
+            val movementQuantity = decimal(movement.quantityDelta, "كمية حركة المخزون في تدقيق الكلفة")
+            require(movementQuantity < BigDecimal.ZERO) {
+                "تفصيل إعادة احتساب الكلفة يجب أن يرتبط بحركة إخراج مخزون"
+            }
+            require(positive(item.quantity, "الكمية المتأثرة في تدقيق الكلفة")
+                .compareTo(movementQuantity.abs()) == 0
+            ) { "الكمية في تفصيل تدقيق الكلفة لا تطابق حركة المخزون" }
+            require(item.sourceType == movement.sourceType && item.sourceId == movement.sourceId) {
+                "مصدر تفصيل تدقيق الكلفة لا يطابق حركة المخزون"
+            }
+            val invoice = invoiceById[item.invoiceId]
+                ?: throw IllegalArgumentException("فاتورة تفصيل تدقيق الكلفة غير موجودة")
+            require(invoice.kind == "SALE") { "تفصيل تدقيق كلفة المخزون يجب أن يرتبط بفاتورة مبيعات" }
+            require(item.currencyCode == audit.currencyCode && item.currencyCode == movement.currencyCode) {
+                "عملة تفصيل تدقيق الكلفة لا تطابق سجل التدقيق وحركة المخزون"
+            }
+            nonNegative(item.oldUnitCost, "الكلفة السابقة في تفصيل التدقيق")
+            nonNegative(item.newUnitCost, "الكلفة الجديدة في تفصيل التدقيق")
+            nonNegative(item.oldExtendedCost, "القيمة السابقة في تفصيل التدقيق")
+            nonNegative(item.newExtendedCost, "القيمة الجديدة في تفصيل التدقيق")
+            require(
+                decimal(item.oldUnitCost, "الكلفة السابقة").compareTo(decimal(item.newUnitCost, "الكلفة الجديدة")) != 0 ||
+                    decimal(item.oldExtendedCost, "القيمة السابقة").compareTo(decimal(item.newExtendedCost, "القيمة الجديدة")) != 0
+            ) { "تفصيل تدقيق الكلفة لا يتضمن أي تغيير فعلي" }
+        }
+        stockCostRecalculationAudits.forEach { audit ->
+            require(audit.affectedStockOutCount == costItemsByAudit[audit.id].orEmpty().size) {
+                "عدد حركات إخراج المخزون في سجل التدقيق لا يطابق تفاصيله"
             }
         }
 

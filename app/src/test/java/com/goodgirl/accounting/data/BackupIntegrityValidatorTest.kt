@@ -12,6 +12,8 @@ import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.data.local.StockCostBaselineEntity
+import com.goodgirl.accounting.data.local.StockCostRecalculationAuditEntity
+import com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
 import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
@@ -37,7 +39,9 @@ class BackupIntegrityValidatorTest {
         rates: List<ExchangeRateHistoryEntity> = emptyList(),
         rateAudits: List<ExchangeRateAuditEntity> = emptyList(),
         correctionItems: List<ExchangeRateCorrectionItemEntity> = emptyList(),
-        stockCostBaselines: List<StockCostBaselineEntity> = emptyList()
+        stockCostBaselines: List<StockCostBaselineEntity> = emptyList(),
+        stockCostRecalculationAudits: List<StockCostRecalculationAuditEntity> = emptyList(),
+        stockCostRecalculationItems: List<StockCostRecalculationItemEntity> = emptyList()
     ) = BackupIntegrityValidator.validate(
         categories = empty,
         products = products,
@@ -54,7 +58,9 @@ class BackupIntegrityValidatorTest {
         exchangeRateHistory = rates,
         exchangeRateAudits = rateAudits,
         exchangeRateCorrectionItems = correctionItems,
-        stockCostBaselines = stockCostBaselines
+        stockCostBaselines = stockCostBaselines,
+        stockCostRecalculationAudits = stockCostRecalculationAudits,
+        stockCostRecalculationItems = stockCostRecalculationItems
     )
 
     private fun product() = ProductEntity(
@@ -530,6 +536,74 @@ class BackupIntegrityValidatorTest {
                 )
             )
         )
+    }
+
+    @Test
+    fun acceptsACompleteStockCostRecalculationAudit() {
+        val audit = StockCostRecalculationAuditEntity(
+            id = "cost-audit-1",
+            productId = "p1",
+            triggerType = "BACKDATED_PURCHASE",
+            triggerSourceId = "purchase-1",
+            reason = "تصحيح كلفة فاتورة شراء سابقة",
+            createdAt = 20L,
+            currencyCode = "SYP",
+            oldEndingQuantity = "4",
+            newEndingQuantity = "4",
+            oldEndingAverageCost = "3",
+            newEndingAverageCost = "4",
+            affectedStockOutCount = 1
+        )
+        val item = StockCostRecalculationItemEntity(
+            id = "cost-item-1",
+            auditId = "cost-audit-1",
+            movementId = "m-sale",
+            sourceType = "SALE_INVOICE",
+            sourceId = "l1",
+            invoiceId = "i1",
+            currencyCode = "SYP",
+            quantity = "2",
+            oldUnitCost = "3",
+            newUnitCost = "4",
+            oldExtendedCost = "6",
+            newExtendedCost = "8"
+        )
+        validate(
+            products = listOf(product()),
+            units = listOf(baseUnit()),
+            invoices = listOf(saleInvoice()),
+            lines = listOf(saleLine()),
+            movements = listOf(
+                StockMovementEntity("m-opening", "p1", "6", "3", "SYP", "OPENING_BALANCE", "p1", 1L),
+                StockMovementEntity("m-sale", "p1", "-2", "3", "SYP", "SALE_INVOICE", "l1", 2L)
+            ),
+            stockCostRecalculationAudits = listOf(audit),
+            stockCostRecalculationItems = listOf(item)
+        )
+    }
+
+    @Test
+    fun rejectsStockCostRecalculationItemWithoutAuditHeader() {
+        assertThrows(IllegalArgumentException::class.java) {
+            validate(
+                stockCostRecalculationItems = listOf(
+                    StockCostRecalculationItemEntity(
+                        id = "orphan-cost-item",
+                        auditId = "missing-audit",
+                        movementId = "missing-movement",
+                        sourceType = "SALE_INVOICE",
+                        sourceId = "missing-line",
+                        invoiceId = "missing-invoice",
+                        currencyCode = "SYP",
+                        quantity = "1",
+                        oldUnitCost = "2",
+                        newUnitCost = "3",
+                        oldExtendedCost = "2",
+                        newExtendedCost = "3"
+                    )
+                )
+            )
+        }
     }
 
 }

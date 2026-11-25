@@ -15,7 +15,7 @@ import com.goodgirl.accounting.domain.HistoricalStockCostEvent
 import java.math.BigDecimal
 import java.util.UUID
 
-const val ACCOUNTING_DATABASE_VERSION = 9
+const val ACCOUNTING_DATABASE_VERSION = 10
 
 private data class MigrationCurrencyBalances(
     var cash: BigDecimal = BigDecimal.ZERO,
@@ -661,6 +661,49 @@ abstract class AccountingDatabase : RoomDatabase() {
                         )
                     }
                 }
+            }
+        }
+
+        private val MIGRATION_9_10 = object : Migration(9, 10) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `stock_cost_recalculation_audits` (" +
+                        "`id` TEXT NOT NULL, `productId` TEXT NOT NULL, `triggerType` TEXT NOT NULL, " +
+                        "`triggerSourceId` TEXT NOT NULL, `reason` TEXT NOT NULL, `createdAt` INTEGER NOT NULL, " +
+                        "`currencyCode` TEXT NOT NULL, `oldEndingQuantity` TEXT NOT NULL, " +
+                        "`newEndingQuantity` TEXT NOT NULL, `oldEndingAverageCost` TEXT NOT NULL, " +
+                        "`newEndingAverageCost` TEXT NOT NULL, `affectedStockOutCount` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`id`))"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_stock_cost_recalculation_audits_createdAt` " +
+                        "ON `stock_cost_recalculation_audits` (`createdAt`)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_stock_cost_recalculation_audits_productId` " +
+                        "ON `stock_cost_recalculation_audits` (`productId`)"
+                )
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `stock_cost_recalculation_items` (" +
+                        "`id` TEXT NOT NULL, `auditId` TEXT NOT NULL, `movementId` TEXT NOT NULL, " +
+                        "`sourceType` TEXT NOT NULL, `sourceId` TEXT NOT NULL, `invoiceId` TEXT NOT NULL, " +
+                        "`currencyCode` TEXT NOT NULL, `quantity` TEXT NOT NULL, `oldUnitCost` TEXT NOT NULL, " +
+                        "`newUnitCost` TEXT NOT NULL, `oldExtendedCost` TEXT NOT NULL, `newExtendedCost` TEXT NOT NULL, " +
+                        "PRIMARY KEY(`id`), FOREIGN KEY(`auditId`) REFERENCES `stock_cost_recalculation_audits`(`id`) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_stock_cost_recalculation_items_auditId` " +
+                        "ON `stock_cost_recalculation_items` (`auditId`)"
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS `index_stock_cost_recalculation_items_auditId_movementId` " +
+                        "ON `stock_cost_recalculation_items` (`auditId`, `movementId`)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS `index_stock_cost_recalculation_items_movementId` " +
+                        "ON `stock_cost_recalculation_items` (`movementId`)"
+                )
             }
         }
 
