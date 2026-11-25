@@ -3610,8 +3610,34 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit, onHome: ()
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            TextButton(onClick = onBack) { Text("العودة إلى المنتجات") }
-            TextButton(onClick = onHome) { Text("الرئيسية") }
+            TextButton(onClick = onBack) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "رجوع إلى المنتجات",
+                        tint = BrandBlue,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text("العودة إلى المنتجات")
+                }
+            }
+            TextButton(onClick = onHome) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Home,
+                        contentDescription = "الرئيسية",
+                        tint = BrandBlue,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text("الرئيسية")
+                }
+            }
         }
         Text("سجل حركة المخزون", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = Ink)
         if (product == null) {
