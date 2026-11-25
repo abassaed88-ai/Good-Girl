@@ -33,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import com.goodgirl.accounting.data.JournalRepository
 import com.goodgirl.accounting.data.PeriodClosingRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.domain.PeriodCloseDraft
+import com.goodgirl.accounting.domain.PeriodClosingRules
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
@@ -75,6 +77,8 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var messageIsError by remember { mutableStateOf(false) }
+    var preview by remember { mutableStateOf<PeriodCloseDraft?>(null) }
+    var previewError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(journalRepository) {
         runCatching { journalRepository.ensureSystemAccounts() }
@@ -106,6 +110,28 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
     }
 
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
+
+    LaunchedEffect(startAt, endAt, currency, selectedEquity?.id, accounts) {
+        preview = null
+        previewError = null
+        val targetAccountId = selectedEquity?.id ?: return@LaunchedEffect
+        if (startAt > endAt) {
+            previewError = "تاريخ بداية الفترة يجب أن يسبق تاريخ نهايتها."
+            return@LaunchedEffect
+        }
+        runCatching {
+            PeriodClosingRules.build(
+                periodStartInclusive = startAt,
+                periodEndInclusive = endAt,
+                currencyCode = currency,
+                accounts = accounts,
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll(),
+                retainedEarningsAccountId = targetAccountId
+            )
+        }.onSuccess { preview = it }
+            .onFailure { previewError = it.message ?: "تعذر حساب نتيجة الفترة" }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -158,6 +184,31 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
 
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("معاينة نتيجة الفترة", style = MaterialTheme.typography.titleMedium)
+                when {
+                    preview != null -> {
+                        val result = preview!!
+                        val amount = result.netIncome.abs().stripTrailingZeros().toPlainString() + " " + currency
+                        Text(
+                            when {
+                                result.netIncome.signum() > 0 -> "صافي الربح: $amount"
+                                result.netIncome.signum() < 0 -> "صافي الخسارة: $amount"
+                                else -> "نتيجة الفترة: صفر"
+                            },
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text("عدد أسطر قيد الإغلاق: " + result.lines.size)
+                    }
+                    previewError != null -> Text(previewError!!, color = MaterialTheme.colorScheme.error)
+                    else -> Text("جارٍ حساب نتيجة الفترة...")
+                }
+                Text("تُعاد المحاسبة والتحققات من قاعدة البيانات لحظة تأكيد الإغلاق.")
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("قبل تنفيذ الإغلاق", style = MaterialTheme.typography.titleMedium)
                 Text("• الإغلاق نهائي وغير قابل للتكرار أو التداخل مع فترة مغلقة.")
                 Text("• لن تُقبل قيود جديدة بتاريخ داخل الفترة بعد إغلاقها.")
@@ -173,7 +224,7 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
         Button(
             onClick = { showConfirmation = true },
             modifier = Modifier.fillMaxWidth(),
-            enabled = !saving && selectedEquity != null && startAt <= endAt
+            enabled = !saving && preview != null && selectedEquity != null && startAt <= endAt
         ) { Text(if (saving) "جارٍ الإغلاق..." else "مراجعة وتنفيذ الإغلاق") }
     }
 
