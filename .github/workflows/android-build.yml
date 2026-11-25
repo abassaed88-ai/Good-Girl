@@ -102,6 +102,17 @@ jobs:
           emulator-boot-timeout: 900
           script: gradle :app:connectedDebugAndroidTest --no-daemon --console=plain --stacktrace
 
+      - name: Upload Android instrumentation test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: good-girl-android-test-reports
+          path: |
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Build debug APK
         timeout-minutes: 8
         run: gradle :app:assembleDebug --no-daemon --console=plain --stacktrace
