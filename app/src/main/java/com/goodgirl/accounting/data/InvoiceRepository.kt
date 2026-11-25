@@ -496,12 +496,14 @@ class InvoiceRepository(private val database: AccountingDatabase) {
             val currentProduct = database.productDao().findById(productId)
                 ?: throw IllegalStateException("المادة غير موجودة بعد ترحيل الفاتورة")
             val newQuantity = plan.endingQuantity.toBigDecimal()
-            val oldQuantity = originalProduct.stockQuantity.toBigDecimal()
+            val currentQuantity = currentProduct.stockQuantity.toBigDecimal()
+            require(newQuantity.compareTo(currentQuantity) == 0) {
+                "الرصيد الناتج عن إعادة الاحتساب لا يطابق رصيد المادة الحالي؛ أوقفنا الترحيل لحماية المخزون"
+            }
             val newAverage = plan.endingAverageCost.toBigDecimal()
             val oldAverage = originalProduct.purchaseCost.toBigDecimal()
-            val hasEndingStateChange =
-                oldQuantity.compareTo(newQuantity) != 0 || oldAverage.compareTo(newAverage) != 0
-            if (hasEndingStateChange || saleChangesWithInvoices.isNotEmpty()) {
+            val hasEndingCostChange = oldAverage.compareTo(newAverage) != 0
+            if (hasEndingCostChange || saleChangesWithInvoices.isNotEmpty()) {
                 val auditId = UUID.randomUUID().toString()
                 val auditCurrency = plan.currencyCode ?: baseline.currencyCode
                 database.stockCostRecalculationAuditDao().insertAll(
