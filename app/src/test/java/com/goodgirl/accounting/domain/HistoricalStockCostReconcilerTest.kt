@@ -62,6 +62,17 @@ class HistoricalStockCostReconcilerTest {
         assertDecimal("10", plan.stockOutUnitCosts.getValue("sale-line-1"))
     }
 
+    @Test
+    fun returnsOriginalMovementSourceIdForAuditLinkage() {
+        val plan = HistoricalStockCostReconciler.plan(
+            baseline = baseline(),
+            events = listOf(event("movement-1", "SALE_INVOICE", "-2", "9", 20, 20)),
+            movementSourceIds = mapOf("movement-1" to "invoice-line-1")
+        )
+
+        assertEquals("invoice-line-1", plan.changes.single().sourceId)
+    }
+
     private fun baseline() = HistoricalStockCostBaseline(
         productId = "product-1",
         quantity = "10",

@@ -38,7 +38,8 @@ object HistoricalStockCostReconciler {
     fun plan(
         baseline: HistoricalStockCostBaseline,
         events: List<HistoricalStockCostEvent>,
-        currentlyEffectiveUnitCosts: Map<String, String> = emptyMap()
+        currentlyEffectiveUnitCosts: Map<String, String> = emptyMap(),
+        movementSourceIds: Map<String, String> = emptyMap()
     ): HistoricalStockCostReconciliationPlan {
         val replay = HistoricalStockCostCalculator.recalculate(baseline, events)
         val eventsById = events.associateBy { it.id }
@@ -57,11 +58,7 @@ object HistoricalStockCostReconciler {
                 HistoricalStockCostChange(
                     movementId = movementId,
                     sourceType = event.sourceType,
-                    sourceId = event.id.let { eventSourceId ->
-                        // sourceId is supplied by the stock movement's source;
-                        // HistoricalStockCostEvent.id is the movement identity.
-                        eventSourceId
-                    },
+                    sourceId = movementSourceIds[movementId] ?: event.id,
                     currencyCode = event.currencyCode,
                     quantity = plain(quantity),
                     oldUnitCost = plain(oldCost),
