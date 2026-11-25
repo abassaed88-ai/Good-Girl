@@ -663,7 +663,7 @@ internal fun previousAppPage(
     salesReturnPage: String = "dashboard",
     partiesReturnPage: String = "dashboard"
 ): String = when (currentPage) {
-    "chart_of_accounts", "journal_book" -> "general_accounting"
+    "chart_of_accounts", "journal_book", "period_close" -> "general_accounting"
     "account_ledger" -> "chart_of_accounts"
     "journal_detail" -> journalReturnPage
     "categories", "product_units", "stock_history" -> "products"
