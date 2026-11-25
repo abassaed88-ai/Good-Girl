@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.domain.JournalLineDraft
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -84,6 +85,51 @@ class PeriodClosingRepositoryIntegrationTest {
                 )
             )
             assertEquals(4, database.journalEntryDao().getAll().size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun capturesTheLatestExchangeRateEffectiveOnTheDollarClosingDate() = runBlocking {
+        val database = newDatabase()
+        try {
+            val journals = JournalRepository(database)
+            journals.ensureSystemAccounts()
+            val accounts = database.accountDao().getAll().associateBy { it.code }
+            journals.postJournalEntry(
+                "CLOSE-USD-SALE", "TEST_SALE", "usd-sale-1", "USD", "14900", 1_200,
+                "مبيعات بالدولار",
+                listOf(
+                    JournalLineDraft(accounts.getValue("1000").id, debit = "100"),
+                    JournalLineDraft(accounts.getValue("4000").id, credit = "100")
+                )
+            )
+            database.exchangeRateHistoryDao().insert(
+                ExchangeRateHistoryEntity(
+                    id = "usd-rate-before-close",
+                    currencyPair = "USD/SYP",
+                    rate = "14000",
+                    effectiveAt = 1_000,
+                    recordedAt = 1_000,
+                    source = "TEST"
+                )
+            )
+            database.exchangeRateHistoryDao().insert(
+                ExchangeRateHistoryEntity(
+                    id = "usd-rate-after-close",
+                    currencyPair = "USD/SYP",
+                    rate = "16000",
+                    effectiveAt = 2_001,
+                    recordedAt = 2_001,
+                    source = "TEST"
+                )
+            )
+
+            val closingId = PeriodClosingRepository(database).closePeriod(
+                1_000, 2_000, "USD", accounts.getValue("3100").id, "CLOSE-USD-001"
+            )
+            assertEquals("14000", database.journalEntryDao().findById(closingId)!!.exchangeRateSnapshot)
         } finally {
             database.close()
         }

@@ -2,9 +2,11 @@ package com.goodgirl.accounting.data
 
 import androidx.room.withTransaction
 import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.JournalEntryEntity
 import com.goodgirl.accounting.data.local.JournalLineEntity
 import com.goodgirl.accounting.domain.PeriodClosingRules
+import java.math.BigDecimal
 import java.util.UUID
 
 /**
@@ -26,7 +28,8 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
         val sourceId = encodeRange(currency, periodStartInclusive, periodEndInclusive)
         return database.withTransaction {
             val journalDao = database.journalEntryDao()
-            val existingClosures = journalDao.getAll().filter {
+            val journalEntries = journalDao.getAll()
+            val existingClosures = journalEntries.filter {
                 it.sourceType == SOURCE_TYPE && it.currencyCode == currency
             }
             val overlaps = existingClosures.any { entry ->
@@ -40,12 +43,17 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
                 periodEndInclusive = periodEndInclusive,
                 currencyCode = currency,
                 accounts = database.accountDao().getAll(),
-                entries = journalDao.getAll(),
+                entries = journalEntries,
                 lines = database.journalLineDao().getAll(),
                 retainedEarningsAccountId = retainedEarningsAccountId
             )
             require(journalDao.findByNumber(number) == null) { "رقم القيد مستخدم مسبقاً" }
 
+            val exchangeRateSnapshot = resolveExchangeRateSnapshot(
+                currencyCode = currency,
+                effectiveAt = periodEndInclusive,
+                journalEntries = journalEntries
+            )
             val entryId = UUID.randomUUID().toString()
             val now = System.currentTimeMillis()
             journalDao.insert(
@@ -55,7 +63,7 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
                     sourceType = SOURCE_TYPE,
                     sourceId = sourceId,
                     currencyCode = currency,
-                    exchangeRateSnapshot = "1",
+                    exchangeRateSnapshot = exchangeRateSnapshot,
                     occurredAt = periodEndInclusive,
                     description = "إقفال الفترة من $periodStartInclusive إلى $periodEndInclusive",
                     createdAt = now
@@ -76,6 +84,43 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
             )
             entryId
         }
+    }
+
+    private suspend fun resolveExchangeRateSnapshot(
+        currencyCode: String,
+        effectiveAt: Long,
+        journalEntries: List<JournalEntryEntity>
+    ): String {
+        if (currencyCode == "SYP") return "1"
+
+        val latestHistoryRate = database.exchangeRateHistoryDao().getAll()
+            .asSequence()
+            .filter {
+                it.currencyPair == "USD/SYP" && !it.isArchived && it.effectiveAt <= effectiveAt
+            }
+            .maxWithOrNull(
+                compareBy<ExchangeRateHistoryEntity> { it.effectiveAt }
+                    .thenBy { it.recordedAt }
+                    .thenBy { it.id }
+            )
+            ?.rate
+        val fallbackJournalRate = journalEntries.asSequence()
+            .filter { it.currencyCode == "USD" && it.occurredAt <= effectiveAt }
+            .maxWithOrNull(
+                compareBy<JournalEntryEntity> { it.occurredAt }
+                    .thenBy { it.createdAt }
+                    .thenBy { it.id }
+            )
+            ?.exchangeRateSnapshot
+        val rawRate = latestHistoryRate ?: fallbackJournalRate
+            ?: throw IllegalStateException("لا يوجد سعر صرف موثق بالدولار بتاريخ نهاية الفترة")
+        val rate = try {
+            BigDecimal(rawRate)
+        } catch (error: NumberFormatException) {
+            throw IllegalStateException("سعر الصرف المحفوظ لإغلاق الفترة غير صالح", error)
+        }
+        require(rate.signum() > 0) { "سعر الصرف المحفوظ لإغلاق الفترة يجب أن يكون أكبر من صفر" }
+        return rate.stripTrailingZeros().toPlainString()
     }
 
     companion object {
