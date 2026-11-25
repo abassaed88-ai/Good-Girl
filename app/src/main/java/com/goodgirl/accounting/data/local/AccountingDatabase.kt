@@ -236,6 +236,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     arrayOf("SYS-1200", "1200", "المخزون", "ASSET", "DEBIT"),
                     arrayOf("SYS-2000", "2000", "ذمم الموردين", "LIABILITY", "CREDIT"),
                     arrayOf("SYS-3000", "3000", "رأس المال", "EQUITY", "CREDIT"),
+                    arrayOf("SYS-3100", "3100", "الأرباح المحتجزة", "EQUITY", "CREDIT"),
                     arrayOf("SYS-4000", "4000", "المبيعات", "REVENUE", "CREDIT"),
                     arrayOf("SYS-5000", "5000", "تكلفة البضاعة المباعة", "EXPENSE", "DEBIT"),
                     arrayOf("SYS-6000", "6000", "إيرادات أخرى", "REVENUE", "CREDIT"),
