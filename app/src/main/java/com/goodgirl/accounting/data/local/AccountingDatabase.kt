@@ -43,7 +43,9 @@ private data class MigrationOpeningLine(
         InvoiceEntity::class,
         InvoiceLineEntity::class,
         StockMovementEntity::class,
-        StockCostBaselineEntity::class,\n        StockCostRecalculationAuditEntity::class,\n        StockCostRecalculationItemEntity::class,
+        StockCostBaselineEntity::class,
+        StockCostRecalculationAuditEntity::class,
+        StockCostRecalculationItemEntity::class,
         LedgerEntryEntity::class,
         AccountEntity::class,
         JournalEntryEntity::class,
@@ -63,7 +65,9 @@ abstract class AccountingDatabase : RoomDatabase() {
     abstract fun partyDao(): PartyDao
     abstract fun invoiceDao(): InvoiceDao
     abstract fun stockMovementDao(): StockMovementDao
-    abstract fun stockCostBaselineDao(): StockCostBaselineDao\n    abstract fun stockCostRecalculationAuditDao(): StockCostRecalculationAuditDao\n    abstract fun stockCostRecalculationItemDao(): StockCostRecalculationItemDao
+    abstract fun stockCostBaselineDao(): StockCostBaselineDao
+    abstract fun stockCostRecalculationAuditDao(): StockCostRecalculationAuditDao
+    abstract fun stockCostRecalculationItemDao(): StockCostRecalculationItemDao
     abstract fun ledgerDao(): LedgerDao
     abstract fun accountDao(): AccountDao
     abstract fun journalEntryDao(): JournalEntryDao
