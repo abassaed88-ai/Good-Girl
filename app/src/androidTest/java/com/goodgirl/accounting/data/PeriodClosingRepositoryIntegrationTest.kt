@@ -5,7 +5,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
+import com.goodgirl.accounting.domain.GeneralLedgerFinancialStatementsCalculator
 import com.goodgirl.accounting.domain.JournalLineDraft
+import java.math.BigDecimal
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -130,6 +132,114 @@ class PeriodClosingRepositoryIntegrationTest {
                 1_000, 2_000, "USD", accounts.getValue("3100").id, "CLOSE-USD-001"
             )
             assertEquals("14000", database.journalEntryDao().findById(closingId)!!.exchangeRateSnapshot)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun reopensPeriodWithExactReversalAllowsBackdatedPostingAndCanCloseAgain() = runBlocking {
+        val database = newDatabase()
+        try {
+            val journals = JournalRepository(database)
+            journals.ensureSystemAccounts()
+            val accounts = database.accountDao().getAll().associateBy { it.code }
+            journals.postJournalEntry(
+                "REOPEN-TEST-SALE", "TEST_SALE", "reopen-sale-1", "SYP", "1", 1_000,
+                "مبيعات الفترة الأصلية",
+                listOf(
+                    JournalLineDraft(accounts.getValue("1000").id, debit = "100"),
+                    JournalLineDraft(accounts.getValue("4000").id, credit = "100")
+                )
+            )
+            journals.postJournalEntry(
+                "REOPEN-TEST-EXP", "TEST_EXPENSE", "reopen-expense-1", "SYP", "1", 1_500,
+                "مصروف الفترة الأصلي",
+                listOf(
+                    JournalLineDraft(accounts.getValue("7000").id, debit = "25"),
+                    JournalLineDraft(accounts.getValue("1000").id, credit = "25")
+                )
+            )
+
+            val closingRepository = PeriodClosingRepository(database)
+            val closeId = closingRepository.closePeriod(
+                1_000, 2_000, "SYP", accounts.getValue("3100").id, "CLOSE-REOPEN-001"
+            )
+            val originalClose = database.journalEntryDao().findById(closeId)!!
+            val originalCloseLines = database.journalLineDao().getForEntry(closeId)
+            assertTrue(PeriodClosingRepository.isClosedDate(database.journalEntryDao().getAll(), "SYP", 1_700))
+
+            val reversalId = closingRepository.reopenPeriod(
+                closingEntryId = closeId,
+                reversalJournalNumber = "REOPEN-CLOSE-001",
+                occurredAt = 3_000,
+                reason = "تصحيح خطأ في قيد الإقفال"
+            )
+            val reversal = database.journalEntryDao().findById(reversalId)!!
+            val reversalLines = database.journalLineDao().getForEntry(reversalId)
+            assertEquals("PERIOD_CLOSE_REVERSAL", reversal.sourceType)
+            assertEquals(closeId, reversal.sourceId)
+            assertEquals("عكس قيد إقفال الفترة " + originalClose.journalNumber + " — تصحيح خطأ في قيد الإقفال", reversal.description)
+            assertEquals(originalClose, database.journalEntryDao().findById(closeId))
+            assertEquals(originalCloseLines, database.journalLineDao().getForEntry(closeId))
+            assertEquals(originalCloseLines.size, reversalLines.size)
+            originalCloseLines.forEachIndexed { index, original ->
+                val reversed = reversalLines[index]
+                assertEquals(original.accountId, reversed.accountId)
+                assertEquals(0, BigDecimal(original.debit).compareTo(BigDecimal(reversed.credit)))
+                assertEquals(0, BigDecimal(original.credit).compareTo(BigDecimal(reversed.debit)))
+            }
+
+            assertTrue(!PeriodClosingRepository.isClosedDate(database.journalEntryDao().getAll(), "SYP", 1_700))
+            assertTrue(PeriodClosingRepository.activeClosures(database.journalEntryDao().getAll()).isEmpty())
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    closingRepository.reopenPeriod(
+                        closeId, "REOPEN-CLOSE-DUPLICATE", 3_001, "محاولة إعادة فتح مكررة"
+                    )
+                }
+            }
+
+            journals.postJournalEntry(
+                "REOPEN-TEST-NEW-SALE", "TEST_SALE", "reopen-sale-2", "SYP", "1", 1_700,
+                "مبيعات أضيفت بعد إعادة الفتح",
+                listOf(
+                    JournalLineDraft(accounts.getValue("1000").id, debit = "15"),
+                    JournalLineDraft(accounts.getValue("4000").id, credit = "15")
+                )
+            )
+            val reopenedStatements = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 1_000,
+                periodEndInclusive = 2_000,
+                asOfInclusive = 3_000,
+                accounts = database.accountDao().getAll(),
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll()
+            )
+            assertEquals(BigDecimal("90"), reopenedStatements.incomeStatements.single().netIncome)
+            assertEquals(BigDecimal("90"), reopenedStatements.balanceSheets.single().retainedEarnings)
+
+            val secondCloseId = closingRepository.closePeriod(
+                1_000, 2_000, "SYP", accounts.getValue("3100").id, "CLOSE-REOPEN-002"
+            )
+            assertTrue(secondCloseId != closeId)
+            val entriesAfterSecondClose = database.journalEntryDao().getAll()
+            assertTrue(PeriodClosingRepository.isClosedDate(entriesAfterSecondClose, "SYP", 1_700))
+            val activeClosures = PeriodClosingRepository.activeClosures(entriesAfterSecondClose)
+            assertEquals(1, activeClosures.size)
+            assertEquals(secondCloseId, activeClosures.single().closingEntry.id)
+
+            val closedAgainStatements = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 1_000,
+                periodEndInclusive = 2_000,
+                asOfInclusive = 3_000,
+                accounts = database.accountDao().getAll(),
+                entries = entriesAfterSecondClose,
+                lines = database.journalLineDao().getAll()
+            )
+            assertEquals(BigDecimal("90"), closedAgainStatements.incomeStatements.single().netIncome)
+            assertEquals(BigDecimal("90"), closedAgainStatements.balanceSheets.single().retainedEarnings)
+            assertEquals(6, entriesAfterSecondClose.size)
         } finally {
             database.close()
         }

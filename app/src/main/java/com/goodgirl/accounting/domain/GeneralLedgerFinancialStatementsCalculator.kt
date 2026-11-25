@@ -74,6 +74,10 @@ object GeneralLedgerFinancialStatementsCalculator {
             line.journalEntryId
         }
         val includedEntries = entries.filter { it.occurredAt <= asOfInclusive }
+        val reversedCloseIds = includedEntries.asSequence()
+            .filter { it.sourceType == "PERIOD_CLOSE_REVERSAL" }
+            .map { it.sourceId }
+            .toSet()
         val balances = linkedMapOf<Triple<String, String, String>, MutableList<BigDecimal>>()
         val periodFlows = linkedMapOf<Triple<String, String, String>, MutableList<BigDecimal>>()
 
@@ -99,7 +103,11 @@ object GeneralLedgerFinancialStatementsCalculator {
                 balance[0] = balance[0].add(debit)
                 balance[1] = balance[1].add(credit)
 
-                if (entry.occurredAt in periodStartInclusive..periodEndInclusive && entry.sourceType != "PERIOD_CLOSE") {
+                if (
+                    entry.occurredAt in periodStartInclusive..periodEndInclusive &&
+                    entry.sourceType != "PERIOD_CLOSE" &&
+                    entry.sourceType != "PERIOD_CLOSE_REVERSAL"
+                ) {
                     val flow = periodFlows.getOrPut(key) { mutableListOf(BigDecimal.ZERO, BigDecimal.ZERO) }
                     flow[0] = flow[0].add(debit)
                     flow[1] = flow[1].add(credit)
@@ -134,7 +142,11 @@ object GeneralLedgerFinancialStatementsCalculator {
                 }
             }.fold(BigDecimal.ZERO, BigDecimal::add)
             val closedEarnings = includedEntries
-                .filter { it.currencyCode == currency && it.sourceType == "PERIOD_CLOSE" }
+                .filter {
+                    it.currencyCode == currency &&
+                        it.sourceType == "PERIOD_CLOSE" &&
+                        it.id !in reversedCloseIds
+                }
                 .fold(BigDecimal.ZERO) { total, entry ->
                     val equityMovement = linesByEntry[entry.id].orEmpty().fold(BigDecimal.ZERO) { subtotal, line ->
                         val account = accountById.getValue(line.accountId)

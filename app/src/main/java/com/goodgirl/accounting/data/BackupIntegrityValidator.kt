@@ -452,6 +452,43 @@ object BackupIntegrityValidator {
             require(totalDebit.compareTo(totalCredit) == 0) {
                 "قيد اليومية ${entry.journalNumber} غير متوازن"
             }
+        }        val closeReversals = journalEntries.filter { it.sourceType == "PERIOD_CLOSE_REVERSAL" }
+        closeReversals.forEach { reversal ->
+            val original = journalById[reversal.sourceId]
+                ?: throw IllegalArgumentException("قيد عكس الإقفال مرتبط بقيد أصلي غير موجود")
+            require(original.sourceType == "PERIOD_CLOSE") {
+                "قيد العكس لا يشير إلى قيد إقفال فترة"
+            }
+            require(original.currencyCode == reversal.currencyCode &&
+                BigDecimal(original.exchangeRateSnapshot).compareTo(BigDecimal(reversal.exchangeRateSnapshot)) == 0
+            ) { "عملة أو سعر صرف قيد عكس الإقفال لا يطابق القيد الأصلي" }
+
+            val range = original.sourceId.split(':')
+            require(range.size in 3..4 && range[0] == original.currencyCode) {
+                "مرجع نطاق الفترة في قيد الإقفال الأصلي غير صالح"
+            }
+            val periodStart = range[1].toLongOrNull()
+            val periodEnd = range[2].toLongOrNull()
+            require(periodStart != null && periodEnd != null && periodStart >= 0L && periodEnd >= periodStart) {
+                "نطاق قيد الإقفال الأصلي غير صالح"
+            }
+            require(reversal.occurredAt > periodEnd) {
+                "تاريخ قيد عكس الإقفال يجب أن يلي نهاية الفترة"
+            }
+
+            val originalLines = journalLinesByEntry[original.id].orEmpty().associateBy { it.lineNumber }
+            val reversalLines = journalLinesByEntry[reversal.id].orEmpty().associateBy { it.lineNumber }
+            require(originalLines.isNotEmpty() && originalLines.keys == reversalLines.keys) {
+                "أسطر قيد عكس الإقفال لا تطابق القيد الأصلي"
+            }
+            originalLines.forEach { (lineNumber, originalLine) ->
+                val reversalLine = reversalLines.getValue(lineNumber)
+                require(
+                    reversalLine.accountId == originalLine.accountId &&
+                        BigDecimal(reversalLine.debit).compareTo(BigDecimal(originalLine.credit)) == 0 &&
+                        BigDecimal(reversalLine.credit).compareTo(BigDecimal(originalLine.debit)) == 0
+                ) { "قيد عكس الإقفال لا يعكس جميع أسطر القيد الأصلي بدقة" }
+            }
         }
     }
 

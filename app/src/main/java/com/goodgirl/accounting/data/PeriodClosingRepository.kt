@@ -14,6 +14,17 @@ import java.util.UUID
  * Closed ranges are encoded in the journal source key so the feature adds no
  * destructive schema migration and remains part of existing backup exports.
  */
+data class ActivePeriodClosure(
+    val closingEntry: JournalEntryEntity,
+    val currencyCode: String,
+    val periodStartInclusive: Long,
+    val periodEndInclusive: Long
+)
+
+/**
+ * Closing and reopening are represented by immutable, balanced journal entries.
+ * A reopening never edits or deletes the original closing entry.
+ */
 class PeriodClosingRepository(private val database: AccountingDatabase) {
     suspend fun closePeriod(
         periodStartInclusive: Long,
@@ -25,17 +36,23 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
         val currency = currencyCode.trim().uppercase()
         val number = journalNumber.trim()
         require(number.isNotEmpty()) { "رقم قيد الإغلاق مطلوب" }
-        val sourceId = encodeRange(currency, periodStartInclusive, periodEndInclusive)
+        require(currency == "SYP" || currency == "USD") { "عملة الإغلاق غير مدعومة" }
+        require(periodStartInclusive >= 0L && periodEndInclusive >= periodStartInclusive) {
+            "نطاق فترة الإغلاق غير صالح"
+        }
         return database.withTransaction {
             val journalDao = database.journalEntryDao()
             val journalEntries = journalDao.getAll()
-            val existingClosures = journalEntries.filter {
-                it.sourceType == SOURCE_TYPE && it.currencyCode == currency
-            }
-            val overlaps = existingClosures.any { entry ->
-                val range = decodeRange(entry.sourceId) ?: return@any true
-                range.first <= periodEndInclusive && periodStartInclusive <= range.second
-            }
+            val reversedCloseIds = journalEntries.asSequence()
+                .filter { it.sourceType == REVERSAL_SOURCE_TYPE }
+                .map { it.sourceId }
+                .toSet()
+            val overlaps = journalEntries.asSequence()
+                .filter { it.sourceType == SOURCE_TYPE && it.currencyCode == currency && it.id !in reversedCloseIds }
+                .any { entry ->
+                    val range = decodeRange(entry.sourceId) ?: return@any true
+                    range.first <= periodEndInclusive && periodStartInclusive <= range.second
+                }
             require(!overlaps) { "توجد فترة مغلقة تتداخل مع النطاق المحدد" }
 
             val draft = PeriodClosingRules.build(
@@ -55,6 +72,7 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
                 journalEntries = journalEntries
             )
             val entryId = UUID.randomUUID().toString()
+            val sourceId = encodeRange(currency, periodStartInclusive, periodEndInclusive, entryId)
             val now = System.currentTimeMillis()
             journalDao.insert(
                 JournalEntryEntity(
@@ -83,6 +101,82 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
                 }
             )
             entryId
+        }
+    }
+
+    /**
+     * Reopens a period by posting the exact opposite of its closing journal.
+     * The reversal is dated after the closed range and includes the operator's reason.
+     */
+    suspend fun reopenPeriod(
+        closingEntryId: String,
+        reversalJournalNumber: String,
+        occurredAt: Long,
+        reason: String
+    ): String {
+        val number = reversalJournalNumber.trim()
+        val cleanReason = reason.trim()
+        require(number.isNotEmpty()) { "رقم قيد إعادة الفتح مطلوب" }
+        require(cleanReason.isNotEmpty()) { "سبب إعادة فتح الفترة مطلوب" }
+        require(occurredAt >= 0L) { "تاريخ إعادة فتح الفترة غير صالح" }
+
+        return database.withTransaction {
+            val journalDao = database.journalEntryDao()
+            val closingEntry = journalDao.findById(closingEntryId)
+                ?: throw IllegalArgumentException("قيد إقفال الفترة غير موجود")
+            require(closingEntry.sourceType == SOURCE_TYPE) { "القيد المحدد ليس قيد إقفال فترة" }
+            val range = decodeRange(closingEntry.sourceId)
+                ?: throw IllegalArgumentException("بيانات نطاق الفترة المغلقة غير صالحة")
+            require(range.second < Long.MAX_VALUE && occurredAt > range.second) {
+                "يجب تسجيل إعادة الفتح بتاريخ يلي نهاية الفترة المغلقة"
+            }
+            require(journalDao.findBySource(REVERSAL_SOURCE_TYPE, closingEntry.id) == null) {
+                "تمت إعادة فتح هذه الفترة مسبقاً"
+            }
+            require(journalDao.findByNumber(number) == null) { "رقم قيد إعادة الفتح مستخدم مسبقاً" }
+
+            // The opposite journal must not itself be posted into another active closed range.
+            PeriodClosingGuard.ensureOpen(database, closingEntry.currencyCode, occurredAt)
+
+            val originalLines = database.journalLineDao().getForEntry(closingEntry.id)
+            require(originalLines.size >= 2) { "قيد الإقفال الأصلي غير مكتمل" }
+            val originalDebit = originalLines.fold(BigDecimal.ZERO) { total, line ->
+                total.add(BigDecimal(line.debit))
+            }
+            val originalCredit = originalLines.fold(BigDecimal.ZERO) { total, line ->
+                total.add(BigDecimal(line.credit))
+            }
+            require(originalDebit.compareTo(originalCredit) == 0) { "قيد الإقفال الأصلي غير متوازن" }
+
+            val reversalId = UUID.randomUUID().toString()
+            val now = System.currentTimeMillis()
+            journalDao.insert(
+                JournalEntryEntity(
+                    id = reversalId,
+                    journalNumber = number,
+                    sourceType = REVERSAL_SOURCE_TYPE,
+                    sourceId = closingEntry.id,
+                    currencyCode = closingEntry.currencyCode,
+                    exchangeRateSnapshot = closingEntry.exchangeRateSnapshot,
+                    occurredAt = occurredAt,
+                    description = "عكس قيد إقفال الفترة " + closingEntry.journalNumber + " — " + cleanReason,
+                    createdAt = now
+                )
+            )
+            database.journalLineDao().insertAll(
+                originalLines.mapIndexed { index, line ->
+                    JournalLineEntity(
+                        id = UUID.randomUUID().toString(),
+                        journalEntryId = reversalId,
+                        lineNumber = index + 1,
+                        accountId = line.accountId,
+                        debit = line.credit,
+                        credit = line.debit,
+                        memo = "عكس الإقفال: " + line.memo
+                    )
+                }
+            )
+            reversalId
         }
     }
 
@@ -125,24 +219,54 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
 
     companion object {
         const val SOURCE_TYPE = "PERIOD_CLOSE"
+        const val REVERSAL_SOURCE_TYPE = "PERIOD_CLOSE_REVERSAL"
 
-        fun isClosedDate(entries: List<JournalEntryEntity>, currencyCode: String, occurredAt: Long): Boolean =
-            entries.asSequence()
-                .filter { it.sourceType == SOURCE_TYPE && it.currencyCode == currencyCode }
+        fun activeClosures(entries: List<JournalEntryEntity>): List<ActivePeriodClosure> {
+            val reversedCloseIds = entries.asSequence()
+                .filter { it.sourceType == REVERSAL_SOURCE_TYPE }
+                .map { it.sourceId }
+                .toSet()
+            return entries.asSequence()
+                .filter { it.sourceType == SOURCE_TYPE && it.id !in reversedCloseIds }
+                .mapNotNull { entry ->
+                    val range = decodeRange(entry.sourceId) ?: return@mapNotNull null
+                    ActivePeriodClosure(entry, entry.currencyCode, range.first, range.second)
+                }
+                .sortedWith(
+                    compareByDescending<ActivePeriodClosure> { it.periodEndInclusive }
+                        .thenByDescending { it.closingEntry.createdAt }
+                )
+                .toList()
+        }
+
+        fun isClosedDate(entries: List<JournalEntryEntity>, currencyCode: String, occurredAt: Long): Boolean {
+            val reversedCloseIds = entries.asSequence()
+                .filter { it.sourceType == REVERSAL_SOURCE_TYPE }
+                .map { it.sourceId }
+                .toSet()
+            return entries.asSequence()
+                .filter {
+                    it.sourceType == SOURCE_TYPE &&
+                        it.currencyCode == currencyCode &&
+                        it.id !in reversedCloseIds
+                }
                 .any { entry ->
-                val range = decodeRange(entry.sourceId) ?: return@any true
-                occurredAt in range.first..range.second
-            }
+                    val range = decodeRange(entry.sourceId) ?: return@any true
+                    occurredAt in range.first..range.second
+                }
+        }
 
-        private fun encodeRange(currency: String, start: Long, end: Long): String {
+        private fun encodeRange(currency: String, start: Long, end: Long, closeId: String): String {
             require(currency == "SYP" || currency == "USD") { "عملة الإغلاق غير مدعومة" }
             require(start >= 0L && end >= start) { "نطاق الإغلاق غير صالح" }
-            return "$currency:$start:$end"
+            require(closeId.isNotBlank()) { "مرجع قيد الإغلاق مطلوب" }
+            return "$currency:$start:$end:$closeId"
         }
 
         private fun decodeRange(sourceId: String): Pair<Long, Long>? {
             val parts = sourceId.split(':')
-            if (parts.size != 3 || (parts[0] != "SYP" && parts[0] != "USD")) return null
+            if (parts.size !in 3..4 || (parts[0] != "SYP" && parts[0] != "USD")) return null
+            if (parts.size == 4 && parts[3].isBlank()) return null
             val start = parts[1].toLongOrNull() ?: return null
             val end = parts[2].toLongOrNull() ?: return null
             if (start < 0L || end < start) return null

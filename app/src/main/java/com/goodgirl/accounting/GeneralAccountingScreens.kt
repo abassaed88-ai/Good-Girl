@@ -1066,6 +1066,7 @@ private fun journalSourceArabic(source: String): String = when (source) {
     "MANUAL_CASH_EXPENSE" -> "مصروف نقدي يدوي"
     "MANUAL_JOURNAL" -> "قيد يومية يدوي — غير مصنف"
     "PERIOD_CLOSE" -> "قيد إقفال فترة محاسبية"
+    "PERIOD_CLOSE_REVERSAL" -> "قيد عكسي لإعادة فتح فترة محاسبية"
     "MANUAL_JOURNAL_OPERATING" -> "قيد يومية يدوي — تشغيلي"
     "MANUAL_JOURNAL_INVESTING" -> "قيد يومية يدوي — استثماري"
     "MANUAL_JOURNAL_FINANCING" -> "قيد يومية يدوي — تمويلي"

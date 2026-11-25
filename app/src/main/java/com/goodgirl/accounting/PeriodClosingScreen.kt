@@ -17,6 +17,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -30,6 +31,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.goodgirl.accounting.data.ActivePeriodClosure
 import com.goodgirl.accounting.data.JournalRepository
 import com.goodgirl.accounting.data.PeriodClosingRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
@@ -39,6 +41,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import kotlinx.coroutines.launch
 
 @Composable
@@ -81,6 +84,9 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
     var messageIsError by remember { mutableStateOf(false) }
     var preview by remember { mutableStateOf<PeriodCloseDraft?>(null) }
     var previewError by remember { mutableStateOf<String?>(null) }
+    var reopeningClosure by remember { mutableStateOf<ActivePeriodClosure?>(null) }
+    var reopenReason by remember { mutableStateOf("") }
+    var reopening by remember { mutableStateOf(false) }
 
     LaunchedEffect(journalRepository) {
         runCatching { journalRepository.ensureSystemAccounts() }
@@ -92,6 +98,9 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
 
     val equityAccounts = accounts.filter { it.accountType == "EQUITY" && it.isActive }
     val selectedEquity = equityAccounts.firstOrNull { it.id == equityAccountId }
+    val activeClosures = remember(journalEntries) {
+        PeriodClosingRepository.activeClosures(journalEntries)
+    }
 
     fun showDatePicker(initial: Long, onPicked: (Long) -> Unit, endOfDay: Boolean) {
         val selected = Calendar.getInstance().apply { timeInMillis = initial }
@@ -211,10 +220,52 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("قبل تنفيذ الإغلاق", style = MaterialTheme.typography.titleMedium)
-                Text("• الإغلاق نهائي وغير قابل للتكرار أو التداخل مع فترة مغلقة.")
+                Text("• لا يمكن تكرار إقفال فترة نشطة أو إقفال فترة متداخلة معها.")
                 Text("• لن تُقبل قيود جديدة بتاريخ داخل الفترة بعد إغلاقها.")
                 Text("• تبقى حركات الفترات التالية متاحة بصورة طبيعية.")
-                Text("• احتفظ بنسخة احتياطية مشفرة قبل الإغلاق.")
+                Text("• يمكن إعادة فتح الفترة لاحقاً بقيد عكسي مستقل مع تسجيل سبب الإعادة، دون حذف قيد الإقفال الأصلي.")
+                Text("• احتفظ بنسخة احتياطية مشفرة قبل الإغلاق أو إعادة الفتح.")
+            }
+        }
+
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text("الفترات المغلقة النشطة", style = MaterialTheme.typography.titleMedium)
+                if (activeClosures.isEmpty()) {
+                    Text("لا توجد فترات مغلقة حالياً.")
+                } else {
+                    activeClosures.forEach { closure ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text(
+                                    (if (closure.currencyCode == "SYP") "الليرة السورية" else "الدولار الأمريكي") +
+                                        " — " + dateFormat.format(Date(closure.periodStartInclusive)) +
+                                        " إلى " + dateFormat.format(Date(closure.periodEndInclusive)),
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    "قيد الإقفال: " + closure.closingEntry.journalNumber,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            OutlinedButton(
+                                enabled = !reopening && !saving,
+                                onClick = {
+                                    reopeningClosure = closure
+                                    reopenReason = ""
+                                    message = null
+                                }
+                            ) { Text("إعادة فتح") }
+                        }
+                    }
+                }
             }
         }
 
@@ -254,7 +305,7 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
                                     periodEndInclusive = endAt,
                                     currencyCode = currency,
                                     retainedEarningsAccountId = selectedEquity!!.id,
-                                    journalNumber = "CLOSE-$currency-$startAt-$endAt"
+                                    journalNumber = "CLOSE-$currency-$startAt-${UUID.randomUUID().toString().take(8)}"
                                 )
                             }.onSuccess {
                                 message = "تم إغلاق الفترة وترحيل قيد الإغلاق إلى دفتر اليومية بنجاح."
@@ -269,6 +320,80 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
                 ) { Text("تأكيد الإغلاق") }
             },
             dismissButton = { TextButton(onClick = { showConfirmation = false }) { Text("إلغاء") } }
+        )
+    }
+
+
+    if (reopeningClosure != null) {
+        val target = reopeningClosure!!
+        AlertDialog(
+            onDismissRequest = { if (!reopening) reopeningClosure = null },
+            title = { Text("تأكيد إعادة فتح الفترة") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "سيُنشأ قيد عكسي مستقل لقيد الإقفال " + target.closingEntry.journalNumber +
+                            " عن الفترة من " + dateFormat.format(Date(target.periodStartInclusive)) +
+                            " إلى " + dateFormat.format(Date(target.periodEndInclusive)) +
+                            ". لن يُحذف القيد الأصلي."
+                    )
+                    OutlinedTextField(
+                        value = reopenReason,
+                        onValueChange = { reopenReason = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("سبب إعادة الفتح") },
+                        minLines = 2,
+                        enabled = !reopening
+                    )
+                    Text(
+                        "سيُسجّل القيد العكسي بتاريخ يلي نهاية الفترة المغلقة.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !reopening && reopenReason.isNotBlank(),
+                    onClick = {
+                        val cleanReason = reopenReason.trim()
+                        reopening = true
+                        message = null
+                        scope.launch {
+                            runCatching {
+                                require(target.periodEndInclusive < Long.MAX_VALUE) {
+                                    "لا يمكن إعادة فتح فترة يتجاوز تاريخ نهايتها الحد المدعوم"
+                                }
+                                val reversalAt = maxOf(
+                                    System.currentTimeMillis(),
+                                    target.periodEndInclusive + 1L
+                                )
+                                closingRepository.reopenPeriod(
+                                    closingEntryId = target.closingEntry.id,
+                                    reversalJournalNumber = "REOPEN-${target.closingEntry.id}",
+                                    occurredAt = reversalAt,
+                                    reason = cleanReason
+                                )
+                            }.onSuccess {
+                                message = "تمت إعادة فتح الفترة بقيد عكسي موثق، وبقي قيد الإقفال الأصلي محفوظاً."
+                                messageIsError = false
+                                reopeningClosure = null
+                                reopenReason = ""
+                            }.onFailure {
+                                message = it.message ?: "تعذرت إعادة فتح الفترة"
+                                messageIsError = true
+                            }
+                            reopening = false
+                        }
+                    }
+                ) { Text(if (reopening) "جارٍ تسجيل القيد العكسي..." else "تأكيد إعادة الفتح") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !reopening,
+                    onClick = { reopeningClosure = null }
+                ) { Text("إلغاء") }
+            }
         )
     }
 }

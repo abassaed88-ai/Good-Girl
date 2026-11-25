@@ -48,7 +48,8 @@ object PeriodClosingRules {
         val included = entries.filter {
             it.currencyCode == currency &&
                 it.occurredAt in periodStartInclusive..periodEndInclusive &&
-                it.sourceType != "PERIOD_CLOSE"
+                it.sourceType != "PERIOD_CLOSE" &&
+                it.sourceType != "PERIOD_CLOSE_REVERSAL"
         }
         val entryIds = included.map { it.id }.toSet()
         val linesByEntry = lines.filter { it.journalEntryId in entryIds }.groupBy { it.journalEntryId }
