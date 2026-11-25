@@ -39,7 +39,7 @@ class PeriodClosingRepositoryIntegrationTest {
             )
 
             val closingId = PeriodClosingRepository(database).closePeriod(
-                1_000, 2_000, "SYP", accounts.getValue("3000").id, "CLOSE-TEST-001"
+                1_000, 2_000, "SYP", accounts.getValue("3100").id, "CLOSE-TEST-001"
             )
             val closing = database.journalEntryDao().findById(closingId)!!
             assertEquals("PERIOD_CLOSE", closing.sourceType)
