@@ -221,6 +221,52 @@ class JournalReversalIntegrationTest {
         }
     }
 
+    @Test
+    fun classifiedManualJournalReversalPreservesCashFlowClassification() = runBlocking {
+        val database = newDatabase()
+        try {
+            val repository = JournalRepository(database)
+            repository.ensureSystemAccounts()
+            val accounts = database.accountDao().getAll().associateBy { it.code }
+            val originalId = repository.postJournalEntry(
+                journalNumber = "JE-INVESTING-001",
+                sourceType = "MANUAL_JOURNAL_INVESTING",
+                sourceId = "manual-investing-001",
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                occurredAt = 1_000L,
+                description = "شراء أصل للاختبار",
+                lines = listOf(
+                    JournalLineDraft(accounts.getValue("1200").id, debit = "75"),
+                    JournalLineDraft(accounts.getValue("1000").id, credit = "75")
+                )
+            )
+
+            val reversalId = repository.reverseJournalEntry(
+                originalEntryId = originalId,
+                reversalJournalNumber = "JE-INVESTING-REV-001",
+                occurredAt = 2_000L,
+                reason = "عكس شراء الأصل"
+            )
+            val reversal = database.journalEntryDao().findById(reversalId)!!
+
+            assertEquals("REVERSAL_INVESTING", reversal.sourceType)
+            assertEquals(originalId, reversal.sourceId)
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    repository.reverseJournalEntry(
+                        originalEntryId = reversalId,
+                        reversalJournalNumber = "JE-INVESTING-REV-002",
+                        occurredAt = 3_000L,
+                        reason = "يمنع عكس القيد العكسي"
+                    )
+                }
+            }
+        } finally {
+            database.close()
+        }
+    }
+
     private fun newDatabase(): AccountingDatabase {
         val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
         return Room.inMemoryDatabaseBuilder(context, AccountingDatabase::class.java)

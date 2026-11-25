@@ -48,9 +48,9 @@ class ManualJournalEntryDialogPersistenceTest {
                     ManualJournalEntryDialog(
                         accounts = accounts,
                         onDismiss = {},
-                        onSave = { number, description, currency, rate, lines ->
+                        onSave = { number, description, currency, rate, cashFlowActivity, lines ->
                             saveRequest.set(
-                                PendingJournalSave(number, description, currency, rate, lines)
+                                PendingJournalSave(number, description, currency, rate, cashFlowActivity, lines)
                             )
                         }
                     )
@@ -72,6 +72,12 @@ class ManualJournalEntryDialogPersistenceTest {
                 .performScrollTo()
                 .performTextInput("25")
 
+            composeRule.onNodeWithTag("manual-journal-cashflow-classification")
+                .performScrollTo()
+                .performClick()
+            composeRule.onNodeWithTag("manual-journal-cashflow-option-INVESTING")
+                .performClick()
+
             enterArabicText("manual-journal-memo-0", "عطر فاخر ورد")
             enterArabicText("manual-journal-memo-1", "ملاحظة عربية")
 
@@ -86,13 +92,14 @@ class ManualJournalEntryDialogPersistenceTest {
             assertEquals("قيد اختبار من الواجهة", request.description)
             assertEquals("SYP", request.currencyCode)
             assertEquals("1", request.exchangeRate)
+            assertEquals("INVESTING", request.cashFlowActivity)
             assertEquals("عطر فاخر ورد", request.lines[0].memo)
             assertEquals("ملاحظة عربية", request.lines[1].memo)
 
             val entryId = runBlocking {
                 repository.postJournalEntry(
                     journalNumber = request.number,
-                    sourceType = "MANUAL_JOURNAL",
+                    sourceType = manualJournalSourceTypeForCashFlow(request.cashFlowActivity),
                     sourceId = "MANUAL-" + request.number,
                     currencyCode = request.currencyCode,
                     exchangeRateSnapshot = request.exchangeRate,
@@ -114,6 +121,7 @@ class ManualJournalEntryDialogPersistenceTest {
             }
             assertNotNull("The posted journal should still exist after reopening", restoredEntry)
             assertEquals("قيد اختبار من الواجهة", restoredEntry!!.description)
+            assertEquals("MANUAL_JOURNAL_INVESTING", restoredEntry.sourceType)
 
             val restoredLines = runBlocking {
                 JournalRepository(reopenedDatabase!!).getLines(entryId)
@@ -161,6 +169,7 @@ class ManualJournalEntryDialogPersistenceTest {
         val description: String,
         val currencyCode: String,
         val exchangeRate: String,
+        val cashFlowActivity: String,
         val lines: List<JournalLineDraft>
     )
 }

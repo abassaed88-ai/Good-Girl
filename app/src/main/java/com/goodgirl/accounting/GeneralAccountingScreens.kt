@@ -74,6 +74,26 @@ private val AccountingMuted get() = MutedText
 private val AccountingGood get() = SoftGreen
 private val AccountingBad get() = SoftRed
 
+private val ManualJournalSourceTypes = setOf(
+    "MANUAL_JOURNAL",
+    "MANUAL_JOURNAL_OPERATING",
+    "MANUAL_JOURNAL_INVESTING",
+    "MANUAL_JOURNAL_FINANCING"
+)
+private val ReversalJournalSourceTypes = setOf(
+    "REVERSAL",
+    "REVERSAL_OPERATING",
+    "REVERSAL_INVESTING",
+    "REVERSAL_FINANCING"
+)
+
+internal fun manualJournalSourceTypeForCashFlow(activity: String): String = when (activity) {
+    "OPERATING" -> "MANUAL_JOURNAL_OPERATING"
+    "INVESTING" -> "MANUAL_JOURNAL_INVESTING"
+    "FINANCING" -> "MANUAL_JOURNAL_FINANCING"
+    else -> "MANUAL_JOURNAL"
+}
+
 @Composable
 fun GeneralAccountingHubScreen(
     onBack: () -> Unit,
@@ -543,12 +563,12 @@ fun JournalBookScreen(
         ManualJournalEntryDialog(
             accounts = accounts.filter { it.isActive },
             onDismiss = { showManualEntry = false },
-            onSave = { number, description, currency, rate, drafts ->
+            onSave = { number, description, currency, rate, cashFlowActivity, drafts ->
                 scope.launch {
                     runCatching {
                         repository.postJournalEntry(
                             journalNumber = number,
-                            sourceType = "MANUAL_JOURNAL",
+                            sourceType = manualJournalSourceTypeForCashFlow(cashFlowActivity),
                             sourceId = "MANUAL-" + number.trim(),
                             currencyCode = currency,
                             exchangeRateSnapshot = rate,
@@ -580,7 +600,7 @@ internal data class ManualJournalLineInput(
 internal fun ManualJournalEntryDialog(
     accounts: List<AccountEntity>,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, List<JournalLineDraft>) -> Unit
+    onSave: (String, String, String, String, String, List<JournalLineDraft>) -> Unit
 ) {
     val initialJournalNumber = remember {
         "MAN-" + System.currentTimeMillis().toString().takeLast(8)
@@ -594,6 +614,14 @@ internal fun ManualJournalEntryDialog(
             .getString("usd_syp_rate", "1") ?: "1"
     }
     var exchangeRate by remember { mutableStateOf(defaultExchangeRate) }
+    var cashFlowActivity by remember { mutableStateOf("UNCLASSIFIED") }
+    var cashFlowActivityMenuExpanded by remember { mutableStateOf(false) }
+    val cashFlowActivityOptions = listOf(
+        "UNCLASSIFIED" to "غير مصنف (افتراضي)",
+        "OPERATING" to "تشغيلي",
+        "INVESTING" to "استثماري",
+        "FINANCING" to "تمويلي"
+    )
     var error by remember { mutableStateOf<String?>(null) }
     var showDiscardConfirmation by remember { mutableStateOf(false) }
     val lines = remember { mutableStateListOf(ManualJournalLineInput(), ManualJournalLineInput()) }
@@ -607,7 +635,8 @@ internal fun ManualJournalEntryDialog(
         hasLineContent = lines.any { line ->
             line.accountId.isNotBlank() || line.debit.isNotBlank() ||
                 line.credit.isNotBlank() || line.memo.isNotBlank()
-        }
+        },
+        cashFlowActivity = cashFlowActivity
     )
     fun requestDismiss() {
         if (hasUnsavedDraft) showDiscardConfirmation = true else onDismiss()
@@ -644,6 +673,39 @@ internal fun ManualJournalEntryDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+                Text("تصنيف حركة الصندوق (اختياري)", color = AccountingText, fontWeight = FontWeight.Bold)
+                Text(
+                    "اختر التصنيف إذا كان القيد يتضمن حركة في الصندوق. لا يغيّر التصنيف الحسابات أو المبالغ، ويُستخدم لتنظيم قائمة التدفقات النقدية.",
+                    color = AccountingMuted,
+                    fontSize = 12.sp
+                )
+                Box {
+                    TextButton(
+                        onClick = { cashFlowActivityMenuExpanded = true },
+                        modifier = Modifier.fillMaxWidth().testTag("manual-journal-cashflow-classification")
+                    ) {
+                        Text(
+                            "التصنيف: " + (cashFlowActivityOptions.firstOrNull { it.first == cashFlowActivity }?.second
+                                ?: "غير مصنف (افتراضي)")
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = cashFlowActivityMenuExpanded,
+                        onDismissRequest = { cashFlowActivityMenuExpanded = false }
+                    ) {
+                        cashFlowActivityOptions.forEach { (code, label) ->
+                            DropdownMenuItem(
+                                modifier = Modifier.testTag("manual-journal-cashflow-option-$code"),
+                                text = { Text(label) },
+                                onClick = {
+                                    cashFlowActivity = code
+                                    cashFlowActivityMenuExpanded = false
+                                    error = null
+                                }
+                            )
+                        }
+                    }
+                }
                 Text("أسطر القيد", color = AccountingAccent, fontWeight = FontWeight.Bold)
                 lines.forEachIndexed { index, line ->
                     key(line.id) {
@@ -677,7 +739,7 @@ internal fun ManualJournalEntryDialog(
                             } else if (drafts.any { it.accountId.isBlank() }) {
                                 error = "اختر حساباً لكل سطر."
                             } else {
-                                onSave(journalNumber.trim(), description.trim(), currency, exchangeRate, drafts)
+                                onSave(journalNumber.trim(), description.trim(), currency, exchangeRate, cashFlowActivity, drafts)
                             }
                         },
                         modifier = Modifier.weight(1f).testTag("manual-journal-submit")
@@ -796,7 +858,7 @@ fun JournalEntryDetailScreen(
     val repository = remember(database) { JournalRepository(database) }
     val scope = rememberCoroutineScope()
     val entry = entries.firstOrNull { it.id == entryId }
-    val existingReversal = entries.firstOrNull { it.sourceType == "REVERSAL" && it.sourceId == entryId }
+    val existingReversal = entries.firstOrNull { it.sourceType in ReversalJournalSourceTypes && it.sourceId == entryId }
     val accountsById = accounts.associateBy { it.id }
     var showReversalDialog by remember { mutableStateOf(false) }
     var reversalReason by remember { mutableStateOf("") }
@@ -832,7 +894,7 @@ fun JournalEntryDetailScreen(
                     Text("نوع المصدر: " + journalSourceArabic(entry.sourceType), color = AccountingMuted, fontSize = 12.sp)
                 }
             }
-            if (entry.sourceType == "MANUAL_JOURNAL" && existingReversal == null) {
+            if (entry.sourceType in ManualJournalSourceTypes && existingReversal == null) {
                 Button(
                     onClick = { showReversalDialog = true },
                     modifier = Modifier.fillMaxWidth()
@@ -848,7 +910,7 @@ fun JournalEntryDetailScreen(
                 )
             }
             reversalMessage?.let { Text(it, color = if (it.startsWith("تم")) AccountingGood else AccountingBad, fontSize = 12.sp) }
-            if (entry.sourceType == "REVERSAL") {
+            if (entry.sourceType in ReversalJournalSourceTypes) {
                 Text("هذا قيد عكسي مستقل؛ لا يمكن عكسه مرة أخرى.", color = AccountingMuted, fontSize = 12.sp)
             }
             val debitTotal = lines.fold(BigDecimal.ZERO) { total, line -> total.add(line.debit.toBigDecimal()) }
@@ -995,7 +1057,13 @@ private fun journalSourceArabic(source: String): String = when (source) {
     "STOCKTAKE_LOSS" -> "نقص ناتج عن الجرد"
     "MANUAL_CASH_INCOME" -> "إيراد نقدي يدوي"
     "MANUAL_CASH_EXPENSE" -> "مصروف نقدي يدوي"
-    "MANUAL_JOURNAL" -> "قيد يومية يدوي"
-    "REVERSAL" -> "قيد عكسي"
+    "MANUAL_JOURNAL" -> "قيد يومية يدوي — غير مصنف"
+    "MANUAL_JOURNAL_OPERATING" -> "قيد يومية يدوي — تشغيلي"
+    "MANUAL_JOURNAL_INVESTING" -> "قيد يومية يدوي — استثماري"
+    "MANUAL_JOURNAL_FINANCING" -> "قيد يومية يدوي — تمويلي"
+    "REVERSAL" -> "قيد عكسي — غير مصنف"
+    "REVERSAL_OPERATING" -> "قيد عكسي — تشغيلي"
+    "REVERSAL_INVESTING" -> "قيد عكسي — استثماري"
+    "REVERSAL_FINANCING" -> "قيد عكسي — تمويلي"
     else -> source
 }

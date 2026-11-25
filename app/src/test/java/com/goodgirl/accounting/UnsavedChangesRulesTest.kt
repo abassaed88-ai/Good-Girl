@@ -268,6 +268,34 @@ class UnsavedChangesRulesTest {
 
 
     @Test
+    fun manualJournalCashFlowClassificationCountsAsUnsaved() {
+        assertFalse(
+            hasUnsavedManualJournalDraft(
+                journalNumberChanged = false,
+                description = "",
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                defaultExchangeRate = "1",
+                lineCount = 2,
+                hasLineContent = false,
+                cashFlowActivity = "UNCLASSIFIED"
+            )
+        )
+        assertTrue(
+            hasUnsavedManualJournalDraft(
+                journalNumberChanged = false,
+                description = "",
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                defaultExchangeRate = "1",
+                lineCount = 2,
+                hasLineContent = false,
+                cashFlowActivity = "INVESTING"
+            )
+        )
+    }
+
+    @Test
     fun reversalDialogOnlyWarnsAfterReasonIsEntered() {
         assertFalse(hasUnsavedReversalDraft(""))
         assertFalse(hasUnsavedReversalDraft("   "))

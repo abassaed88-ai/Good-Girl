@@ -158,9 +158,11 @@ internal fun hasUnsavedManualJournalDraft(
     exchangeRate: String,
     defaultExchangeRate: String,
     lineCount: Int,
-    hasLineContent: Boolean
+    hasLineContent: Boolean,
+    cashFlowActivity: String = "UNCLASSIFIED"
 ): Boolean =
     journalNumberChanged ||
+        cashFlowActivity != "UNCLASSIFIED" ||
         description.isNotBlank() ||
         currencyCode != "SYP" ||
         (currencyCode == "USD" && exchangeRate != defaultExchangeRate) ||

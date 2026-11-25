@@ -128,8 +128,14 @@ class JournalRepository(private val database: AccountingDatabase) {
     ): String {
         val original = database.journalEntryDao().findById(originalEntryId)
             ?: throw IllegalArgumentException("القيد الأصلي غير موجود")
-        require(original.sourceType == "MANUAL_JOURNAL") {
-            "العكس المباشر متاح حالياً للقيود اليدوية فقط؛ عكس الفواتير وحركات المخزون والتحصيل يتطلب مساراً مرتبطاً بالمستند الأصلي"
+        val reversalSourceType = when (original.sourceType) {
+            "MANUAL_JOURNAL" -> "REVERSAL"
+            "MANUAL_JOURNAL_OPERATING" -> "REVERSAL_OPERATING"
+            "MANUAL_JOURNAL_INVESTING" -> "REVERSAL_INVESTING"
+            "MANUAL_JOURNAL_FINANCING" -> "REVERSAL_FINANCING"
+            else -> throw IllegalArgumentException(
+                "العكس المباشر متاح حالياً للقيود اليدوية فقط؛ عكس الفواتير وحركات المخزون والتحصيل يتطلب مساراً مرتبطاً بالمستند الأصلي"
+            )
         }
         require(occurredAt >= original.occurredAt) {
             "تاريخ القيد العكسي لا يجوز أن يسبق تاريخ القيد الأصلي"
@@ -141,7 +147,7 @@ class JournalRepository(private val database: AccountingDatabase) {
 
         return postJournalEntry(
             journalNumber = reversalJournalNumber,
-            sourceType = "REVERSAL",
+            sourceType = reversalSourceType,
             sourceId = original.id,
             currencyCode = original.currencyCode,
             exchangeRateSnapshot = original.exchangeRateSnapshot,
