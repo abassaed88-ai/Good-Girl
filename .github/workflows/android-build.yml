@@ -90,7 +90,7 @@ jobs:
             echo "KVM hardware acceleration is available."
           fi
 
-      - name: Run database migration instrumentation tests
+      - name: Run Android instrumentation tests (database, accounting, Arabic text input)
         timeout-minutes: 22
         uses: reactivecircus/android-emulator-runner@v2
         with:
