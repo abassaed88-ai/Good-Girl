@@ -72,6 +72,7 @@ class JournalRepository(private val database: AccountingDatabase) {
         val now = System.currentTimeMillis()
 
         database.withTransaction {
+            PeriodClosingGuard.ensureOpen(database, normalized.currencyCode, occurredAt)
             require(database.journalEntryDao().findBySource(cleanSourceType, cleanSourceId) == null) {
                 "تم ترحيل قيد لهذا المستند مسبقاً"
             }
