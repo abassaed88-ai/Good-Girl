@@ -6,11 +6,22 @@ import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
+import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.data.local.StockCostRecalculationAuditEntity
+import com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity
+import com.goodgirl.accounting.data.local.JournalEntryEntity
+import com.goodgirl.accounting.data.local.JournalLineEntity
 import com.goodgirl.accounting.domain.InvoiceCalculator
 import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
 import com.goodgirl.accounting.domain.InvoicePostingRules
 import com.goodgirl.accounting.domain.ProductInputRules
 import com.goodgirl.accounting.domain.ProductUnitInputRules
+import com.goodgirl.accounting.domain.HistoricalStockCostBaseline
+import com.goodgirl.accounting.domain.HistoricalStockCostEvent
+import com.goodgirl.accounting.domain.HistoricalStockCostReconciler
+import com.goodgirl.accounting.domain.HistoricalStockCostChange
+import com.goodgirl.accounting.domain.JournalEntryRules
+import com.goodgirl.accounting.domain.JournalLineDraft
 import kotlinx.coroutines.flow.Flow
 import java.math.BigDecimal
 import java.util.UUID
@@ -158,6 +169,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
         var subtotal = BigDecimal.ZERO
         var lineDiscountTotal = BigDecimal.ZERO
         val storedLines = mutableListOf<InvoiceLineEntity>()
+        val productStateBeforePosting = linkedMapOf<String, ProductEntity>()
 
         database.withTransaction {
             if (partyId != null) {
@@ -203,6 +215,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 val product = database.productDao().findById(draft.productId)
                     ?: throw IllegalArgumentException("إحدى المواد غير موجودة")
                 require(product.isActive) { "لا يمكن استخدام مادة مؤرشفة في فاتورة جديدة" }
+                productStateBeforePosting.putIfAbsent(product.id, product)
                 require(product.priceCurrencyCode == cleanCurrency) {
                     "عملة المنتج " + product.name + " هي " + product.priceCurrencyCode + "، ولا تطابق عملة الفاتورة " + cleanCurrency
                 }
@@ -367,6 +380,14 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                     )
                 )
             }
+
+            reconcileHistoricalStockCosts(
+                triggerType = cleanKind,
+                triggerSourceId = invoiceId,
+                reason = "إعادة احتساب كلفة المخزون بسبب الفاتورة $cleanNumber",
+                originalProducts = productStateBeforePosting,
+                now = now
+            )
         }
 
         val totalDiscount = lineDiscountTotal.add(cleanInvoiceDiscount)
@@ -377,6 +398,252 @@ class InvoiceRepository(private val database: AccountingDatabase) {
             total = totals.total.stripTrailingZeros().toPlainString(),
             paid = totals.paid.stripTrailingZeros().toPlainString(),
             remaining = totals.remaining.stripTrailingZeros().toPlainString()
+        )
+    }
+
+
+    /**
+     * Replays the affected products from their trusted opening baselines.
+     * Original invoice lines and stock movement snapshots remain untouched;
+     * differences are stored as append-only audit rows and reversing-value
+     * journals in the same transaction as the invoice posting.
+     */
+    private suspend fun reconcileHistoricalStockCosts(
+        triggerType: String,
+        triggerSourceId: String,
+        reason: String,
+        originalProducts: Map<String, ProductEntity>,
+        now: Long
+    ) {
+        if (originalProducts.isEmpty()) return
+
+        val invoicesById = database.invoiceDao().getAllInvoices().associateBy { it.id }
+        val invoiceLinesById = database.invoiceDao().getAllLines().associateBy { it.id }
+        val audits = database.stockCostRecalculationAuditDao().getAll()
+        val auditsById = audits.associateBy { it.id }
+        val existingItems = database.stockCostRecalculationItemDao().getAll()
+        val latestItemByMovement = existingItems.groupBy { it.movementId }.mapValues { (_, items) ->
+            items.maxWithOrNull(
+                compareBy<StockCostRecalculationItemEntity> {
+                    auditsById[it.auditId]?.createdAt ?: Long.MIN_VALUE
+                }.thenBy { it.auditId }
+            )!!
+        }
+        val latestAuditAt = audits.maxOfOrNull { it.createdAt } ?: 0L
+        val auditCreatedAt = maxOf(now, if (latestAuditAt == Long.MAX_VALUE) latestAuditAt else latestAuditAt + 1L)
+
+        originalProducts.forEach { (productId, originalProduct) ->
+            val baselineEntity = database.stockCostBaselineDao().findByProductId(productId)
+                ?: throw IllegalStateException("لا توجد نقطة بداية موثوقة لكلفة المادة ${originalProduct.name}")
+            val baseline = HistoricalStockCostBaseline(
+                productId = baselineEntity.productId,
+                quantity = baselineEntity.quantity,
+                averageCost = baselineEntity.averageCost,
+                currencyCode = baselineEntity.currencyCode,
+                effectiveAt = baselineEntity.effectiveAt,
+                recordedAt = baselineEntity.recordedAt
+            )
+            val movements = database.stockMovementDao().getAll().filter { it.productId == productId }
+            val replayMovements = movements.filter { it.recordedAt > baseline.recordedAt }
+            val events = replayMovements.map { movement ->
+                HistoricalStockCostEvent(
+                    id = movement.id,
+                    sourceType = movement.sourceType,
+                    quantityDelta = movement.quantityDelta,
+                    unitCostSnapshot = movement.unitCostSnapshot,
+                    currencyCode = movement.currencyCode,
+                    occurredAt = movement.occurredAt,
+                    recordedAt = movement.recordedAt
+                )
+            }
+            val effectiveCosts = replayMovements
+                .filter { it.quantityDelta.toBigDecimal() < BigDecimal.ZERO }
+                .associate { movement ->
+                    movement.id to (
+                        latestItemByMovement[movement.id]?.newUnitCost
+                            ?: movement.unitCostSnapshot
+                        )
+                }
+            val movementSourceIds = replayMovements.associate { it.id to it.sourceId }
+            val plan = HistoricalStockCostReconciler.plan(
+                baseline = baseline,
+                events = events,
+                currentlyEffectiveUnitCosts = effectiveCosts,
+                movementSourceIds = movementSourceIds
+            )
+
+            val saleChanges = plan.changes.filter { it.sourceType.trim().uppercase() == "SALE_INVOICE" }
+            val saleChangesWithInvoices = saleChanges.map { change ->
+                val line = invoiceLinesById[change.sourceId]
+                    ?: throw IllegalStateException("تعذر ربط حركة الصرف ببند فاتورة البيع")
+                val invoice = invoicesById[line.invoiceId]
+                    ?: throw IllegalStateException("تعذر العثور على فاتورة البيع المرتبطة بتصحيح الكلفة")
+                require(invoice.kind == "SALE" && invoice.status == "POSTED") {
+                    "حركة صرف المخزون لا ترتبط بفاتورة بيع مرحلة"
+                }
+                change to invoice
+            }
+            val changedCurrencies = saleChangesWithInvoices.map { it.first.currencyCode }.toSet()
+            require(changedCurrencies.size <= 1 &&
+                (changedCurrencies.isEmpty() || changedCurrencies.single() == plan.currencyCode)
+            ) {
+                "إعادة الاحتساب تمس فواتير ضمن أكثر من عملة للمادة نفسها؛ أوقفنا الترحيل لمنع خلط العملات"
+            }
+
+            val currentProduct = database.productDao().findById(productId)
+                ?: throw IllegalStateException("المادة غير موجودة بعد ترحيل الفاتورة")
+            val newQuantity = plan.endingQuantity.toBigDecimal()
+            val oldQuantity = originalProduct.stockQuantity.toBigDecimal()
+            val newAverage = plan.endingAverageCost.toBigDecimal()
+            val oldAverage = originalProduct.purchaseCost.toBigDecimal()
+            val hasEndingStateChange =
+                oldQuantity.compareTo(newQuantity) != 0 || oldAverage.compareTo(newAverage) != 0
+            if (hasEndingStateChange || saleChangesWithInvoices.isNotEmpty()) {
+                val auditId = UUID.randomUUID().toString()
+                val auditCurrency = plan.currencyCode ?: baseline.currencyCode
+                database.stockCostRecalculationAuditDao().insertAll(
+                    listOf(
+                        StockCostRecalculationAuditEntity(
+                            id = auditId,
+                            productId = productId,
+                            triggerType = triggerType,
+                            triggerSourceId = triggerSourceId,
+                            reason = reason,
+                            createdAt = auditCreatedAt,
+                            currencyCode = auditCurrency,
+                            oldEndingQuantity = originalProduct.stockQuantity,
+                            newEndingQuantity = plan.endingQuantity,
+                            oldEndingAverageCost = originalProduct.purchaseCost,
+                            newEndingAverageCost = plan.endingAverageCost,
+                            affectedStockOutCount = saleChangesWithInvoices.size
+                        )
+                    )
+                )
+                if (saleChangesWithInvoices.isNotEmpty()) {
+                    database.stockCostRecalculationItemDao().insertAll(
+                        saleChangesWithInvoices.map { (change, invoice) ->
+                            StockCostRecalculationItemEntity(
+                                id = UUID.randomUUID().toString(),
+                                auditId = auditId,
+                                movementId = change.movementId,
+                                sourceType = change.sourceType,
+                                sourceId = change.sourceId,
+                                invoiceId = invoice.id,
+                                currencyCode = change.currencyCode,
+                                quantity = change.quantity,
+                                oldUnitCost = change.oldUnitCost,
+                                newUnitCost = change.newUnitCost,
+                                oldExtendedCost = change.oldExtendedCost,
+                                newExtendedCost = change.newExtendedCost
+                            )
+                        }
+                    )
+                    saleChangesWithInvoices.groupBy { it.second.id }.forEach { (_, invoiceChanges) ->
+                        postStockCostAdjustmentJournal(
+                            auditId = auditId,
+                            invoice = invoiceChanges.first().second,
+                            changes = invoiceChanges.map { it.first },
+                            createdAt = auditCreatedAt
+                        )
+                    }
+                }
+            }
+
+            database.productDao().update(
+                currentProduct.copy(
+                    stockQuantity = plan.endingQuantity,
+                    purchaseCost = plan.endingAverageCost,
+                    updatedAt = now
+                )
+            )
+        }
+    }
+
+    private suspend fun postStockCostAdjustmentJournal(
+        auditId: String,
+        invoice: InvoiceEntity,
+        changes: List<HistoricalStockCostChange>,
+        createdAt: Long
+    ) {
+        val delta = changes.fold(BigDecimal.ZERO) { total, change ->
+            total.add(change.newExtendedCost.toBigDecimal().subtract(change.oldExtendedCost.toBigDecimal()))
+        }
+        if (delta.compareTo(BigDecimal.ZERO) == 0) return
+
+        val inventory = database.accountDao().findById("SYS-1200")
+            ?: throw IllegalStateException("حساب المخزون غير موجود لتسوية الكلفة")
+        val costOfGoodsSold = database.accountDao().findById("SYS-5000")
+            ?: throw IllegalStateException("حساب تكلفة البضاعة المباعة غير موجود لتسوية الكلفة")
+        require(inventory.isActive && inventory.accountType == "ASSET" && inventory.normalSide == "DEBIT") {
+            "حساب المخزون غير صالح لترحيل تسوية الكلفة"
+        }
+        require(costOfGoodsSold.isActive && costOfGoodsSold.accountType == "EXPENSE" &&
+            costOfGoodsSold.normalSide == "DEBIT"
+        ) { "حساب تكلفة البضاعة المباعة غير صالح لترحيل تسوية الكلفة" }
+
+        val amount = delta.abs().stripTrailingZeros().toPlainString()
+        val lines = if (delta > BigDecimal.ZERO) {
+            listOf(
+                JournalLineDraft(
+                    accountId = costOfGoodsSold.id,
+                    debit = amount,
+                    memo = "زيادة تكلفة البضاعة المباعة نتيجة إعادة الاحتساب التاريخي"
+                ),
+                JournalLineDraft(
+                    accountId = inventory.id,
+                    credit = amount,
+                    memo = "تخفيض المخزون مقابل إعادة احتساب تكلفة فاتورة ${invoice.invoiceNumber}"
+                )
+            )
+        } else {
+            listOf(
+                JournalLineDraft(
+                    accountId = inventory.id,
+                    debit = amount,
+                    memo = "زيادة قيمة المخزون نتيجة تصحيح الكلفة التاريخية"
+                ),
+                JournalLineDraft(
+                    accountId = costOfGoodsSold.id,
+                    credit = amount,
+                    memo = "تخفيض تكلفة البضاعة المباعة بعد إعادة الاحتساب"
+                )
+            )
+        }
+        val normalized = JournalEntryRules.normalize(
+            currencyCode = invoice.currencyCode,
+            exchangeRateSnapshot = invoice.exchangeRateSnapshot,
+            lines = lines
+        )
+        val sourceId = "$auditId:${invoice.id}"
+        require(database.journalEntryDao().findBySource("STOCK_COST_RECALCULATION", sourceId) == null) {
+            "قيد تسوية الكلفة موجود مسبقاً لهذه العملية"
+        }
+        val entryId = UUID.randomUUID().toString()
+        database.journalEntryDao().insert(
+            JournalEntryEntity(
+                id = entryId,
+                journalNumber = "AUTO-COST-" + UUID.randomUUID().toString().replace("-", "").take(16),
+                sourceType = "STOCK_COST_RECALCULATION",
+                sourceId = sourceId,
+                currencyCode = normalized.currencyCode,
+                exchangeRateSnapshot = normalized.exchangeRateSnapshot,
+                occurredAt = invoice.issuedAt,
+                description = "تسوية كلفة المخزون التاريخية للفاتورة ${invoice.invoiceNumber}",
+                createdAt = createdAt
+            )
+        )
+        database.journalLineDao().insertAll(
+            normalized.lines.mapIndexed { index, line ->
+                JournalLineEntity(
+                    id = UUID.randomUUID().toString(),
+                    journalEntryId = entryId,
+                    lineNumber = index + 1,
+                    accountId = line.accountId,
+                    debit = line.debit,
+                    credit = line.credit,
+                    memo = line.memo
+                )
+            }
         )
     }
 
