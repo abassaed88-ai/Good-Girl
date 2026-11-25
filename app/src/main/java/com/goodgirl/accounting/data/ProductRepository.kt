@@ -44,7 +44,7 @@ class ProductRepository(private val database: AccountingDatabase) {
         val cleanSku = sku.trim()
         val cleanCurrency = ProductInputRules.normalizeCurrencyCode(priceCurrencyCode)
 
-        database.withTransaction {
+        return database.withTransaction {
             if (categoryId != null) {
                 require(database.categoryDao().findById(categoryId) != null) { "التصنيف المحدد غير موجود" }
             }
