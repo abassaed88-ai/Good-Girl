@@ -46,9 +46,10 @@ data class GeneralLedgerFinancialStatements(
  * Produces financial statements exclusively from posted general-journal rows.
  * Amounts remain separated by currency; this calculator never converts them.
  *
- * Revenue and expense balances are rolled into retained earnings on the
- * balance sheet because formal period closing/closing journals are not yet
- * implemented. The income statement remains period-scoped.
+ * Before a formal close, accumulated revenue less expenses is presented as
+ * retained earnings. After a PERIOD_CLOSE journal, those balances are cleared
+ * and the closing amount remains in the selected equity account. Closing
+ * journals are excluded from the period income-statement activity totals.
  */
 object GeneralLedgerFinancialStatementsCalculator {
     fun calculate(
