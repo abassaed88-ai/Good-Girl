@@ -1,5 +1,6 @@
 package com.goodgirl.accounting.data
 
+import androidx.room.withTransaction
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.data.local.ProductEntity
@@ -15,7 +16,7 @@ class ProductBarcodeRepository(
         productId: String,
         value: String,
         format: String
-    ): ProductBarcodeEntity {
+    ): ProductBarcodeEntity = database.withTransaction {
         requireProduct(productId)
         val normalized = BarcodeInputRules.normalize(value, format)
         require(database.productBarcodeDao().findByValue(normalized) == null) {
@@ -30,31 +31,38 @@ class ProductBarcodeRepository(
             createdAt = System.currentTimeMillis()
         )
         database.productBarcodeDao().insert(barcode)
-        return barcode
+        barcode
     }
 
-    suspend fun createInternalBarcode(productId: String): ProductBarcodeEntity {
-        requireProduct(productId)
-        repeat(MAX_GENERATION_ATTEMPTS) {
-            val suffix = buildString(12) {
-                repeat(12) { append(('0'.code + random.nextInt(10)).toChar()) }
+    suspend fun createInternalBarcode(productId: String): ProductBarcodeEntity =
+        database.withTransaction {
+            requireProduct(productId)
+            database.productBarcodeDao().getForProduct(productId)
+                .firstOrNull { it.origin == "INTERNAL" }
+                ?.let { return@withTransaction it }
+
+            var attempts = 0
+            while (attempts < MAX_GENERATION_ATTEMPTS) {
+                attempts++
+                val suffix = buildString(12) {
+                    repeat(12) { append(('0'.code + random.nextInt(10)).toChar()) }
+                }
+                val value = BarcodeInputRules.internalCode(suffix)
+                if (database.productBarcodeDao().findByValue(value) == null) {
+                    val barcode = ProductBarcodeEntity(
+                        id = UUID.randomUUID().toString(),
+                        productId = productId,
+                        barcodeValue = value,
+                        format = "CODE_128",
+                        origin = "INTERNAL",
+                        createdAt = System.currentTimeMillis()
+                    )
+                    database.productBarcodeDao().insert(barcode)
+                    return@withTransaction barcode
+                }
             }
-            val value = BarcodeInputRules.internalCode(suffix)
-            if (database.productBarcodeDao().findByValue(value) == null) {
-                val barcode = ProductBarcodeEntity(
-                    id = UUID.randomUUID().toString(),
-                    productId = productId,
-                    barcodeValue = value,
-                    format = "CODE_128",
-                    origin = "INTERNAL",
-                    createdAt = System.currentTimeMillis()
-                )
-                database.productBarcodeDao().insert(barcode)
-                return barcode
-            }
+            throw IllegalStateException("تعذر إنشاء رقم باركود فريد؛ حاول مرة أخرى")
         }
-        throw IllegalStateException("تعذر إنشاء رقم باركود فريد؛ حاول مرة أخرى")
-    }
 
     suspend fun findProductByBarcode(value: String): ProductEntity? {
         val normalized = value.trim()

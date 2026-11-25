@@ -32,7 +32,7 @@ class ProductRepository(private val database: AccountingDatabase) {
         categoryId: String? = null,
         lowStockThreshold: String = "0",
         openingExchangeRate: String = "1"
-    ) {
+    ): String {
         val now = System.currentTimeMillis()
         val productId = UUID.randomUUID().toString()
         val cleanName = ProductInputRules.requireName(name)
@@ -113,6 +113,7 @@ class ProductRepository(private val database: AccountingDatabase) {
                     occurredAt = now
                 )
             }
+            productId
         }
     }
 

@@ -83,6 +83,8 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.goodgirl.accounting.data.AccountingBackupManager
 import com.goodgirl.accounting.data.ExchangeRateHistoryRepository
 import com.goodgirl.accounting.data.ExchangeRateCorrectionPreview
@@ -99,6 +101,7 @@ import com.goodgirl.accounting.data.GeneralLedgerStatementsPdfExporter
 import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.PartyPaymentRepository
 import com.goodgirl.accounting.data.PartyStatementPdfExporter
+import com.goodgirl.accounting.data.ProductBarcodeRepository
 import com.goodgirl.accounting.data.ProductRepository
 import com.goodgirl.accounting.data.ProductUnitRepository
 import com.goodgirl.accounting.data.StockRepository
@@ -106,6 +109,7 @@ import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.CategoryEntity
 import com.goodgirl.accounting.data.local.PartyEntity
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.ui.BarcodeScannerScreen
 import com.goodgirl.accounting.domain.CashTransactionRules
 import com.goodgirl.accounting.domain.FinancialReportCalculator
 import com.goodgirl.accounting.domain.TrialBalanceCalculator
@@ -1676,6 +1680,7 @@ private fun InvoiceManagementScreen(
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { InvoiceRepository(database) }
+    val barcodeRepository = remember(database) { ProductBarcodeRepository(database) }
     val products by database.productDao().observeActiveProducts().collectAsState(initial = emptyList())
     val partyKind = if (kind == "SALE") "CUSTOMER" else "SUPPLIER"
     val parties by database.partyDao().observeByKind(partyKind).collectAsState(initial = emptyList())
@@ -1747,6 +1752,7 @@ private fun InvoiceManagementScreen(
     var paymentNote by remember { mutableStateOf("") }
     var isSavingPayment by remember { mutableStateOf(false) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
+    var showBarcodeScanner by remember { mutableStateOf(false) }
 
     val productUnits by database.productUnitDao()
         .observeForProduct(selectedProductId ?: "")
@@ -1901,6 +1907,12 @@ private fun InvoiceManagementScreen(
                             )
                         }
                     }
+                }
+                TextButton(
+                    onClick = { showBarcodeScanner = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("مسح الباركود وإضافة المادة مباشرة")
                 }
                 if (products.none { it.priceCurrencyCode == currencyCode }) {
                     Text("لا توجد مواد معرفة بهذه العملة. أضف مادة أو عدّل عملتها من شاشة المنتجات.", color = MutedText, fontSize = 12.sp)
@@ -2118,6 +2130,57 @@ private fun InvoiceManagementScreen(
         }
         paymentMessage?.let {
             Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 13.sp)
+        }
+    }
+    if (showBarcodeScanner) {
+        Dialog(
+            onDismissRequest = { showBarcodeScanner = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = activePalette.background) {
+                BarcodeScannerScreen(
+                    onBarcodeDetected = { value, _ ->
+                        scope.launch {
+                            try {
+                                val product = barcodeRepository.findProductByBarcode(value)
+                                    ?.takeIf { it.isActive }
+                                    ?: throw IllegalArgumentException("لا توجد مادة فعالة مرتبطة بهذا الباركود")
+                                if (draftLines.isNotEmpty() && product.priceCurrencyCode != currencyCode) {
+                                    throw IllegalArgumentException("عملة المادة لا تطابق عملة الفاتورة الحالية. أكمل الفاتورة أو ابدأ فاتورة جديدة بهذه العملة.")
+                                }
+                                if (draftLines.isEmpty() && product.priceCurrencyCode != currencyCode) {
+                                    currencyCode = product.priceCurrencyCode
+                                    exchangeRate = if (product.priceCurrencyCode == "USD") {
+                                        context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+                                            .getString("usd_syp_rate", "1") ?: "1"
+                                    } else "1"
+                                }
+                                val scannedPrice = if (kind == "SALE") product.salePrice else product.purchaseCost
+                                draftLines.add(
+                                    InvoiceLineDraft(
+                                        productId = product.id,
+                                        quantity = "1",
+                                        unitPrice = scannedPrice,
+                                        discount = "0",
+                                        unitName = product.baseUnit
+                                    )
+                                )
+                                selectedProductId = product.id
+                                selectedUnitName = product.baseUnit
+                                quantity = "1"
+                                unitPrice = scannedPrice
+                                lineDiscount = "0"
+                                message = "تمت إضافة " + product.name + " إلى الفاتورة بكمية 1"
+                            } catch (error: Exception) {
+                                message = error.message ?: "تعذر إضافة المادة من الباركود"
+                            } finally {
+                                showBarcodeScanner = false
+                            }
+                        }
+                    },
+                    onClose = { showBarcodeScanner = false }
+                )
+            }
         }
     }
 }
@@ -4031,6 +4094,7 @@ private fun ProductManagementScreen(
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { ProductRepository(database) }
+    val barcodeRepository = remember(database) { ProductBarcodeRepository(database) }
     val stockRepository = remember(database) { StockRepository(database) }
     val products by repository.observeProducts().collectAsState(initial = emptyList())
     val categories by database.categoryDao().observeAll().collectAsState(initial = emptyList())
@@ -4061,6 +4125,14 @@ private fun ProductManagementScreen(
     var adjustmentNote by remember { mutableStateOf("") }
     var stockMessage by remember { mutableStateOf<String?>(null) }
     var isSavingStock by remember { mutableStateOf(false) }
+    var barcodeProductId by remember { mutableStateOf<String?>(null) }
+    var barcodeEntries by remember { mutableStateOf(emptyList<com.goodgirl.accounting.data.local.ProductBarcodeEntity>()) }
+    var barcodeInput by remember { mutableStateOf("") }
+    var barcodeFormat by remember { mutableStateOf("EAN_13") }
+    var barcodeFormatMenuExpanded by remember { mutableStateOf(false) }
+    var barcodeMessage by remember { mutableStateOf<String?>(null) }
+    var isSavingBarcode by remember { mutableStateOf(false) }
+    var showBarcodeScanner by remember { mutableStateOf(false) }
 
     val editingProduct = products.firstOrNull { it.id == editingId }
     val productFormValues = ProductFormValues(
@@ -4107,6 +4179,11 @@ private fun ProductManagementScreen(
             )
     LaunchedEffect(hasUnsavedProductChanges) {
         onUnsavedChangesChanged(hasUnsavedProductChanges)
+    }
+    LaunchedEffect(barcodeProductId) {
+        barcodeInput = ""
+        barcodeMessage = null
+        barcodeEntries = barcodeProductId?.let { database.productBarcodeDao().getForProduct(it) }.orEmpty()
     }
 
     fun resetForm() {
@@ -4316,7 +4393,7 @@ private fun ProductManagementScreen(
                                     )
                                     check(updated) { "تعذر العثور على المنتج لتحديثه" }
                                 } else {
-                                    repository.addProduct(
+                                    val newProductId = repository.addProduct(
                                         sku = sku,
                                         name = name,
                                         unit = unit,
@@ -4334,9 +4411,12 @@ private fun ProductManagementScreen(
                                             ).getString("usd_syp_rate", "1") ?: "1"
                                         )
                                     )
+                                    val createdBarcode = barcodeRepository.createInternalBarcode(newProductId)
+                                    barcodeProductId = newProductId
+                                    barcodeMessage = "تم إنشاء الباركود الداخلي: " + createdBarcode.barcodeValue
                                 }
                                 resetForm()
-                                message = if (wasEditing) "تم تحديث بيانات المنتج بنجاح، دون تغيير حركاته السابقة" else "تم حفظ المنتج ورصيده الافتتاحي بنجاح"
+                                message = if (wasEditing) "تم تحديث بيانات المنتج بنجاح، دون تغيير حركاته السابقة" else "تم حفظ المنتج وإنشاء باركوده الداخلي بنجاح"
                             } catch (error: Exception) {
                                 message = error.message ?: "تعذر حفظ المنتج"
                             } finally {
@@ -4364,6 +4444,122 @@ private fun ProductManagementScreen(
 
 
         val adjustingProduct = products.firstOrNull { it.id == adjustingProductId }
+        val barcodeProduct = products.firstOrNull { it.id == barcodeProductId }
+        if (barcodeProduct != null) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+                    Text("إدارة باركود: " + barcodeProduct.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    if (barcodeEntries.isEmpty()) {
+                        Text("لا يوجد باركود مسجل لهذه المادة بعد.", color = MutedText, fontSize = 12.sp)
+                    } else {
+                        barcodeEntries.forEach { entry ->
+                            Text(
+                                entry.barcodeValue + " — " +
+                                    (if (entry.origin == "INTERNAL") "رمز داخلي" else "باركود أصلي") +
+                                    " — " + entry.format,
+                                color = Ink,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSavingBarcode = true
+                                barcodeMessage = null
+                                try {
+                                    val created = barcodeRepository.createInternalBarcode(barcodeProduct.id)
+                                    barcodeEntries = database.productBarcodeDao().getForProduct(barcodeProduct.id)
+                                    barcodeMessage = "الباركود الداخلي: " + created.barcodeValue
+                                } catch (error: Exception) {
+                                    barcodeMessage = error.message ?: "تعذر إنشاء الباركود"
+                                } finally {
+                                    isSavingBarcode = false
+                                }
+                            }
+                        },
+                        enabled = !isSavingBarcode && barcodeEntries.none { it.origin == "INTERNAL" },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (isSavingBarcode) "جارٍ إنشاء الباركود..." else "إنشاء باركود داخلي") }
+                    OutlinedTextField(
+                        value = barcodeInput,
+                        onValueChange = { barcodeInput = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("إدخال باركود المنتج الموجود") },
+                        singleLine = true
+                    )
+                    Box {
+                        Button(onClick = { barcodeFormatMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                when (barcodeFormat) {
+                                    "EAN_13" -> "الصيغة: EAN-13"
+                                    "EAN_8" -> "الصيغة: EAN-8"
+                                    "UPC_A" -> "الصيغة: UPC-A"
+                                    else -> "الصيغة: Code 128"
+                                }
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = barcodeFormatMenuExpanded,
+                            onDismissRequest = { barcodeFormatMenuExpanded = false }
+                        ) {
+                            listOf(
+                                "EAN_13" to "EAN-13",
+                                "EAN_8" to "EAN-8",
+                                "UPC_A" to "UPC-A",
+                                "CODE_128" to "Code 128"
+                            ).forEach { (format, title) ->
+                                DropdownMenuItem(
+                                    text = { Text(title) },
+                                    onClick = {
+                                        barcodeFormat = format
+                                        barcodeFormatMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSavingBarcode = true
+                                barcodeMessage = null
+                                try {
+                                    barcodeRepository.registerOriginalBarcode(
+                                        productId = barcodeProduct.id,
+                                        value = barcodeInput,
+                                        format = barcodeFormat
+                                    )
+                                    barcodeEntries = database.productBarcodeDao().getForProduct(barcodeProduct.id)
+                                    barcodeInput = ""
+                                    barcodeMessage = "تم ربط الباركود بالمادة بنجاح"
+                                } catch (error: Exception) {
+                                    barcodeMessage = error.message ?: "تعذر ربط الباركود"
+                                } finally {
+                                    isSavingBarcode = false
+                                }
+                            }
+                        },
+                        enabled = !isSavingBarcode && barcodeInput.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("حفظ وربط الباركود") }
+                    TextButton(
+                        onClick = { showBarcodeScanner = true },
+                        enabled = !isSavingBarcode,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("مسح باركود بالكاميرا وربطه") }
+                    barcodeMessage?.let {
+                        Text(it, color = if (it.startsWith("تم") || it.startsWith("الباركود الداخلي")) SoftGreen else SoftRed, fontSize = 12.sp)
+                    }
+                    TextButton(onClick = { barcodeProductId = null }) { Text("إغلاق إدارة الباركود") }
+                }
+            }
+        }
+
         val adjustmentDeltaPreview = if (stocktakeMode) {
             val current = adjustingProduct?.stockQuantity?.toBigDecimalOrNull()
             val counted = countedQuantity.trim().toBigDecimalOrNull()
@@ -4599,7 +4795,35 @@ private fun ProductManagementScreen(
                     onEdit = { startEditing(product) },
                     onStockAdjustment = { startStockAdjustment(product) },
                     onManageUnits = { onManageUnits(product.id) },
+                    onManageBarcodes = { barcodeProductId = product.id },
                     onViewHistory = { onViewHistory(product.id) }
+                )
+            }
+        }
+    }
+    if (showBarcodeScanner && barcodeProductId != null) {
+        Dialog(
+            onDismissRequest = { showBarcodeScanner = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(modifier = Modifier.fillMaxSize(), color = activePalette.background) {
+                BarcodeScannerScreen(
+                    onBarcodeDetected = { value, format ->
+                        scope.launch {
+                            val productId = barcodeProductId
+                            try {
+                                if (productId == null) error("اختر مادة أولاً")
+                                barcodeRepository.registerOriginalBarcode(productId, value, format)
+                                barcodeEntries = database.productBarcodeDao().getForProduct(productId)
+                                barcodeMessage = "تم مسح الباركود وربطه بالمادة بنجاح"
+                            } catch (error: Exception) {
+                                barcodeMessage = error.message ?: "تعذر ربط الباركود المقروء"
+                            } finally {
+                                showBarcodeScanner = false
+                            }
+                        }
+                    },
+                    onClose = { showBarcodeScanner = false }
                 )
             }
         }
@@ -4614,6 +4838,7 @@ private fun ProductListItem(
     onEdit: () -> Unit,
     onStockAdjustment: () -> Unit,
     onManageUnits: () -> Unit,
+    onManageBarcodes: () -> Unit,
     onViewHistory: () -> Unit
 ) {
     Card(
@@ -4628,6 +4853,7 @@ private fun ProductListItem(
                     TextButton(onClick = onEdit) { Text("تعديل") }
                     TextButton(onClick = onStockAdjustment) { Text("حركة مخزون") }
                     TextButton(onClick = onManageUnits) { Text("الوحدات") }
+                    TextButton(onClick = onManageBarcodes) { Text("باركود") }
                     TextButton(onClick = onViewHistory) { Text("السجل") }
                 }
             }
