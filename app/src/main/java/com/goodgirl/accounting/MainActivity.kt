@@ -1754,7 +1754,6 @@ private fun InvoiceManagementScreen(
     var isSavingPayment by remember { mutableStateOf(false) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
-    var showInventoryLookupScanner by remember { mutableStateOf(false) }
 
     val productUnits by database.productUnitDao()
         .observeForProduct(selectedProductId ?: "")
@@ -4127,6 +4126,7 @@ private fun ProductManagementScreen(
     var barcodeMessage by remember { mutableStateOf<String?>(null) }
     var isSavingBarcode by remember { mutableStateOf(false) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
+    var showInventoryLookupScanner by remember { mutableStateOf(false) }
     var barcodeLabelCopies by remember { mutableStateOf("1") }
     var barcodeLabelLayout by remember { mutableStateOf("MEDIUM") }
     var barcodeLabelLayoutExpanded by remember { mutableStateOf(false) }
