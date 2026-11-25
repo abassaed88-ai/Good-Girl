@@ -58,6 +58,7 @@ internal object SettlementJournalPoster {
         require(database.journalEntryDao().findBySource(sourceType, sourceId) == null) {
             "تم إنشاء قيد محاسبي لهذه التسوية مسبقاً"
         }
+        PeriodClosingGuard.ensureOpen(database, normalized.currencyCode, occurredAt)
         val entryId = UUID.randomUUID().toString()
         database.journalEntryDao().insert(
             JournalEntryEntity(
