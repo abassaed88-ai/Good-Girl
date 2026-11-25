@@ -45,7 +45,7 @@ class ProductCurrencyCorrectionIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(originalProduct.id, "1", "15")),
                 paidAmount = "15",
-                issuedAt = baselineAt + 1_000L
+                issuedAt = System.currentTimeMillis()
             )
             val oldInvoiceBefore = database.invoiceDao().findById(oldSale.invoiceId)!!
             val oldLineBefore = database.invoiceDao().getLines(oldSale.invoiceId).single()
