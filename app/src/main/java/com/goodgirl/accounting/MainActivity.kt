@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,6 +30,22 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountBalance
+import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.BusinessCenter
+import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Receipt
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Slider
@@ -52,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -697,18 +715,18 @@ private fun DashboardScreen(
     val postedInvoiceCount = remember(invoices) { invoices.count { it.status == "POSTED" } }
 
     val dashboardTiles = listOf(
-        Triple("daily_sales", homeShortcutLabels["daily_sales"].orEmpty().ifBlank { "المبيعات اليومية" }, "📊") to onOpenDailySales,
-        Triple("sales", homeShortcutLabels["sales"].orEmpty().ifBlank { "إضافة مبيع" }, "🛒") to onOpenSales,
-        Triple("products", homeShortcutLabels["products"].orEmpty().ifBlank { "إدارة المخزون" }, "📦") to onOpenProducts,
-        Triple("accounts", homeShortcutLabels["accounts"].orEmpty().ifBlank { "قائمة الحسابات" }, "📒") to onOpenAccounts,
-        Triple("reports", homeShortcutLabels["reports"].orEmpty().ifBlank { "التقارير" }, "📈") to onOpenReports,
-        Triple("settings", "الإعدادات", "⚙️") to onOpenSettings,
-        Triple("purchases", homeShortcutLabels["purchases"].orEmpty().ifBlank { "المشتريات" }, "🧾") to onOpenPurchases,
-        Triple("parties", homeShortcutLabels["parties"].orEmpty().ifBlank { "العملاء والموردون" }, "👥") to onOpenParties,
-        Triple("cash", homeShortcutLabels["cash"].orEmpty().ifBlank { "الصندوق والمصروفات" }, "💼") to onOpenCash,
-        Triple("general_accounting", homeShortcutLabels["general_accounting"].orEmpty().ifBlank { "المحاسبة العامة" }, "🧮") to onOpenGeneralAccounting,
-        Triple("backup", homeShortcutLabels["backup"].orEmpty().ifBlank { "النسخ الاحتياطي" }, "💾") to onOpenBackup,
-        Triple("price_settings", homeShortcutLabels["price_settings"].orEmpty().ifBlank { "تحديد سعر البيع" }, "🏷️") to onOpenPriceSettings
+        Triple("daily_sales", homeShortcutLabels["daily_sales"].orEmpty().ifBlank { "المبيعات اليومية" }, Icons.Filled.BarChart) to onOpenDailySales,
+        Triple("sales", homeShortcutLabels["sales"].orEmpty().ifBlank { "إضافة مبيع" }, Icons.Filled.ShoppingCart) to onOpenSales,
+        Triple("products", homeShortcutLabels["products"].orEmpty().ifBlank { "إدارة المخزون" }, Icons.Filled.Inventory) to onOpenProducts,
+        Triple("accounts", homeShortcutLabels["accounts"].orEmpty().ifBlank { "قائمة الحسابات" }, Icons.Filled.MenuBook) to onOpenAccounts,
+        Triple("reports", homeShortcutLabels["reports"].orEmpty().ifBlank { "التقارير" }, Icons.Filled.TrendingUp) to onOpenReports,
+        Triple("settings", "الإعدادات", Icons.Filled.Settings) to onOpenSettings,
+        Triple("purchases", homeShortcutLabels["purchases"].orEmpty().ifBlank { "المشتريات" }, Icons.Filled.Receipt) to onOpenPurchases,
+        Triple("parties", homeShortcutLabels["parties"].orEmpty().ifBlank { "العملاء والموردون" }, Icons.Filled.People) to onOpenParties,
+        Triple("cash", homeShortcutLabels["cash"].orEmpty().ifBlank { "الصندوق والمصروفات" }, Icons.Filled.BusinessCenter) to onOpenCash,
+        Triple("general_accounting", homeShortcutLabels["general_accounting"].orEmpty().ifBlank { "المحاسبة العامة" }, Icons.Filled.AccountBalance) to onOpenGeneralAccounting,
+        Triple("backup", homeShortcutLabels["backup"].orEmpty().ifBlank { "النسخ الاحتياطي" }, Icons.Filled.Backup) to onOpenBackup,
+        Triple("price_settings", homeShortcutLabels["price_settings"].orEmpty().ifBlank { "تحديد سعر البيع" }, Icons.Filled.LocalOffer) to onOpenPriceSettings
     ).filter { (tile, _) -> tile.first == "settings" || tile.first in visibleShortcutIds }
 
     Column(
@@ -733,7 +751,7 @@ private fun DashboardScreen(
                     Text("Good Girl", color = BrandOnPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Text("نظام إدارة ومحاسبة متكامل", color = BrandOnPrimary, fontSize = 14.sp)
                 }
-                Text("☰", color = BrandOnPrimary, fontSize = 27.sp)
+                Icon(Icons.Filled.Menu, contentDescription = "القائمة", tint = BrandOnPrimary, modifier = Modifier.size(28.dp))
             }
         }
 
@@ -748,7 +766,7 @@ private fun DashboardScreen(
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("▤", color = BrandBlue, fontSize = 35.sp)
+                Icon(Icons.Filled.Storage, contentDescription = "قاعدة البيانات", tint = BrandBlue, modifier = Modifier.size(36.dp))
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     Text("قاعدة البيانات الأساسية", color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
@@ -832,7 +850,7 @@ private fun DashboardScreen(
 @Composable
 private fun DashboardTile(
     title: String,
-    icon: String,
+    icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -849,7 +867,12 @@ private fun DashboardTile(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Text(icon, fontSize = 27.sp)
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = BrandBlue,
+                modifier = Modifier.size(30.dp)
+            )
             Spacer(Modifier.height(5.dp))
             Text(
                 title,
@@ -1672,6 +1695,11 @@ private fun InvoiceManagementScreen(
     }
     var exchangeRate by remember { mutableStateOf(defaultExchangeRate) }
     var note by remember { mutableStateOf("") }
+    var defaultInvoiceDate by remember { mutableStateOf(System.currentTimeMillis()) }
+    var issuedAt by remember { mutableStateOf(defaultInvoiceDate) }
+    val invoiceDateLabel = remember(issuedAt) {
+        SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date(issuedAt))
+    }
     var message by remember { mutableStateOf<String?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var paymentInvoiceId by remember { mutableStateOf<String?>(null) }
@@ -1712,6 +1740,8 @@ private fun InvoiceManagementScreen(
             exchangeRate = exchangeRate,
             defaultExchangeRate = defaultExchangeRate,
             note = note,
+            issuedAt = issuedAt,
+            defaultIssuedAt = defaultInvoiceDate,
             paymentPanelOpen = paymentInvoiceId != null,
             paymentAmount = paymentAmount,
             paymentNote = paymentNote
@@ -1736,6 +1766,34 @@ private fun InvoiceManagementScreen(
         Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = CardSurface)) {
             Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
                 Text("بيانات الفاتورة", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = Ink)
+                TextButton(
+                    onClick = {
+                        val selectedDate = Calendar.getInstance().apply { timeInMillis = issuedAt }
+                        val dialog = android.app.DatePickerDialog(
+                            context,
+                            { _, year, month, dayOfMonth ->
+                                issuedAt = Calendar.getInstance().apply {
+                                    timeInMillis = issuedAt
+                                    set(Calendar.YEAR, year)
+                                    set(Calendar.MONTH, month)
+                                    set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                }.timeInMillis
+                            },
+                            selectedDate.get(Calendar.YEAR),
+                            selectedDate.get(Calendar.MONTH),
+                            selectedDate.get(Calendar.DAY_OF_MONTH)
+                        )
+                        dialog.datePicker.maxDate = System.currentTimeMillis()
+                        dialog.show()
+                    }
+                ) {
+                    Text("تاريخ الفاتورة: $invoiceDateLabel")
+                }
+                Text(
+                    "يمكن تسجيل فاتورة بتاريخ سابق، بشرط أن يقع ضمن تاريخ المخزون الموثوق للمادة.",
+                    color = MutedText,
+                    fontSize = 11.sp
+                )
                 Box {
                     Button(onClick = { partyMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
                         Text(selectedParty?.name ?: if (kind == "SALE") "اختيار العميل (اختياري للنقدي)" else "اختيار المورد (اختياري للنقدي)")
@@ -1907,12 +1965,15 @@ private fun InvoiceManagementScreen(
                                     lines = draftLines.toList(),
                                     invoiceDiscount = invoiceDiscount,
                                     paidAmount = paidAmount,
+                                    issuedAt = issuedAt,
                                     note = note
                                 )
                                 draftLines.clear()
                                 invoiceDiscount = "0"
                                 paidAmount = "0"
                                 note = ""
+                                defaultInvoiceDate = System.currentTimeMillis()
+                                issuedAt = defaultInvoiceDate
                                 quantity = "1"
                                 unitPrice = "0"
                                 lineDiscount = "0"
@@ -5052,6 +5113,7 @@ private fun DailySalesScreen(
                 Modifier.weight(1f)
             )
         }
+
         Text(
             "تفاصيل المواد المباعة (" + rows.size + ")",
             style = MaterialTheme.typography.titleLarge,
@@ -5070,46 +5132,94 @@ private fun DailySalesScreen(
                 )
             }
         } else {
-            rows.forEach { row ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = CardSurface)
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(14.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
+            ) {
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(horizontal = 8.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(row.productName, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text(
-                            "الكمية: " + row.quantity + " " + row.unitName +
-                                "  |  سعر المبيع: " + row.unitPrice + " " + row.currencyCode,
-                            color = MutedText,
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            "قيمة المبيع: " + row.netSales.stripTrailingZeros().toPlainString() +
-                                " " + row.currencyCode,
-                            color = Ink,
-                            fontSize = 13.sp
-                        )
-                        Text(
-                            "الربح: " + row.profit.stripTrailingZeros().toPlainString() +
-                                " " + row.currencyCode,
-                            color = if (row.profit >= BigDecimal.ZERO) SoftGreen else SoftRed,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            "رقم الفاتورة: " + row.invoiceNumber,
-                            color = MutedText,
-                            fontSize = 11.sp
-                        )
-                        Text(
-                            "الملاحظات: " + row.note.ifBlank { "لا توجد ملاحظات" },
-                            color = MutedText,
-                            fontSize = 12.sp
-                        )
+                        Text("المادة", modifier = Modifier.weight(1.35f), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                        Text("الكمية", modifier = Modifier.weight(0.75f), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                        Text("المبيع", modifier = Modifier.weight(1.0f), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                        Text("الربح", modifier = Modifier.weight(0.9f), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                    }
+                    rows.forEachIndexed { index, row ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1.35f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    row.productName,
+                                    color = Ink,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 12.sp,
+                                    maxLines = 2
+                                )
+                                Text(
+                                    row.invoiceNumber + " · " +
+                                        SimpleDateFormat("HH:mm", Locale.US).format(Date(row.issuedAt)),
+                                    color = MutedText,
+                                    fontSize = 9.sp,
+                                    maxLines = 1
+                                )
+                            }
+                            Text(
+                                row.quantity + " " + row.unitName,
+                                modifier = Modifier.weight(0.75f),
+                                color = Ink,
+                                fontSize = 10.sp,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2
+                            )
+                            Column(
+                                modifier = Modifier.weight(1.0f),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Text(
+                                    row.netSales.stripTrailingZeros().toPlainString(),
+                                    color = Ink,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
+                                Text(
+                                    row.currencyCode + " · " + row.unitPrice,
+                                    color = MutedText,
+                                    fontSize = 9.sp,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 1
+                                )
+                            }
+                            Text(
+                                row.profit.stripTrailingZeros().toPlainString(),
+                                modifier = Modifier.weight(0.9f),
+                                color = if (row.profit >= BigDecimal.ZERO) SoftGreen else SoftRed,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2
+                            )
+                        }
+                        if (index < rows.lastIndex) {
+                            androidx.compose.material3.HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant
+                            )
+                        }
                     }
                 }
             }

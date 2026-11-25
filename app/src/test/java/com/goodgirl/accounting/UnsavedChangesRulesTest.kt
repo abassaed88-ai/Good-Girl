@@ -22,6 +22,20 @@ class UnsavedChangesRulesTest {
     }
 
     @Test
+    fun changingInvoiceDateIsMarkedUnsavedUntilReset() {
+        assertFalse(
+            hasUnsavedInvoiceDraft(
+                InvoiceDraftState(issuedAt = 1_000L, defaultIssuedAt = 1_000L)
+            )
+        )
+        assertTrue(
+            hasUnsavedInvoiceDraft(
+                InvoiceDraftState(issuedAt = 500L, defaultIssuedAt = 1_000L)
+            )
+        )
+    }
+
+    @Test
     fun untouchedNewProductFormIsClean() {
         assertFalse(hasUnsavedProductForm(ProductFormValues()))
     }

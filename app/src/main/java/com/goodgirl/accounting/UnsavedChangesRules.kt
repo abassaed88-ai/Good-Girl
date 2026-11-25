@@ -15,7 +15,9 @@ internal data class InvoiceDraftState(
     val note: String = "",
     val paymentPanelOpen: Boolean = false,
     val paymentAmount: String = "",
-    val paymentNote: String = ""
+    val paymentNote: String = "",
+    val issuedAt: Long = 0L,
+    val defaultIssuedAt: Long = 0L
 )
 
 internal fun hasUnsavedInvoiceDraft(state: InvoiceDraftState): Boolean =
@@ -35,6 +37,7 @@ internal fun hasUnsavedInvoiceDraft(state: InvoiceDraftState): Boolean =
                 defaultExchangeRate = state.defaultExchangeRate
             )) ||
         state.note.isNotBlank() ||
+        state.issuedAt != state.defaultIssuedAt ||
         state.paymentPanelOpen ||
         state.paymentAmount.isNotBlank() ||
         state.paymentNote.isNotBlank()
