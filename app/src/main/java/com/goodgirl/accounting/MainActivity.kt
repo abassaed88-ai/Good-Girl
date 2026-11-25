@@ -4420,6 +4420,20 @@ private fun DailySalesScreen(
     val repository = remember(database) { InvoiceRepository(database) }
     val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
     val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
+    val stockCostAudits by database.stockCostRecalculationAuditDao().observeAll().collectAsState(initial = emptyList())
+    val stockCostAuditItems by database.stockCostRecalculationItemDao().observeAll().collectAsState(initial = emptyList())
+    val effectiveCostsByLineId = remember(stockCostAudits, stockCostAuditItems) {
+        val auditById = stockCostAudits.associateBy { it.id }
+        stockCostAuditItems
+            .groupBy { it.sourceId }
+            .mapValues { (_, items) ->
+                items.maxWithOrNull(
+                    compareBy<com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity> {
+                        auditById[it.auditId]?.createdAt ?: Long.MIN_VALUE
+                    }.thenBy { it.auditId }
+                )!!.newUnitCost
+            }
+    }
     val products by database.productDao().observeActiveProducts().collectAsState(initial = emptyList())
     val categories by database.categoryDao().observeAll().collectAsState(initial = emptyList())
     val customers by database.partyDao().observeByKind("CUSTOMER").collectAsState(initial = emptyList())
@@ -4508,7 +4522,7 @@ private fun DailySalesScreen(
     val dayLabel = remember(selectedDay) {
         SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date(selectedDay))
     }
-    val rows = remember(invoices, invoiceLines, dayBounds) {
+    val rows = remember(invoices, invoiceLines, dayBounds, effectiveCostsByLineId) {
         invoices.asSequence()
             .filter {
                 it.kind == "SALE" && it.status == "POSTED" &&
@@ -4528,7 +4542,7 @@ private fun DailySalesScreen(
                 )
                 lines.mapIndexed { index, line ->
                     val netSales = lineNetAmounts[index].subtract(allocatedDiscounts[index])
-                    val cost = line.unitCostSnapshot.toBigDecimal()
+                    val cost = (effectiveCostsByLineId[line.id] ?: line.unitCostSnapshot).toBigDecimal()
                         .multiply(line.baseQuantity.toBigDecimal())
                     DailySaleRow(
                         invoiceNumber = invoice.invoiceNumber,
