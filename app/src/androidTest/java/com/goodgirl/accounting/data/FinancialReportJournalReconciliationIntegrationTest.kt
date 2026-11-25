@@ -41,6 +41,7 @@ class FinancialReportJournalReconciliationIntegrationTest {
                 note = "اختبار مطابقة التقارير"
             )
             val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
 
             invoices.postInvoice(
                 invoiceNumber = "RECON-SALE-1",
@@ -50,7 +51,7 @@ class FinancialReportJournalReconciliationIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "2", "15")),
                 paidAmount = "30",
-                issuedAt = 1_000L
+                issuedAt = baselineAt + 1_000L
             )
             invoices.postInvoice(
                 invoiceNumber = "RECON-PURCHASE-1",
@@ -60,7 +61,7 @@ class FinancialReportJournalReconciliationIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "4", "20")),
                 paidAmount = "80",
-                issuedAt = 2_000L
+                issuedAt = baselineAt + 2_000L
             )
             invoices.postInvoice(
                 invoiceNumber = "RECON-SALE-2",
@@ -70,7 +71,7 @@ class FinancialReportJournalReconciliationIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "1", "15")),
                 paidAmount = "15",
-                issuedAt = 3_000L
+                issuedAt = baselineAt + 3_000L
             )
 
             val cash = CashTransactionRepository(database)

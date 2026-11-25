@@ -35,6 +35,7 @@ class ProductCurrencyCorrectionIntegrationTest {
                 openingExchangeRate = "1"
             )
             val originalProduct = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(originalProduct.id)!!.effectiveAt
 
             val oldSale = invoices.postInvoice(
                 invoiceNumber = "CURRENCY-SALE-SYP",
@@ -44,7 +45,7 @@ class ProductCurrencyCorrectionIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(originalProduct.id, "1", "15")),
                 paidAmount = "15",
-                issuedAt = 1_000L
+                issuedAt = baselineAt + 1_000L
             )
             val oldInvoiceBefore = database.invoiceDao().findById(oldSale.invoiceId)!!
             val oldLineBefore = database.invoiceDao().getLines(oldSale.invoiceId).single()
@@ -126,7 +127,7 @@ class ProductCurrencyCorrectionIntegrationTest {
                 exchangeRateSnapshot = "15500",
                 lines = listOf(InvoiceLineDraft(originalProduct.id, "1", "15")),
                 paidAmount = "15",
-                issuedAt = 2_000L
+                issuedAt = correctionMovement.occurredAt + 1_000L
             )
             val newInvoice = database.invoiceDao().findById(newSale.invoiceId)!!
             val newLine = database.invoiceDao().getLines(newSale.invoiceId).single()

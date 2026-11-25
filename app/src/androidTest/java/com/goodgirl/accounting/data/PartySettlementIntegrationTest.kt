@@ -83,6 +83,7 @@ class PartySettlementIntegrationTest {
                 note = "اختبار تكامل"
             )
             val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
 
             val invoice = invoiceRepository.postInvoice(
                 invoiceNumber = "PARTY-SALE-001",
@@ -92,7 +93,7 @@ class PartySettlementIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "2", "15")),
                 paidAmount = "0",
-                issuedAt = 1_000L
+                issuedAt = baselineAt + 1_000L
             )
 
             assertDecimal(
@@ -306,6 +307,7 @@ class PartySettlementIntegrationTest {
                 note = "اختبار فاتورة شراء"
             )
             val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
 
             val purchase = invoices.postInvoice(
                 invoiceNumber = "SUPPLIER-PURCHASE-001",
@@ -315,7 +317,7 @@ class PartySettlementIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "1", "12")),
                 paidAmount = "0",
-                issuedAt = 1_000L
+                issuedAt = baselineAt + 1_000L
             )
 
             assertDecimal(

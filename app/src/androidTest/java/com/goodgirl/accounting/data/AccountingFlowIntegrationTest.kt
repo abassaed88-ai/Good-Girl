@@ -39,6 +39,7 @@ class AccountingFlowIntegrationTest {
                 note = "اختبار تكامل"
             )
             val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
 
             invoices.postInvoice(
                 invoiceNumber = "FLOW-SALE-1",
@@ -48,7 +49,7 @@ class AccountingFlowIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "2", "15")),
                 paidAmount = "30",
-                issuedAt = 1_000L
+                issuedAt = baselineAt + 1_000L
             )
 
             val firstSaleLine = database.invoiceDao()
@@ -65,7 +66,7 @@ class AccountingFlowIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "4", "20")),
                 paidAmount = "80",
-                issuedAt = 2_000L
+                issuedAt = baselineAt + 2_000L
             )
 
             assertDecimal("13.33333333", database.productDao().findById(product.id)!!.purchaseCost)
@@ -83,7 +84,7 @@ class AccountingFlowIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "1", "15")),
                 paidAmount = "15",
-                issuedAt = 3_000L
+                issuedAt = baselineAt + 3_000L
             )
 
             val sales = database.invoiceDao().getAllInvoices()
@@ -131,6 +132,7 @@ class AccountingFlowIntegrationTest {
                 note = "اختبار تحديث سعر البيع"
             )
             val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
 
             invoices.postInvoice(
                 invoiceNumber = "PRICE-SALE-1",
@@ -140,7 +142,7 @@ class AccountingFlowIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "1", "15")),
                 paidAmount = "15",
-                issuedAt = 1_000L
+                issuedAt = baselineAt + 1_000L
             )
             val firstInvoice = database.invoiceDao().getAllInvoices().single()
 
@@ -163,7 +165,7 @@ class AccountingFlowIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "1", updatedProduct.salePrice)),
                 paidAmount = "17.5",
-                issuedAt = 2_000L
+                issuedAt = baselineAt + 2_000L
             )
 
             val saleInvoices = database.invoiceDao().getAllInvoices().sortedBy { it.issuedAt }
@@ -194,6 +196,7 @@ class AccountingFlowIntegrationTest {
                 note = "اختبار رفض البيع"
             )
             val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
 
             assertThrows(IllegalArgumentException::class.java) {
                 runBlocking {
@@ -205,7 +208,7 @@ class AccountingFlowIntegrationTest {
                         exchangeRateSnapshot = "1",
                         lines = listOf(InvoiceLineDraft(product.id, "3", "7")),
                         paidAmount = "21",
-                        issuedAt = 4_000L
+                        issuedAt = baselineAt + 4_000L
                     )
                 }
             }
@@ -235,6 +238,7 @@ class AccountingFlowIntegrationTest {
                 note = "اختبار ترحيل القيود"
             )
             val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
 
             val sale = invoices.postInvoice(
                 invoiceNumber = "JOURNAL-SALE-1",
@@ -244,7 +248,7 @@ class AccountingFlowIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "2", "15")),
                 paidAmount = "30",
-                issuedAt = 10_000L
+                issuedAt = baselineAt + 10_000L
             )
             val purchase = invoices.postInvoice(
                 invoiceNumber = "JOURNAL-PURCHASE-1",
@@ -254,7 +258,7 @@ class AccountingFlowIntegrationTest {
                 exchangeRateSnapshot = "1",
                 lines = listOf(InvoiceLineDraft(product.id, "2", "20")),
                 paidAmount = "40",
-                issuedAt = 20_000L
+                issuedAt = baselineAt + 20_000L
             )
 
             val entries = database.journalEntryDao().getAll()
@@ -293,6 +297,85 @@ class AccountingFlowIntegrationTest {
                 assertEquals("SYP", entry.currencyCode)
                 assertEquals("1", entry.exchangeRateSnapshot)
             }
+        } finally {
+            database.close()
+        }
+    }
+
+
+    @Test
+    fun backdatedPurchaseRecalculatesPriorSaleAndPostsBalancedCostAdjustment() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+            products.addProduct(
+                sku = "BACKDATE-001",
+                name = "مادة فاتورة مؤرخة بأثر رجعي",
+                unit = "قطعة",
+                purchaseCost = "10",
+                salePrice = "15",
+                openingStock = "10",
+                note = "اختبار إعادة احتساب الكلفة"
+            )
+            val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
+            val saleAt = baselineAt + 3_000L
+            val backdatedPurchaseAt = baselineAt + 2_000L
+
+            val sale = invoices.postInvoice(
+                invoiceNumber = "BACKDATE-SALE-1",
+                kind = "SALE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "2", "15")),
+                paidAmount = "30",
+                issuedAt = saleAt
+            )
+            assertDecimal("10", database.invoiceDao().getLines(sale.invoiceId).single().unitCostSnapshot)
+
+            invoices.postInvoice(
+                invoiceNumber = "BACKDATE-PURCHASE-1",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "4", "20")),
+                paidAmount = "80",
+                issuedAt = backdatedPurchaseAt
+            )
+
+            val unchangedSaleLine = database.invoiceDao().getLines(sale.invoiceId).single()
+            assertDecimal("10", unchangedSaleLine.unitCostSnapshot)
+            assertDecimal("12.85714286", database.productDao().findById(product.id)!!.purchaseCost)
+            assertDecimal("12", database.productDao().findById(product.id)!!.stockQuantity)
+
+            val audit = database.stockCostRecalculationAuditDao().getAll()
+                .single { it.triggerType == "PURCHASE" }
+            assertEquals(1, audit.affectedStockOutCount)
+            val item = database.stockCostRecalculationItemDao().getForAudit(audit.id).single()
+            assertEquals(sale.invoiceId, item.invoiceId)
+            assertEquals(unchangedSaleLine.id, item.sourceId)
+            assertDecimal("10", item.oldUnitCost)
+            assertDecimal("12.85714286", item.newUnitCost)
+            assertDecimal("20", item.oldExtendedCost)
+            assertDecimal("25.71428572", item.newExtendedCost)
+
+            val adjustment = database.journalEntryDao().getAll()
+                .single { it.sourceType == "STOCK_COST_RECALCULATION" }
+            assertEquals(saleAt, adjustment.occurredAt)
+            val accounts = database.accountDao().getAll().associateBy { it.id }
+            val adjustmentLines = database.journalLineDao().getForEntry(adjustment.id)
+            assertEquals(2, adjustmentLines.size)
+            assertDecimal(
+                "5.71428572",
+                adjustmentLines.single { accounts[it.accountId]!!.code == "5000" }.debit
+            )
+            assertDecimal(
+                "5.71428572",
+                adjustmentLines.single { accounts[it.accountId]!!.code == "1200" }.credit
+            )
         } finally {
             database.close()
         }
