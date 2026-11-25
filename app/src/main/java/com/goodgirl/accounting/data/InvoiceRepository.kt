@@ -473,6 +473,9 @@ class InvoiceRepository(private val database: AccountingDatabase) {
             )
 
             val saleChanges = plan.changes.filter { it.sourceType.trim().uppercase() == "SALE_INVOICE" }
+            require(plan.changes.size == saleChanges.size) {
+                "إعادة الاحتساب تؤثر على إخراج مخزون ليس فاتورة بيع؛ أوقفنا الترحيل حتى تتوفر تسوية مستقلة لهذا النوع"
+            }
             val saleChangesWithInvoices = saleChanges.map { change ->
                 val line = invoiceLinesById[change.sourceId]
                     ?: throw IllegalStateException("تعذر ربط حركة الصرف ببند فاتورة البيع")
