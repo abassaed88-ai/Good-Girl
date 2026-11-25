@@ -77,6 +77,8 @@ dependencies {
 
     // Bundled ML Kit model: barcode scanning works immediately, including offline.
     implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    // Offline generation of printable Code 128, EAN-13, EAN-8, and UPC-A labels.
+    implementation("com.google.zxing:core:3.5.3")
 
     implementation("androidx.room:room-runtime:2.7.1")
     implementation("androidx.room:room-ktx:2.7.1")

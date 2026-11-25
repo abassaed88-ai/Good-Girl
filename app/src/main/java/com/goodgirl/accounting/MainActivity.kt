@@ -101,6 +101,7 @@ import com.goodgirl.accounting.data.GeneralLedgerStatementsPdfExporter
 import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.PartyPaymentRepository
 import com.goodgirl.accounting.data.PartyStatementPdfExporter
+import com.goodgirl.accounting.data.ProductBarcodeLabelPdfExporter
 import com.goodgirl.accounting.data.ProductBarcodeRepository
 import com.goodgirl.accounting.data.ProductRepository
 import com.goodgirl.accounting.data.ProductUnitRepository
@@ -4133,6 +4134,55 @@ private fun ProductManagementScreen(
     var barcodeMessage by remember { mutableStateOf<String?>(null) }
     var isSavingBarcode by remember { mutableStateOf(false) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
+    var barcodeLabelCopies by remember { mutableStateOf("1") }
+    var barcodeLabelLayout by remember { mutableStateOf("MEDIUM") }
+    var barcodeLabelLayoutExpanded by remember { mutableStateOf(false) }
+    var includeBarcodePrice by remember { mutableStateOf(true) }
+    var pendingBarcodeLabelProductId by remember { mutableStateOf<String?>(null) }
+    var isExportingBarcodeLabels by remember { mutableStateOf(false) }
+    val barcodeLabelPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        val targetId = pendingBarcodeLabelProductId
+        if (uri != null && targetId != null) {
+            scope.launch {
+                isExportingBarcodeLabels = true
+                barcodeMessage = null
+                try {
+                    val targetProduct = database.productDao().findById(targetId)
+                        ?: throw IllegalArgumentException("المادة المحددة لم تعد موجودة")
+                    val targetBarcodes = database.productBarcodeDao().getForProduct(targetId)
+                    val copies = barcodeLabelCopies.toIntOrNull()
+                        ?: throw IllegalArgumentException("عدد النسخ غير صالح")
+                    val layout = when (barcodeLabelLayout) {
+                        "LARGE" -> 2 to 6
+                        "SMALL" -> 4 to 10
+                        else -> 3 to 8
+                    }
+                    val count = ProductBarcodeLabelPdfExporter.write(
+                        context = context,
+                        destination = uri,
+                        product = targetProduct,
+                        barcodes = targetBarcodes,
+                        copiesPerBarcode = copies,
+                        includePrice = includeBarcodePrice,
+                        columns = layout.first,
+                        rows = layout.second
+                    )
+                    barcodeMessage = "تم تجهيز $count ملصقاً في PDF بمقاس " +
+                        (if (barcodeLabelLayout == "LARGE") "كبير" else if (barcodeLabelLayout == "SMALL") "صغير" else "متوسط") +
+                        ". افتح الملف للطباعة أو المشاركة."
+                } catch (error: Exception) {
+                    barcodeMessage = error.message ?: "تعذر تجهيز ملصقات الباركود"
+                } finally {
+                    isExportingBarcodeLabels = false
+                    pendingBarcodeLabelProductId = null
+                }
+            }
+        } else {
+            pendingBarcodeLabelProductId = null
+        }
+    }
 
     val editingProduct = products.firstOrNull { it.id == editingId }
     val productFormValues = ProductFormValues(
@@ -4552,6 +4602,67 @@ private fun ProductManagementScreen(
                         enabled = !isSavingBarcode,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("مسح باركود بالكاميرا وربطه") }
+                    Box {
+                        Button(
+                            onClick = { barcodeLabelLayoutExpanded = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "حجم الملصق: " + when (barcodeLabelLayout) {
+                                    "LARGE" -> "كبير (2 × 6)"
+                                    "SMALL" -> "صغير (4 × 10)"
+                                    else -> "متوسط (3 × 8)"
+                                }
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = barcodeLabelLayoutExpanded,
+                            onDismissRequest = { barcodeLabelLayoutExpanded = false }
+                        ) {
+                            listOf(
+                                "LARGE" to "كبير — 2 أعمدة × 6 صفوف",
+                                "MEDIUM" to "متوسط — 3 أعمدة × 8 صفوف",
+                                "SMALL" to "صغير — 4 أعمدة × 10 صفوف"
+                            ).forEach { (layout, title) ->
+                                DropdownMenuItem(
+                                    text = { Text(title) },
+                                    onClick = {
+                                        barcodeLabelLayout = layout
+                                        barcodeLabelLayoutExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = barcodeLabelCopies,
+                        onValueChange = { barcodeLabelCopies = it.filter(Char::isDigit).take(3) },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("عدد النسخ لكل باركود") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("إظهار سعر البيع على الملصق", color = Ink, fontSize = 13.sp)
+                        Switch(checked = includeBarcodePrice, onCheckedChange = { includeBarcodePrice = it })
+                    }
+                    Button(
+                        onClick = {
+                            pendingBarcodeLabelProductId = barcodeProduct.id
+                            val safeName = barcodeProduct.name.replace(Regex("[^A-Za-z0-9_-]"), "_").take(30)
+                            barcodeLabelPdfLauncher.launch("GoodGirl_Labels_$safeName.pdf")
+                        },
+                        enabled = !isExportingBarcodeLabels &&
+                            barcodeEntries.isNotEmpty() &&
+                            (barcodeLabelCopies.toIntOrNull() ?: 0) in 1..200,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isExportingBarcodeLabels) "جارٍ تجهيز الملصقات..." else "حفظ ملصقات PDF للطباعة")
+                    }
                     barcodeMessage?.let {
                         Text(it, color = if (it.startsWith("تم") || it.startsWith("الباركود الداخلي")) SoftGreen else SoftRed, fontSize = 12.sp)
                     }
