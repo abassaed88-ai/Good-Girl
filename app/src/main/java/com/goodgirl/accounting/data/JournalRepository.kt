@@ -33,6 +33,7 @@ class JournalRepository(private val database: AccountingDatabase) {
             systemAccount("SYS-1200", "1200", "المخزون", "ASSET", "DEBIT", now),
             systemAccount("SYS-2000", "2000", "ذمم الموردين", "LIABILITY", "CREDIT", now),
             systemAccount("SYS-3000", "3000", "رأس المال", "EQUITY", "CREDIT", now),
+            systemAccount("SYS-3100", "3100", "الأرباح المحتجزة", "EQUITY", "CREDIT", now),
             systemAccount("SYS-4000", "4000", "المبيعات", "REVENUE", "CREDIT", now),
             systemAccount("SYS-5000", "5000", "تكلفة البضاعة المباعة", "EXPENSE", "DEBIT", now),
             systemAccount("SYS-6000", "6000", "إيرادات أخرى", "REVENUE", "CREDIT", now),
