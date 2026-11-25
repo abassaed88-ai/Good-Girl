@@ -385,7 +385,12 @@ private fun GoodGirlApp() {
     ) {
         Surface(modifier = Modifier.fillMaxSize(), color = selectedPalette.background) {
             Box(modifier = Modifier.fillMaxSize()) {
-            when (activePage) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(bottom = if (activePage == "dashboard") 0.dp else 68.dp)
+                ) {
+                    when (activePage) {
                 "cash" -> CashManagementScreen(
                     onBack = { requestNavigation("dashboard") },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
@@ -558,6 +563,7 @@ private fun GoodGirlApp() {
                     onOpenBackup = { activePage = "backup" },
                     onOpenSettings = { activePage = "settings" }
                 )
+                    }
             }
             if (activePage != "dashboard") {
                 TextButton(
