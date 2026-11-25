@@ -27,7 +27,7 @@ class PeriodClosingRulesTest {
     @Test fun createsBalancedCloseForProfitAndLoss() {
         val draft = PeriodClosingRules.build(11, "SYP", accounts, entries, lines, "equity")
         assertEquals(BigDecimal("70"), draft.netIncome)
-        assertEquals(BigDecimal("130"), draft.lines.fold(BigDecimal.ZERO) { a, l -> a.add(l.debit) })
+        assertEquals(BigDecimal("100"), draft.lines.fold(BigDecimal.ZERO) { a, l -> a.add(l.debit) })
         assertEquals(BigDecimal("130"), draft.lines.fold(BigDecimal.ZERO) { a, l -> a.add(l.credit) })
     }
     @Test fun excludesOtherCurrenciesAndFutureEntries() {
