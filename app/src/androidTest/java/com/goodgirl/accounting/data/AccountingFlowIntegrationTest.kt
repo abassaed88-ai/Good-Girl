@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.domain.FinancialReportCalculator
+import com.goodgirl.accounting.domain.GeneralLedgerFinancialStatementsCalculator
 import java.math.BigDecimal
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -375,6 +376,34 @@ class AccountingFlowIntegrationTest {
             assertDecimal(
                 "5.71428572",
                 adjustmentLines.single { accounts[it.accountId]!!.code == "1200" }.credit
+            )
+
+            val effectiveCostReport = FinancialReportCalculator.calculate(
+                fromInclusive = 0L,
+                toInclusive = Long.MAX_VALUE,
+                invoices = database.invoiceDao().getAllInvoices(),
+                lines = database.invoiceDao().getAllLines(),
+                ledgerEntries = database.ledgerDao().getAll(),
+                effectiveUnitCostsByLineId = mapOf(item.sourceId to item.newUnitCost)
+            )
+            val saleSummary = effectiveCostReport.currencySummaries.single { it.currencyCode == "SYP" }
+            assertDecimal("25.71428572", saleSummary.costOfGoodsSold.toPlainString())
+            assertDecimal("4.28571428", effectiveCostReport.products.single().profit.toPlainString())
+
+            val ledgerStatements = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 0L,
+                periodEndInclusive = Long.MAX_VALUE,
+                asOfInclusive = Long.MAX_VALUE,
+                accounts = database.accountDao().getAll(),
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll()
+            )
+            val incomeStatement = ledgerStatements.incomeStatements.single { it.currencyCode == "SYP" }
+            val ledgerCost = incomeStatement.expenses.single { it.accountCode == "5000" }.amount
+            assertDecimal("25.71428572", ledgerCost.toPlainString())
+            assertDecimal(
+                saleSummary.costOfGoodsSold.toPlainString(),
+                ledgerCost.toPlainString()
             )
         } finally {
             database.close()
