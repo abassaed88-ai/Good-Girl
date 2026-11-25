@@ -2031,6 +2031,8 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
     val accounts by database.accountDao().observeAll().collectAsState(initial = emptyList())
     val journalEntries by database.journalEntryDao().observeAll().collectAsState(initial = emptyList())
     val journalLines by database.journalLineDao().observeAll().collectAsState(initial = emptyList())
+    val stockCostAudits by database.stockCostRecalculationAuditDao().observeAll().collectAsState(initial = emptyList())
+    val stockCostAuditItems by database.stockCostRecalculationItemDao().observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     var selectedPeriod by remember { mutableStateOf("TODAY") }
     var showTrialBalance by remember { mutableStateOf(false) }
@@ -2098,13 +2100,26 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
         }
     }
     val cashFlowStatement = cashFlowStatementResult.getOrNull()
-    val report = remember(selectedPeriod, invoices, invoiceLines, ledgerEntries) {
+    val effectiveCostsByLineId = remember(stockCostAudits, stockCostAuditItems) {
+        val auditById = stockCostAudits.associateBy { it.id }
+        stockCostAuditItems
+            .groupBy { it.sourceId }
+            .mapValues { (_, items) ->
+                items.maxWithOrNull(
+                    compareBy<com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity> {
+                        auditById[it.auditId]?.createdAt ?: Long.MIN_VALUE
+                    }.thenBy { it.auditId }
+                )!!.newUnitCost
+            }
+    }
+    val report = remember(selectedPeriod, invoices, invoiceLines, ledgerEntries, effectiveCostsByLineId) {
         FinancialReportCalculator.calculate(
             fromInclusive = fromTime,
             toInclusive = now,
             invoices = invoices,
             lines = invoiceLines,
-            ledgerEntries = ledgerEntries
+            ledgerEntries = ledgerEntries,
+            effectiveUnitCostsByLineId = effectiveCostsByLineId
         )
     }
 

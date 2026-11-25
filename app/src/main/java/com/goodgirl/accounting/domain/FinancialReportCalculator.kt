@@ -54,7 +54,9 @@ object FinancialReportCalculator {
         toInclusive: Long,
         invoices: List<InvoiceEntity>,
         lines: List<InvoiceLineEntity>,
-        ledgerEntries: List<LedgerEntryEntity>
+        ledgerEntries: List<LedgerEntryEntity>,
+        /** Latest audited effective unit cost keyed by immutable invoice-line ID. */
+        effectiveUnitCostsByLineId: Map<String, String> = emptyMap()
     ): FinancialReport {
         val periodInvoices = invoices.filter {
             it.status == "POSTED" && it.issuedAt in fromInclusive..toInclusive
@@ -64,6 +66,8 @@ object FinancialReportCalculator {
         val purchaseInvoices = periodInvoices.filter { it.kind == "PURCHASE" }
         val saleIds = salesInvoices.map { it.id }.toSet()
         val salesLines = lines.filter { it.invoiceId in saleIds }
+        fun effectiveUnitCost(line: InvoiceLineEntity): BigDecimal =
+            (effectiveUnitCostsByLineId[line.id] ?: line.unitCostSnapshot).toBigDecimal()
 
         val sales = mutableMapOf<String, BigDecimal>()
         salesInvoices.forEach { invoice ->
@@ -78,7 +82,7 @@ object FinancialReportCalculator {
         val costs = mutableMapOf<String, BigDecimal>()
         salesLines.forEach { line ->
             val invoice = invoiceById[line.invoiceId] ?: return@forEach
-            val cost = line.baseQuantity.toBigDecimal().multiply(line.unitCostSnapshot.toBigDecimal())
+            val cost = line.baseQuantity.toBigDecimal().multiply(effectiveUnitCost(line))
             costs[invoice.currencyCode] = (costs[invoice.currencyCode] ?: BigDecimal.ZERO).add(cost)
         }
 
@@ -134,7 +138,7 @@ object FinancialReportCalculator {
             invoiceLines.forEachIndexed { index, line ->
                 val lineNet = line.lineTotal.toBigDecimal()
                 val revenue = lineNet.subtract(allocatedDiscounts[index])
-                val cost = line.baseQuantity.toBigDecimal().multiply(line.unitCostSnapshot.toBigDecimal())
+                val cost = line.baseQuantity.toBigDecimal().multiply(effectiveUnitCost(line))
                 val key = ProductFinancialKey(
                     productId = line.productId,
                     legacyName = if (line.productId == null) line.productNameSnapshot else null,

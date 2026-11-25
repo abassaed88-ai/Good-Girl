@@ -407,6 +407,8 @@ interface ProductBarcodeDao {
 @Dao
 interface StockCostRecalculationAuditDao {
     @Query("SELECT * FROM stock_cost_recalculation_audits ORDER BY createdAt DESC, id DESC")
+    fun observeAll(): Flow<List<StockCostRecalculationAuditEntity>>
+    @Query("SELECT * FROM stock_cost_recalculation_audits ORDER BY createdAt DESC, id DESC")
     suspend fun getAll(): List<StockCostRecalculationAuditEntity>
     @Query("SELECT * FROM stock_cost_recalculation_audits WHERE productId = :productId ORDER BY createdAt DESC")
     suspend fun getForProduct(productId: String): List<StockCostRecalculationAuditEntity>
@@ -418,6 +420,8 @@ interface StockCostRecalculationAuditDao {
 
 @Dao
 interface StockCostRecalculationItemDao {
+    @Query("SELECT * FROM stock_cost_recalculation_items ORDER BY auditId, movementId")
+    fun observeAll(): Flow<List<StockCostRecalculationItemEntity>>
     @Query("SELECT * FROM stock_cost_recalculation_items ORDER BY auditId, movementId")
     suspend fun getAll(): List<StockCostRecalculationItemEntity>
     @Query("SELECT * FROM stock_cost_recalculation_items WHERE auditId = :auditId ORDER BY movementId")

@@ -146,6 +146,25 @@ class FinancialReportCalculatorTest {
     }
 
     @Test
+    fun usesLatestAuditedEffectiveCostWithoutChangingOriginalInvoiceSnapshot() {
+        val saleInvoice = invoice("sale-audited", "SALE", "30")
+        val originalLine = line("sale-audited", "2", "15", "10")
+        val report = FinancialReportCalculator.calculate(
+            fromInclusive = 0L,
+            toInclusive = 200L,
+            invoices = listOf(saleInvoice),
+            lines = listOf(originalLine),
+            ledgerEntries = emptyList(),
+            effectiveUnitCostsByLineId = mapOf(originalLine.id to "12.5")
+        )
+
+        assertEquals("10", originalLine.unitCostSnapshot)
+        assertEquals("25", report.currencySummaries.single().costOfGoodsSold.stripTrailingZeros().toPlainString())
+        assertEquals("25", report.products.single().cost.stripTrailingZeros().toPlainString())
+        assertEquals("5", report.products.single().profit.stripTrailingZeros().toPlainString())
+    }
+
+    @Test
     fun keepsCurrenciesSeparate() {
         val report = FinancialReportCalculator.calculate(
             0L, 200L,
