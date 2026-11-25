@@ -452,7 +452,9 @@ object BackupIntegrityValidator {
             require(totalDebit.compareTo(totalCredit) == 0) {
                 "قيد اليومية ${entry.journalNumber} غير متوازن"
             }
-        }        val closeReversals = journalEntries.filter { it.sourceType == "PERIOD_CLOSE_REVERSAL" }
+        }
+
+        val closeReversals = journalEntries.filter { it.sourceType == "PERIOD_CLOSE_REVERSAL" }
         closeReversals.forEach { reversal ->
             val original = journalById[reversal.sourceId]
                 ?: throw IllegalArgumentException("قيد عكس الإقفال مرتبط بقيد أصلي غير موجود")
