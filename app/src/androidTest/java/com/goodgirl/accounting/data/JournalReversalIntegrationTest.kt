@@ -262,6 +262,7 @@ class JournalReversalIntegrationTest {
                     )
                 }
             }
+            assertEquals(2, repository.observeEntries().first().size)
         } finally {
             database.close()
         }
