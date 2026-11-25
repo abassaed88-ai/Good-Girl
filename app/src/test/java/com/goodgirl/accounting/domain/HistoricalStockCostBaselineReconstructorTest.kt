@@ -97,7 +97,7 @@ class HistoricalStockCostBaselineReconstructorTest {
     fun rejectsWhenForwardReplayDoesNotMatchCurrentProductBalance() {
         assertThrows(IllegalArgumentException::class.java) {
             HistoricalStockCostBaselineReconstructor.reconstruct(
-                current = HistoricalStockCostCurrentState("product-6", "8", "13.6", "SYP"),
+                current = HistoricalStockCostCurrentState("product-6", "9", "13.6", "SYP"),
                 accountingBoundaryAt = 100,
                 postBoundaryEvents = listOf(
                     event("purchase", "PURCHASE_INVOICE", "2", "20", "SYP", 120, 121),
