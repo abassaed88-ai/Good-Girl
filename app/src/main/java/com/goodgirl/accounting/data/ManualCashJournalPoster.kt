@@ -64,6 +64,7 @@ internal object ManualCashJournalPoster {
             "تم إنشاء قيد محاسبي لهذه الحركة مسبقاً"
         }
 
+        PeriodClosingGuard.ensureOpen(database, normalized.currencyCode, occurredAt)
         val entryId = UUID.randomUUID().toString()
         database.journalEntryDao().insert(
             JournalEntryEntity(
