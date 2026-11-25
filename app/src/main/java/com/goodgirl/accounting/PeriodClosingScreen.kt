@@ -71,7 +71,7 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
     var startAt by remember { mutableStateOf(initialStart) }
     var endAt by remember { mutableStateOf(initialEnd) }
     var currency by remember { mutableStateOf("SYP") }
-    var equityAccountId by remember { mutableStateOf("SYS-3000") }
+    var equityAccountId by remember { mutableStateOf("SYS-3100") }
     var expandedAccounts by remember { mutableStateOf(false) }
     var showConfirmation by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
