@@ -2167,10 +2167,12 @@ private fun InvoiceManagementScreen(
                                         unitName = product.baseUnit
                                     )
                                 )
-                                selectedProductId = product.id
-                                selectedUnitName = product.baseUnit
+                                // The scanned item is already in the invoice draft. Clear the
+                                // manual selector to prevent an accidental duplicate add.
+                                selectedProductId = null
+                                selectedUnitName = null
                                 quantity = "1"
-                                unitPrice = scannedPrice
+                                unitPrice = "0"
                                 lineDiscount = "0"
                                 message = "تمت إضافة " + product.name + " إلى الفاتورة بكمية 1"
                             } catch (error: Exception) {
