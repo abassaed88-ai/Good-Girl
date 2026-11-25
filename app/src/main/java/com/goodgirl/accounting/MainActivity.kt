@@ -4702,6 +4702,13 @@ private fun DailySalesScreen(
         onUnsavedChangesChanged(hasUnsavedDailySaleChanges)
     }
 
+    val todayStart = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
     val dayBounds = remember(selectedDay) {
         val start = Calendar.getInstance().apply { timeInMillis = selectedDay }
         val end = (start.clone() as Calendar).apply { add(Calendar.DAY_OF_MONTH, 1) }
@@ -4816,12 +4823,15 @@ private fun DailySalesScreen(
                     }.timeInMillis
                 }) { Text("العودة إلى اليوم") }
             }
-            TextButton(onClick = {
-                selectedDay = Calendar.getInstance().apply {
-                    timeInMillis = selectedDay
-                    add(Calendar.DAY_OF_MONTH, 1)
-                }.timeInMillis
-            }) { Text("اليوم التالي") }
+            TextButton(
+                enabled = canAdvanceDailySalesDay(selectedDay, todayStart),
+                onClick = {
+                    selectedDay = Calendar.getInstance().apply {
+                        timeInMillis = selectedDay
+                        add(Calendar.DAY_OF_MONTH, 1)
+                    }.timeInMillis
+                }
+            ) { Text("اليوم التالي") }
         }
 
         Text(
@@ -5050,14 +5060,10 @@ private fun DailySalesScreen(
                                         "المبلغ المقبوض"
                                     )
                                     InvoicePostingRules.calculateLineTotal(cleanQuantity, cleanPrice, cleanDiscount)
-                                    val timeNow = Calendar.getInstance()
-                                    val issuedAt = Calendar.getInstance().apply {
-                                        timeInMillis = selectedDay
-                                        set(Calendar.HOUR_OF_DAY, timeNow.get(Calendar.HOUR_OF_DAY))
-                                        set(Calendar.MINUTE, timeNow.get(Calendar.MINUTE))
-                                        set(Calendar.SECOND, timeNow.get(Calendar.SECOND))
-                                        set(Calendar.MILLISECOND, timeNow.get(Calendar.MILLISECOND))
-                                    }.timeInMillis
+                                    val issuedAt = dailySalesIssuedAt(
+                                        selectedDayStartMillis = selectedDay,
+                                        currentTimeMillis = System.currentTimeMillis()
+                                    )
                                     val invoiceNumber = "DS-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().take(8)
                                     val result = repository.postInvoice(
                                         invoiceNumber = invoiceNumber,
