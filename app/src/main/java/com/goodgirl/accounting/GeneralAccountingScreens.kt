@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -22,6 +23,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -38,6 +43,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -88,11 +94,13 @@ fun GeneralAccountingHubScreen(
         AccountingNavigationCard(
             title = "دليل الحسابات",
             description = "عرض الحسابات الافتراضية وإضافة حسابات المتجر وتصنيفها.",
+            icon = Icons.Filled.AccountTree,
             onClick = onOpenChart
         )
         AccountingNavigationCard(
             title = "دفتر اليومية العام",
             description = "مراجعة القيود المرحلة وإدخال قيود يدوية متوازنة.",
+            icon = Icons.Filled.MenuBook,
             onClick = onOpenJournal
         )
         Text(
@@ -107,6 +115,7 @@ fun GeneralAccountingHubScreen(
 private fun AccountingNavigationCard(
     title: String,
     description: String,
+    icon: ImageVector,
     onClick: () -> Unit
 ) {
     Card(
@@ -115,12 +124,24 @@ private fun AccountingNavigationCard(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = AccountingSurface)
     ) {
-        Column(
+        Row(
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, color = AccountingAccent, fontWeight = FontWeight.Bold, fontSize = 17.sp)
-            Text(description, color = AccountingMuted, fontSize = 13.sp)
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                tint = AccountingAccent,
+                modifier = Modifier.size(34.dp)
+            )
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Text(title, color = AccountingAccent, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                Text(description, color = AccountingMuted, fontSize = 13.sp)
+            }
         }
     }
 }

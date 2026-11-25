@@ -37,6 +37,8 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.BusinessCenter
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MenuBook
@@ -565,7 +567,18 @@ private fun GoodGirlApp() {
                         .padding(12.dp)
                         .background(BrandBlue, RoundedCornerShape(24.dp))
                 ) {
-                    Text("⌂ الرئيسية", color = BrandOnPrimary, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Home,
+                            contentDescription = "الرئيسية",
+                            tint = BrandOnPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text("الرئيسية", color = BrandOnPrimary, fontWeight = FontWeight.SemiBold)
+                    }
                 }
                 TextButton(
                     onClick = { requestNavigation(backTargetPage) },
@@ -574,7 +587,18 @@ private fun GoodGirlApp() {
                         .padding(12.dp)
                         .background(BrandBlue, RoundedCornerShape(24.dp))
                 ) {
-                    Text("← رجوع", color = BrandOnPrimary, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "رجوع",
+                            tint = BrandOnPrimary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Text("رجوع", color = BrandOnPrimary, fontWeight = FontWeight.SemiBold)
+                    }
                 }
             }
             if (showUnsavedChangesDialog) {
