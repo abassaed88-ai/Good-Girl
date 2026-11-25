@@ -43,7 +43,7 @@ private data class MigrationOpeningLine(
         InvoiceEntity::class,
         InvoiceLineEntity::class,
         StockMovementEntity::class,
-        StockCostBaselineEntity::class,
+        StockCostBaselineEntity::class,\n        StockCostRecalculationAuditEntity::class,\n        StockCostRecalculationItemEntity::class,
         LedgerEntryEntity::class,
         AccountEntity::class,
         JournalEntryEntity::class,
@@ -63,7 +63,7 @@ abstract class AccountingDatabase : RoomDatabase() {
     abstract fun partyDao(): PartyDao
     abstract fun invoiceDao(): InvoiceDao
     abstract fun stockMovementDao(): StockMovementDao
-    abstract fun stockCostBaselineDao(): StockCostBaselineDao
+    abstract fun stockCostBaselineDao(): StockCostBaselineDao\n    abstract fun stockCostRecalculationAuditDao(): StockCostRecalculationAuditDao\n    abstract fun stockCostRecalculationItemDao(): StockCostRecalculationItemDao
     abstract fun ledgerDao(): LedgerDao
     abstract fun accountDao(): AccountDao
     abstract fun journalEntryDao(): JournalEntryDao
@@ -669,7 +669,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build().also { INSTANCE = it }
             }
     }
 }

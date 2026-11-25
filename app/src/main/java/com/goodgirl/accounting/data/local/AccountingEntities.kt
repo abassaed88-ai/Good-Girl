@@ -305,3 +305,38 @@ data class ProductBarcodeEntity(
     val origin: String,
     val createdAt: Long
 )
+
+
+@Entity(tableName = "stock_cost_recalculation_audits", indices = [Index("createdAt"), Index("productId")])
+data class StockCostRecalculationAuditEntity(
+    @PrimaryKey val id: String,
+    val productId: String,
+    val triggerType: String,
+    val triggerSourceId: String,
+    val reason: String,
+    val createdAt: Long,
+    val currencyCode: String,
+    val oldEndingQuantity: String,
+    val newEndingQuantity: String,
+    val oldEndingAverageCost: String,
+    val newEndingAverageCost: String,
+    val affectedStockOutCount: Int
+)
+
+@Entity(tableName = "stock_cost_recalculation_items", foreignKeys = [
+    ForeignKey(entity = StockCostRecalculationAuditEntity::class, parentColumns = ["id"], childColumns = ["auditId"], onDelete = ForeignKey.CASCADE)
+], indices = [Index("auditId"), Index(value = ["auditId", "movementId"], unique = true), Index("movementId")])
+data class StockCostRecalculationItemEntity(
+    @PrimaryKey val id: String,
+    val auditId: String,
+    val movementId: String,
+    val sourceType: String,
+    val sourceId: String,
+    val invoiceId: String,
+    val currencyCode: String,
+    val quantity: String,
+    val oldUnitCost: String,
+    val newUnitCost: String,
+    val oldExtendedCost: String,
+    val newExtendedCost: String
+)

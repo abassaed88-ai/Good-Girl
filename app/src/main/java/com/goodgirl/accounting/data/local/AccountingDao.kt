@@ -402,3 +402,30 @@ interface ProductBarcodeDao {
     @Query("DELETE FROM product_barcodes")
     suspend fun deleteAll()
 }
+
+
+@Dao
+interface StockCostRecalculationAuditDao {
+    @Query("SELECT * FROM stock_cost_recalculation_audits ORDER BY createdAt DESC, id DESC")
+    suspend fun getAll(): List<StockCostRecalculationAuditEntity>
+    @Query("SELECT * FROM stock_cost_recalculation_audits WHERE productId = :productId ORDER BY createdAt DESC")
+    suspend fun getForProduct(productId: String): List<StockCostRecalculationAuditEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(audits: List<StockCostRecalculationAuditEntity>)
+    @Query("DELETE FROM stock_cost_recalculation_audits")
+    suspend fun deleteAll()
+}
+
+@Dao
+interface StockCostRecalculationItemDao {
+    @Query("SELECT * FROM stock_cost_recalculation_items ORDER BY auditId, movementId")
+    suspend fun getAll(): List<StockCostRecalculationItemEntity>
+    @Query("SELECT * FROM stock_cost_recalculation_items WHERE auditId = :auditId ORDER BY movementId")
+    suspend fun getForAudit(auditId: String): List<StockCostRecalculationItemEntity>
+    @Query("SELECT * FROM stock_cost_recalculation_items WHERE movementId = :movementId ORDER BY auditId DESC")
+    suspend fun getForMovement(movementId: String): List<StockCostRecalculationItemEntity>
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertAll(items: List<StockCostRecalculationItemEntity>)
+    @Query("DELETE FROM stock_cost_recalculation_items")
+    suspend fun deleteAll()
+}
