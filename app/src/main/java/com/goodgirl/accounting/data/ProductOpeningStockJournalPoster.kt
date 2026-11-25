@@ -27,10 +27,13 @@ internal object ProductOpeningStockJournalPoster {
         exchangeRateSnapshot: String,
         occurredAt: Long
     ) {
-        val value = quantity.toBigDecimal().multiply(unitCost.toBigDecimal())
-        if (value.compareTo(BigDecimal.ZERO) <= 0) return
-        require(quantity.toBigDecimal() > BigDecimal.ZERO) { "كمية المخزون الافتتاحية غير صالحة" }
-        require(unitCost.toBigDecimal() >= BigDecimal.ZERO) { "كلفة المخزون الافتتاحية غير صالحة" }
+        val quantityValue = quantity.toBigDecimal()
+        val unitCostValue = unitCost.toBigDecimal()
+        require(quantityValue > BigDecimal.ZERO) { "كمية المخزون الافتتاحية غير صالحة" }
+        require(unitCostValue >= BigDecimal.ZERO) { "كلفة المخزون الافتتاحية غير صالحة" }
+        PeriodClosingGuard.ensureOpen(database, currencyCode, occurredAt)
+        val value = quantityValue.multiply(unitCostValue)
+        if (value.compareTo(BigDecimal.ZERO) == 0) return
 
         val now = System.currentTimeMillis()
         database.accountDao().insertIgnore(
@@ -52,7 +55,6 @@ internal object ProductOpeningStockJournalPoster {
                 JournalLineDraft(EQUITY, credit = amount, memo = "مقابل المخزون الافتتاحي")
             )
         )
-        PeriodClosingGuard.ensureOpen(database, normalized.currencyCode, occurredAt)
         val entryId = UUID.randomUUID().toString()
         database.journalEntryDao().insert(
             JournalEntryEntity(

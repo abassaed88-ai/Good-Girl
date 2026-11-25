@@ -133,9 +133,25 @@ object GeneralLedgerFinancialStatementsCalculator {
                     else -> BigDecimal.ZERO
                 }
             }.fold(BigDecimal.ZERO, BigDecimal::add)
+            val closedEarnings = includedEntries
+                .filter { it.currencyCode == currency && it.sourceType == "PERIOD_CLOSE" }
+                .fold(BigDecimal.ZERO) { total, entry ->
+                    val equityMovement = linesByEntry[entry.id].orEmpty().fold(BigDecimal.ZERO) { subtotal, line ->
+                        val account = accountById.getValue(line.accountId)
+                        if (account.accountType == "EQUITY") {
+                            subtotal.add(BigDecimal(line.credit)).subtract(BigDecimal(line.debit))
+                        } else {
+                            subtotal
+                        }
+                    }
+                    total.add(equityMovement)
+                }
+            val cumulativeRetainedEarnings = closedEarnings.add(revenueAndExpense)
             val totalAssets = sum(assets)
             val totalLiabilities = sum(liabilities)
             val totalEquity = sum(equity)
+            // Closed earnings are already part of equity; only unclosed P&L
+            // balances are added here to preserve the balance-sheet equation.
             val totalLiabilitiesAndEquity = totalLiabilities.add(totalEquity).add(revenueAndExpense)
             CurrencyBalanceSheet(
                 currencyCode = currency,
@@ -145,7 +161,7 @@ object GeneralLedgerFinancialStatementsCalculator {
                 totalAssets = totalAssets,
                 totalLiabilities = totalLiabilities,
                 totalEquity = totalEquity,
-                retainedEarnings = revenueAndExpense,
+                retainedEarnings = cumulativeRetainedEarnings,
                 totalLiabilitiesAndEquity = totalLiabilitiesAndEquity
             )
         }

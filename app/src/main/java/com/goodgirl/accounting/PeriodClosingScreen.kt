@@ -48,6 +48,8 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
     val journalRepository = remember(database) { JournalRepository(database) }
     val closingRepository = remember(database) { PeriodClosingRepository(database) }
     val accounts by database.accountDao().observeAll().collectAsState(initial = emptyList())
+    val journalEntries by database.journalEntryDao().observeAll().collectAsState(initial = emptyList())
+    val journalLines by database.journalLineDao().observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     val calendarNow = remember { Calendar.getInstance() }
     val initialStart = remember {
@@ -110,7 +112,7 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
 
     val dateFormat = remember { SimpleDateFormat("yyyy-MM-dd", Locale.US) }
 
-    LaunchedEffect(startAt, endAt, currency, selectedEquity?.id, accounts) {
+    LaunchedEffect(startAt, endAt, currency, selectedEquity?.id, accounts, journalEntries, journalLines) {
         preview = null
         previewError = null
         val targetAccountId = selectedEquity?.id ?: return@LaunchedEffect
@@ -124,8 +126,8 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
                 periodEndInclusive = endAt,
                 currencyCode = currency,
                 accounts = accounts,
-                entries = database.journalEntryDao().getAll(),
-                lines = database.journalLineDao().getAll(),
+                entries = journalEntries,
+                lines = journalLines,
                 retainedEarningsAccountId = targetAccountId
             )
         }.onSuccess { preview = it }

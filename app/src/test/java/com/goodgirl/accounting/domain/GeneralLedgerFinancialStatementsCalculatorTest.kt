@@ -134,7 +134,7 @@ class GeneralLedgerFinancialStatementsCalculatorTest {
         assertEquals(BigDecimal("70"), income.totalExpenses)
         assertEquals(BigDecimal("80"), income.netIncome)
         val balance = result.balanceSheets.single { it.currencyCode == "SYP" }
-        assertDecimalEquals("0", balance.retainedEarnings)
+        assertDecimalEquals("80", balance.retainedEarnings)
         assertDecimalEquals("1080", balance.totalEquity)
         assertDecimalEquals("1080", balance.totalLiabilitiesAndEquity)
     }

@@ -32,6 +32,7 @@ internal object InvoiceJournalPoster {
     ) {
         require(invoice.status == "POSTED") { "لا يمكن ترحيل قيد لفاتورة غير مرحلة" }
         require(invoice.kind == "SALE" || invoice.kind == "PURCHASE") { "نوع الفاتورة غير مدعوم محاسبياً" }
+        PeriodClosingGuard.ensureOpen(database, invoice.currencyCode, invoice.issuedAt)
 
         val accounts = listOf(
             account(CASH, "1000", "الصندوق", "ASSET", "DEBIT"),
@@ -104,7 +105,6 @@ internal object InvoiceJournalPoster {
         require(database.journalEntryDao().findBySource(sourceType, invoice.id) == null) {
             "تم إنشاء قيد محاسبي لهذه الفاتورة مسبقاً"
         }
-        PeriodClosingGuard.ensureOpen(database, normalized.currencyCode, invoice.issuedAt)
         val entryId = UUID.randomUUID().toString()
         database.journalEntryDao().insert(
             JournalEntryEntity(

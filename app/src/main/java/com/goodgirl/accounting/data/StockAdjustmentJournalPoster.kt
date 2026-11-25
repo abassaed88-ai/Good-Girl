@@ -31,7 +31,9 @@ internal object StockAdjustmentJournalPoster {
         sourcePrefix: String
     ) {
         val value = amount.toBigDecimal()
-        if (value.compareTo(BigDecimal.ZERO) <= 0) return
+        require(value.signum() >= 0) { "قيمة تسوية المخزون لا يجوز أن تكون سالبة" }
+        PeriodClosingGuard.ensureOpen(database, currencyCode, occurredAt)
+        if (value.compareTo(BigDecimal.ZERO) == 0) return
 
         val isGain = quantityDelta.toBigDecimal() > BigDecimal.ZERO
         val sourceType = when {
@@ -80,7 +82,6 @@ internal object StockAdjustmentJournalPoster {
             )
         }
         val normalized = JournalEntryRules.normalize(currencyCode, exchangeRateSnapshot, drafts)
-        PeriodClosingGuard.ensureOpen(database, normalized.currencyCode, occurredAt)
         val entryId = UUID.randomUUID().toString()
         database.journalEntryDao().insert(
             JournalEntryEntity(
