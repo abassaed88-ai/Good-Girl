@@ -1914,7 +1914,7 @@ private fun InvoiceManagementScreen(
                     onClick = { showBarcodeScanner = true },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("مسح الباركود وإضافة المادة مباشرة")
+                    Text("مسح الباركود لاختيار المادة")
                 }
                 if (products.none { it.priceCurrencyCode == currencyCode }) {
                     Text("لا توجد مواد معرفة بهذه العملة. أضف مادة أو عدّل عملتها من شاشة المنتجات.", color = MutedText, fontSize = 12.sp)
@@ -2158,23 +2158,13 @@ private fun InvoiceManagementScreen(
                                     } else "1"
                                 }
                                 val scannedPrice = if (kind == "SALE") product.salePrice else product.purchaseCost
-                                draftLines.add(
-                                    InvoiceLineDraft(
-                                        productId = product.id,
-                                        quantity = "1",
-                                        unitPrice = scannedPrice,
-                                        discount = "0",
-                                        unitName = product.baseUnit
-                                    )
-                                )
-                                // The scanned item is already in the invoice draft. Clear the
-                                // manual selector to prevent an accidental duplicate add.
-                                selectedProductId = null
-                                selectedUnitName = null
-                                quantity = "1"
-                                unitPrice = "0"
+                                // Select the scanned item but keep quantity editable before
+                                // the user explicitly adds the line to the invoice draft.
+                                selectedProductId = product.id
+                                selectedUnitName = product.baseUnit
+                                unitPrice = scannedPrice
                                 lineDiscount = "0"
-                                message = "تمت إضافة " + product.name + " إلى الفاتورة بكمية 1"
+                                message = "تم اختيار " + product.name + "؛ حدّد الكمية ثم اضغط إضافة إلى الفاتورة."
                             } catch (error: Exception) {
                                 message = error.message ?: "تعذر إضافة المادة من الباركود"
                             } finally {
