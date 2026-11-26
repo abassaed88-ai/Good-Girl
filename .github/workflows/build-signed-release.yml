@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: good-girl-signed-release-${{ github.ref }}
+  group: good-girl-signed-release-${{ github.ref }}-${{ github.sha }}
   # Development builds should not block newer commits; keep manual main releases protected.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
@@ -75,7 +75,7 @@ jobs:
           fi
 
       - name: Run Android instrumentation tests before signing
-        timeout-minutes: 25
+        timeout-minutes: 15
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 35
