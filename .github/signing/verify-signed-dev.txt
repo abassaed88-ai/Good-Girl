@@ -1,0 +1,1 @@
+Trigger isolated persistent-signing verification on the development branch after AccountLedgerCalculator implementation and tests.
