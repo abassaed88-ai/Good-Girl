@@ -41,6 +41,11 @@ android {
     }
 
     buildTypes {
+        debug {
+            if (persistentSigningAvailable) {
+                signingConfig = signingConfigs.getByName("goodGirlPersistent")
+            }
+        }
         release {
             isMinifyEnabled = false
             if (persistentSigningAvailable) {
