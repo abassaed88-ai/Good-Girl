@@ -5386,7 +5386,7 @@ private fun ProductActionItem(
         Text(
             label,
             color = Ink,
-            fontSize = 9.sp,
+            fontSize = 10.sp,
             fontWeight = FontWeight.Medium,
             maxLines = 1
         )
