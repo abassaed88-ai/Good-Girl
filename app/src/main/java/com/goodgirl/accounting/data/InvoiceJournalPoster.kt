@@ -12,6 +12,21 @@ import java.math.BigDecimal
 import java.util.UUID
 
 /**
+ * Signed inventory carrying-value change generated when a purchase replaces
+ * the current unit cost of the product's remaining stock.
+ */
+internal data class InventoryRevaluationAdjustment(
+    val productId: String,
+    val productName: String,
+    val previousStockQuantity: String,
+    val previousUnitCost: String,
+    val incomingQuantity: String,
+    val incomingExtendedCost: String,
+    val newUnitCost: String,
+    val valueDelta: String
+)
+
+/**
  * Posts the accounting effect of a posted invoice.
  *
  * The caller must invoke this inside the same Room transaction that posts
@@ -28,7 +43,8 @@ internal object InvoiceJournalPoster {
     suspend fun post(
         database: AccountingDatabase,
         invoice: InvoiceEntity,
-        lines: List<InvoiceLineEntity>
+        lines: List<InvoiceLineEntity>,
+        inventoryRevaluations: List<InventoryRevaluationAdjustment> = emptyList()
     ) {
         require(invoice.status == "POSTED") { "لا يمكن ترحيل قيد لفاتورة غير مرحلة" }
         require(invoice.kind == "SALE" || invoice.kind == "PURCHASE") { "نوع الفاتورة غير مدعوم محاسبياً" }
@@ -42,9 +58,11 @@ internal object InvoiceJournalPoster {
             account("SYS-3000", "3000", "رأس المال", "EQUITY", "CREDIT"),
             account("SYS-3100", "3100", "الأرباح المحتجزة", "EQUITY", "CREDIT"),
             account(SALES, "4000", "المبيعات", "REVENUE", "CREDIT"),
+            account("SYS-4100", "4100", "أرباح إعادة تقييم المخزون", "REVENUE", "CREDIT"),
             account(COST_OF_GOODS_SOLD, "5000", "تكلفة البضاعة المباعة", "EXPENSE", "DEBIT"),
             account("SYS-6000", "6000", "إيرادات أخرى", "REVENUE", "CREDIT"),
-            account("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT")
+            account("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT"),
+            account("SYS-7100", "7100", "خسائر إعادة تقييم المخزون", "EXPENSE", "DEBIT")
         )
         database.accountDao().insertIgnore(accounts)
 
@@ -76,6 +94,9 @@ internal object InvoiceJournalPoster {
         }
 
         if (invoice.kind == "SALE") {
+            require(inventoryRevaluations.isEmpty()) {
+                "لا يجوز إرفاق إعادة تقييم مخزون بفاتورة بيع"
+            }
             addDebit(CASH, paid, "مقبوضات فاتورة البيع " + invoice.invoiceNumber)
             addDebit(RECEIVABLES, remaining, "ذمم العميل من فاتورة البيع " + invoice.invoiceNumber)
             addCredit(SALES, total, "إيراد فاتورة البيع " + invoice.invoiceNumber)
@@ -85,6 +106,27 @@ internal object InvoiceJournalPoster {
             addDebit(INVENTORY, total, "مخزون فاتورة الشراء " + invoice.invoiceNumber)
             addCredit(CASH, paid, "مدفوعات فاتورة الشراء " + invoice.invoiceNumber)
             addCredit(PAYABLES, remaining, "ذمم المورد من فاتورة الشراء " + invoice.invoiceNumber)
+
+            inventoryRevaluations.forEach { adjustment ->
+                val delta = adjustment.valueDelta.toBigDecimal()
+                if (delta.compareTo(BigDecimal.ZERO) != 0) {
+                    val amount = delta.abs().stripTrailingZeros().toPlainString()
+                    val memo = buildString {
+                        append("تقييم مخزون ${adjustment.productName} (${adjustment.productId})")
+                        append(": رصيد سابق ${adjustment.previousStockQuantity} × ${adjustment.previousUnitCost}")
+                        append("، وارد جديد ${adjustment.incomingQuantity} بقيمة ${adjustment.incomingExtendedCost}")
+                        append("، التكلفة الحالية ${adjustment.newUnitCost}")
+                        append("، فرق التقييم ${delta.stripTrailingZeros().toPlainString()}")
+                    }
+                    if (delta.signum() > 0) {
+                        addDebit(INVENTORY, amount, memo)
+                        addCredit("SYS-4100", delta, memo)
+                    } else {
+                        addDebit("SYS-7100", delta.abs(), memo)
+                        addCredit(INVENTORY, amount, memo)
+                    }
+                }
+            }
         }
 
         // A zero-value invoice with no cost has no financial journal impact.
