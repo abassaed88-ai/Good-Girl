@@ -399,7 +399,8 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 database = database,
                 invoice = postedInvoice,
                 lines = storedLines,
-                inventoryRevaluations = inventoryRevaluations
+                inventoryRevaluations = inventoryRevaluations,
+                revaluationOccurredAt = now
             )
 
             if (amounts.remaining > BigDecimal.ZERO) {
