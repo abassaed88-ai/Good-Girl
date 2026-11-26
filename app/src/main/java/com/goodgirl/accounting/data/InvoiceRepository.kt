@@ -50,6 +50,12 @@ data class InvoicePaymentResult(
     val currencyCode: String
 )
 
+private data class HistoricalStockLossCorrection(
+    val change: HistoricalStockCostChange,
+    val movement: StockMovementEntity,
+    val ledgerEntry: LedgerEntryEntity
+)
+
 class InvoiceRepository(private val database: AccountingDatabase) {
     fun observeInvoices(): Flow<List<InvoiceEntity>> = database.invoiceDao().observeAll()
 
@@ -472,10 +478,16 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 movementSourceIds = movementSourceIds
             )
 
-            val saleChanges = plan.changes.filter { it.sourceType.trim().uppercase() == "SALE_INVOICE" }
-            require(plan.changes.size == saleChanges.size) {
-                "إعادة الاحتساب تؤثر على إخراج مخزون ليس فاتورة بيع؛ أوقفنا الترحيل حتى تتوفر تسوية مستقلة لهذا النوع"
+            val saleChanges = plan.changes.filter {
+                it.sourceType.trim().uppercase() == "SALE_INVOICE"
             }
+            val stockLossChanges = plan.changes.filter {
+                it.sourceType.trim().uppercase() in setOf("MANUAL_ADJUSTMENT", "STOCKTAKE_ADJUSTMENT")
+            }
+            require(plan.changes.size == saleChanges.size + stockLossChanges.size) {
+                "إعادة الاحتساب تؤثر على نوع إخراج مخزون لا يدعم التصحيح المحاسبي؛ أوقفنا الترحيل لحماية الحسابات"
+            }
+
             val saleChangesWithInvoices = saleChanges.map { change ->
                 val line = invoiceLinesById[change.sourceId]
                     ?: throw IllegalStateException("تعذر ربط حركة الصرف ببند فاتورة البيع")
@@ -486,11 +498,51 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 }
                 change to invoice
             }
-            val changedCurrencies = saleChangesWithInvoices.map { it.first.currencyCode }.toSet()
+
+            val movementsById = replayMovements.associateBy { it.id }
+            val allLedgerEntries = database.ledgerDao().getAll()
+            val stockLossCorrections = stockLossChanges.map { change ->
+                val movement = movementsById[change.movementId]
+                    ?: throw IllegalStateException("حركة خسارة المخزون غير موجودة لتصحيح كلفتها")
+                require(movement.quantityDelta.toBigDecimal().signum() < 0) {
+                    "لا يمكن تطبيق تسوية خسارة على حركة مخزون غير سالبة"
+                }
+                val ledgerSourceType = when (movement.sourceType.trim().uppercase()) {
+                    "MANUAL_ADJUSTMENT" -> "MANUAL_STOCK_LOSS"
+                    "STOCKTAKE_ADJUSTMENT" -> "STOCKTAKE_LOSS"
+                    else -> throw IllegalStateException("نوع حركة الخسارة غير مدعوم")
+                }
+                val ledgerEntry = allLedgerEntries.singleOrNull {
+                    it.sourceType == ledgerSourceType && it.sourceId == movement.sourceId
+                } ?: throw IllegalStateException("سجل مصروف حركة المخزون غير موجود لتصحيح كلفته")
+                require(ledgerEntry.currencyCode == change.currencyCode) {
+                    "عملة مصروف حركة المخزون لا تطابق عملة الكلفة المعاد احتسابها"
+                }
+                require(ledgerEntry.amount.toBigDecimal().compareTo(change.oldExtendedCost.toBigDecimal()) == 0) {
+                    "قيمة مصروف حركة المخزون لا تطابق آخر كلفة تاريخية فعّالة"
+                }
+                val sourceJournal = database.journalEntryDao().findBySource(
+                    ledgerSourceType,
+                    movement.sourceId
+                ) ?: throw IllegalStateException("القيد الأصلي لخسارة المخزون غير موجود")
+                require(sourceJournal.currencyCode == change.currencyCode) {
+                    "عملة القيد الأصلي لخسارة المخزون لا تطابق عملة الكلفة المعاد احتسابها"
+                }
+                HistoricalStockLossCorrection(
+                    change = change,
+                    movement = movement,
+                    ledgerEntry = ledgerEntry
+                )
+            }
+
+            val changedCurrencies = (
+                saleChangesWithInvoices.map { it.first.currencyCode } +
+                    stockLossCorrections.map { it.change.currencyCode }
+                ).toSet()
             require(changedCurrencies.size <= 1 &&
                 (changedCurrencies.isEmpty() || changedCurrencies.single() == plan.currencyCode)
             ) {
-                "إعادة الاحتساب تمس فواتير ضمن أكثر من عملة للمادة نفسها؛ أوقفنا الترحيل لمنع خلط العملات"
+                "إعادة الاحتساب تمس عمليات ضمن أكثر من عملة للمادة نفسها؛ أوقفنا الترحيل لمنع خلط العملات"
             }
 
             val currentProduct = database.productDao().findById(productId)
@@ -503,7 +555,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
             val newAverage = plan.endingAverageCost.toBigDecimal()
             val oldAverage = originalProduct.purchaseCost.toBigDecimal()
             val hasEndingCostChange = oldAverage.compareTo(newAverage) != 0
-            if (hasEndingCostChange || saleChangesWithInvoices.isNotEmpty()) {
+            if (hasEndingCostChange || plan.changes.isNotEmpty()) {
                 val auditId = UUID.randomUUID().toString()
                 val auditCurrency = plan.currencyCode ?: baseline.currencyCode
                 database.stockCostRecalculationAuditDao().insertAll(
@@ -520,20 +572,23 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                             newEndingQuantity = plan.endingQuantity,
                             oldEndingAverageCost = originalProduct.purchaseCost,
                             newEndingAverageCost = plan.endingAverageCost,
-                            affectedStockOutCount = saleChangesWithInvoices.size
+                            affectedStockOutCount = plan.changes.size
                         )
                     )
                 )
-                if (saleChangesWithInvoices.isNotEmpty()) {
+                if (plan.changes.isNotEmpty()) {
+                    val invoiceIdsByMovement = saleChangesWithInvoices.associate {
+                        it.first.movementId to it.second.id
+                    }
                     database.stockCostRecalculationItemDao().insertAll(
-                        saleChangesWithInvoices.map { (change, invoice) ->
+                        plan.changes.map { change ->
                             StockCostRecalculationItemEntity(
                                 id = UUID.randomUUID().toString(),
                                 auditId = auditId,
                                 movementId = change.movementId,
                                 sourceType = change.sourceType,
                                 sourceId = change.sourceId,
-                                invoiceId = invoice.id,
+                                invoiceId = invoiceIdsByMovement[change.movementId].orEmpty(),
                                 currencyCode = change.currencyCode,
                                 quantity = change.quantity,
                                 oldUnitCost = change.oldUnitCost,
@@ -548,6 +603,21 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                             auditId = auditId,
                             invoice = invoiceChanges.first().second,
                             changes = invoiceChanges.map { it.first },
+                            createdAt = auditCreatedAt
+                        )
+                    }
+                    stockLossCorrections.forEach { correction ->
+                        PeriodClosingGuard.ensureOpen(
+                            database,
+                            correction.change.currencyCode,
+                            correction.movement.occurredAt
+                        )
+                        database.ledgerDao().update(
+                            correction.ledgerEntry.copy(amount = correction.change.newExtendedCost)
+                        )
+                        postStockLossCostAdjustmentJournal(
+                            auditId = auditId,
+                            correction = correction,
                             createdAt = auditCreatedAt
                         )
                     }
@@ -634,6 +704,103 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 exchangeRateSnapshot = normalized.exchangeRateSnapshot,
                 occurredAt = invoice.issuedAt,
                 description = "تسوية كلفة المخزون التاريخية للفاتورة ${invoice.invoiceNumber}",
+                createdAt = createdAt
+            )
+        )
+        database.journalLineDao().insertAll(
+            normalized.lines.mapIndexed { index, line ->
+                JournalLineEntity(
+                    id = UUID.randomUUID().toString(),
+                    journalEntryId = entryId,
+                    lineNumber = index + 1,
+                    accountId = line.accountId,
+                    debit = line.debit,
+                    credit = line.credit,
+                    memo = line.memo
+                )
+            }
+        )
+    }
+
+    private suspend fun postStockLossCostAdjustmentJournal(
+        auditId: String,
+        correction: HistoricalStockLossCorrection,
+        createdAt: Long
+    ) {
+        val change = correction.change
+        val movement = correction.movement
+        val difference = change.newExtendedCost.toBigDecimal()
+            .subtract(change.oldExtendedCost.toBigDecimal())
+        if (difference.compareTo(BigDecimal.ZERO) == 0) return
+
+        val inventory = database.accountDao().findById("SYS-1200")
+            ?: throw IllegalStateException("حساب المخزون غير موجود لتسوية خسارة المخزون")
+        val operatingExpenses = database.accountDao().findById("SYS-7000")
+            ?: throw IllegalStateException("حساب المصروفات التشغيلية غير موجود لتسوية خسارة المخزون")
+        require(inventory.isActive && inventory.accountType == "ASSET" && inventory.normalSide == "DEBIT") {
+            "حساب المخزون غير صالح لترحيل تسوية الكلفة"
+        }
+        require(
+            operatingExpenses.isActive &&
+                operatingExpenses.accountType == "EXPENSE" &&
+                operatingExpenses.normalSide == "DEBIT"
+        ) { "حساب المصروفات التشغيلية غير صالح لترحيل تسوية الكلفة" }
+
+        val sourceType = when (movement.sourceType.trim().uppercase()) {
+            "MANUAL_ADJUSTMENT" -> "MANUAL_STOCK_LOSS"
+            "STOCKTAKE_ADJUSTMENT" -> "STOCKTAKE_LOSS"
+            else -> throw IllegalArgumentException("نوع حركة خسارة المخزون غير مدعوم")
+        }
+        val originalJournal = database.journalEntryDao().findBySource(sourceType, movement.sourceId)
+            ?: throw IllegalStateException("القيد الأصلي لخسارة المخزون غير موجود")
+        val amount = difference.abs().stripTrailingZeros().toPlainString()
+        val lines = if (difference > BigDecimal.ZERO) {
+            listOf(
+                JournalLineDraft(
+                    accountId = operatingExpenses.id,
+                    debit = amount,
+                    memo = "زيادة خسارة المخزون بعد إعادة الاحتساب التاريخي"
+                ),
+                JournalLineDraft(
+                    accountId = inventory.id,
+                    credit = amount,
+                    memo = "تخفيض قيمة المخزون مقابل تصحيح كلفة الخسارة"
+                )
+            )
+        } else {
+            listOf(
+                JournalLineDraft(
+                    accountId = inventory.id,
+                    debit = amount,
+                    memo = "زيادة قيمة المخزون بعد تصحيح كلفة الخسارة"
+                ),
+                JournalLineDraft(
+                    accountId = operatingExpenses.id,
+                    credit = amount,
+                    memo = "تخفيض مصروف خسارة المخزون بعد إعادة الاحتساب"
+                )
+            )
+        }
+        val normalized = JournalEntryRules.normalize(
+            currencyCode = change.currencyCode,
+            exchangeRateSnapshot = originalJournal.exchangeRateSnapshot,
+            lines = lines
+        )
+        val sourceId = "$auditId:${movement.id}"
+        require(database.journalEntryDao().findBySource("STOCK_COST_RECALCULATION", sourceId) == null) {
+            "قيد تسوية خسارة المخزون موجود مسبقاً لهذه العملية"
+        }
+        val entryId = UUID.randomUUID().toString()
+        database.journalEntryDao().insert(
+            JournalEntryEntity(
+                id = entryId,
+                journalNumber = "AUTO-COST-" + UUID.randomUUID().toString().replace("-", "").take(16),
+                sourceType = "STOCK_COST_RECALCULATION",
+                sourceId = sourceId,
+                currencyCode = normalized.currencyCode,
+                exchangeRateSnapshot = normalized.exchangeRateSnapshot,
+                occurredAt = movement.occurredAt,
+                description = "تسوية كلفة خسارة المخزون: ${movement.note.ifBlank { sourceType }}",
                 createdAt = createdAt
             )
         )
