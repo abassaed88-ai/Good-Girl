@@ -380,18 +380,22 @@ class AccountingFlowIntegrationTest {
                 partyId = null,
                 currencyCode = "SYP",
                 exchangeRateSnapshot = "1",
-                lines = listOf(InvoiceLineDraft(product.id, "2", "20")),
-                paidAmount = "40",
+                lines = listOf(InvoiceLineDraft(product.id, "3", "3.333333333333333333")),
+                paidAmount = "9.999999999999999999",
                 issuedAt = baselineAt + 1_000L
             )
             val updated = database.productDao().findById(product.id)!!
-            assertDecimal("20", updated.purchaseCost)
-            assertDecimal("2", updated.stockQuantity)
+            assertDecimal("3.33333333", updated.purchaseCost)
+            assertDecimal("3", updated.stockQuantity)
 
             val invoice = database.invoiceDao().findById(purchase.invoiceId)!!
             val journal = database.journalEntryDao().findBySource("PURCHASE_INVOICE", invoice.id)!!
             val lines = database.journalLineDao().getForEntry(journal.id)
             val accounts = database.accountDao().getAll().associateBy { it.id }
+            assertDecimal(
+                "9.999999999999999999",
+                lines.single { accounts[it.accountId]!!.code == "1200" }.debit
+            )
             assertTrue(lines.none { accounts[it.accountId]!!.code == "4100" || accounts[it.accountId]!!.code == "7100" })
             assertTrue(
                 database.journalEntryDao().findBySource("PURCHASE_INVENTORY_REVALUATION", invoice.id) == null
