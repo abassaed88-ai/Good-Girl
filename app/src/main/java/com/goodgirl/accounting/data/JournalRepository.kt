@@ -35,9 +35,11 @@ class JournalRepository(private val database: AccountingDatabase) {
             systemAccount("SYS-3000", "3000", "رأس المال", "EQUITY", "CREDIT", now),
             systemAccount("SYS-3100", "3100", "الأرباح المحتجزة", "EQUITY", "CREDIT", now),
             systemAccount("SYS-4000", "4000", "المبيعات", "REVENUE", "CREDIT", now),
+            systemAccount("SYS-4100", "4100", "أرباح إعادة تقييم المخزون", "REVENUE", "CREDIT", now),
             systemAccount("SYS-5000", "5000", "تكلفة البضاعة المباعة", "EXPENSE", "DEBIT", now),
             systemAccount("SYS-6000", "6000", "إيرادات أخرى", "REVENUE", "CREDIT", now),
-            systemAccount("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT", now)
+            systemAccount("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT", now),
+            systemAccount("SYS-7100", "7100", "خسائر إعادة تقييم المخزون", "EXPENSE", "DEBIT", now)
         )
         database.withTransaction {
             database.accountDao().insertIgnore(defaults)
