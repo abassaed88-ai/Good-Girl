@@ -60,33 +60,14 @@ internal object InvoiceJournalPoster {
             account("SYS-3000", "3000", "رأس المال", "EQUITY", "CREDIT"),
             account("SYS-3100", "3100", "الأرباح المحتجزة", "EQUITY", "CREDIT"),
             account(SALES, "4000", "المبيعات", "REVENUE", "CREDIT"),
-            account("SYS-4100", "4100", "أرباح إعادة تقييم المخزون", "REVENUE", "CREDIT"),
             account(COST_OF_GOODS_SOLD, "5000", "تكلفة البضاعة المباعة", "EXPENSE", "DEBIT"),
             account("SYS-6000", "6000", "إيرادات أخرى", "REVENUE", "CREDIT"),
-            account("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT"),
-            account("SYS-7100", "7100", "خسائر إعادة تقييم المخزون", "EXPENSE", "DEBIT")
+            account("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT")
         )
-        val requiredRevaluationAccountIds = buildSet {
-            if (invoice.kind == "PURCHASE" && inventoryRevaluations.any {
-                    it.valueDelta.toBigDecimal().signum() > 0
-                }
-            ) add("SYS-4100")
-            if (invoice.kind == "PURCHASE" && inventoryRevaluations.any {
-                    it.valueDelta.toBigDecimal().signum() < 0
-                }
-            ) add("SYS-7100")
-        }
         accounts.forEach { required ->
-            // Do not block unrelated sales or zero-stock purchases because a
-            // user already owns one of the optional revaluation account codes.
-            if (
-                required.id == "SYS-4100" || required.id == "SYS-7100"
-            ) {
-                if (required.id !in requiredRevaluationAccountIds) return@forEach
-            }
             val existingByCode = database.accountDao().findByCode(required.code)
             require(existingByCode == null || existingByCode.id == required.id) {
-                "رمز الحساب ${required.code} مستخدم لحساب آخر؛ لا يمكن ترحيل إعادة تقييم المخزون بأمان. راجع دليل الحسابات أولاً"
+                "رمز الحساب ${required.code} مستخدم لحساب آخر؛ راجع دليل الحسابات قبل ترحيل الفاتورة"
             }
             val existingById = database.accountDao().findById(required.id)
             require(existingById == null || existingById.code == required.code) {
@@ -94,6 +75,17 @@ internal object InvoiceJournalPoster {
             }
         }
         database.accountDao().insertIgnore(accounts)
+
+        if (invoice.kind == "PURCHASE" && inventoryRevaluations.any { it.valueDelta.toBigDecimal().signum() > 0 }) {
+            ensureRevaluationAccount(
+                database, "SYS-4100", "4100", "أرباح إعادة تقييم المخزون", "REVENUE", "CREDIT"
+            )
+        }
+        if (invoice.kind == "PURCHASE" && inventoryRevaluations.any { it.valueDelta.toBigDecimal().signum() < 0 }) {
+            ensureRevaluationAccount(
+                database, "SYS-7100", "7100", "خسائر إعادة تقييم المخزون", "EXPENSE", "DEBIT"
+            )
+        }
 
         val total = invoice.total.toBigDecimal()
         val paid = invoice.paid.toBigDecimal()
@@ -353,6 +345,41 @@ internal object InvoiceJournalPoster {
                     memo = line.memo
                 )
             }
+        )
+    }
+
+    private suspend fun ensureRevaluationAccount(
+        database: AccountingDatabase,
+        id: String,
+        preferredCode: String,
+        name: String,
+        accountType: String,
+        normalSide: String
+    ) {
+        val dao = database.accountDao()
+        val existing = dao.findById(id)
+        if (existing != null) {
+            require(existing.accountType == accountType && existing.normalSide == normalSide && existing.isActive) {
+                "حساب إعادة تقييم المخزون النظامي غير صالح أو غير مفعّل"
+            }
+            return
+        }
+
+        var code = preferredCode
+        var suffix = 1
+        while (dao.findByCode(code) != null) {
+            code = preferredCode + suffix
+            suffix += 1
+            require(suffix < 10_000) { "تعذر تخصيص رمز لحساب إعادة تقييم المخزون" }
+        }
+        dao.insert(
+            account(
+                id = id,
+                code = code,
+                name = name,
+                type = accountType,
+                normalSide = normalSide
+            )
         )
     }
 
