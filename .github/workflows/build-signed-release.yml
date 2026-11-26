@@ -11,7 +11,8 @@ permissions:
 
 concurrency:
   group: good-girl-signed-release-${{ github.ref }}
-  cancel-in-progress: false
+  # Development builds should not block newer commits; keep manual main releases protected.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   signed-release:
