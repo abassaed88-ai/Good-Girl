@@ -76,6 +76,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
@@ -5287,7 +5288,7 @@ private fun DailySalesScreen(
                 OutlinedTextField(
                     value = productSearchQuery,
                     onValueChange = { productSearchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("daily-sales-product-search"),
                     label = { Text("البحث باسم المادة أو رمزها") },
                     singleLine = true
                 )
@@ -5475,7 +5476,7 @@ private fun DailySalesScreen(
                     OutlinedTextField(
                         note,
                         { note = it },
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().testTag("daily-sales-note"),
                         label = { Text("ملاحظات المبيعة") },
                         minLines = 2
                     )
