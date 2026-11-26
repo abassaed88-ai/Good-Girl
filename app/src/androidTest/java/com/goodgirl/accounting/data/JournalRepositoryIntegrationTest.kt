@@ -23,6 +23,10 @@ class JournalRepositoryIntegrationTest {
             val repository = JournalRepository(database)
             repository.ensureSystemAccounts()
             val accounts = database.accountDao().getAll().associateBy { it.code }
+            assertEquals("SYS-4100", accounts.getValue("4100").id)
+            assertEquals("REVENUE", accounts.getValue("4100").accountType)
+            assertEquals("SYS-7100", accounts.getValue("7100").id)
+            assertEquals("EXPENSE", accounts.getValue("7100").accountType)
 
             val entryId = repository.postJournalEntry(
                 journalNumber = "JE-TEST-001",
