@@ -80,7 +80,7 @@ class JournalRepositoryIntegrationTest {
     }
 
     @Test
-    fun refusesToReplaceAnExistingCustomAccountWithReservedRevaluationCode() = runBlocking {
+    fun systemAccountProvisioningNeverReplacesAnExistingCustomRevaluationCode() = runBlocking {
         val database = newDatabase()
         try {
             database.accountDao().insert(
@@ -95,15 +95,12 @@ class JournalRepositoryIntegrationTest {
                     createdAt = 1L
                 )
             )
-            val repository = JournalRepository(database)
-            assertThrows(IllegalArgumentException::class.java) {
-                runBlocking { repository.ensureSystemAccounts() }
-            }
+            JournalRepository(database).ensureSystemAccounts()
 
             val existing = database.accountDao().findByCode("4100")
             assertEquals("CUSTOM-4100", existing!!.id)
             assertEquals("حساب مخصص قديم", existing.name)
-            assertTrue(database.accountDao().findByCode("7100") == null)
+            assertEquals("SYS-7100", database.accountDao().findByCode("7100")!!.id)
         } finally {
             database.close()
         }
