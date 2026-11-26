@@ -37,17 +37,14 @@ class StockRepository(private val database: AccountingDatabase) {
                 result = StocktakeResult("0", product.stockQuantity)
             } else {
                 val costResult = StockInputRules.calculateAdjustmentCost(
-                    currentQuantity = product.stockQuantity,
-                    currentAverageCost = product.purchaseCost,
-                    quantityDelta = delta,
-                    incomingUnitCost = unitCost
+                    currentPurchaseCost = product.purchaseCost,
+                    quantityDelta = delta
                 )
                 val newBalance = StockInputRules.calculateNewBalance(product.stockQuantity, delta)
                 val recordedAt = nextMovementRecordedAt(productId, now)
                 database.productDao().update(
                     product.copy(
                         stockQuantity = newBalance,
-                        purchaseCost = costResult.resultingAverageCost,
                         updatedAt = now
                     )
                 )
@@ -102,17 +99,14 @@ class StockRepository(private val database: AccountingDatabase) {
             require(product.isActive) { "لا يمكن تعديل مخزون منتج مؤرشف" }
 
             val costResult = StockInputRules.calculateAdjustmentCost(
-                currentQuantity = product.stockQuantity,
-                currentAverageCost = product.purchaseCost,
-                quantityDelta = cleanDelta,
-                incomingUnitCost = unitCost
+                currentPurchaseCost = product.purchaseCost,
+                quantityDelta = cleanDelta
             )
             resultingBalance = StockInputRules.calculateNewBalance(product.stockQuantity, cleanDelta)
             val recordedAt = nextMovementRecordedAt(productId, now)
             database.productDao().update(
                 product.copy(
                     stockQuantity = resultingBalance,
-                    purchaseCost = costResult.resultingAverageCost,
                     updatedAt = now
                 )
             )
