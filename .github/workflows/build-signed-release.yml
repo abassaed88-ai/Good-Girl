@@ -27,7 +27,7 @@ jobs:
       - name: Check out the selected protected build branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ github.sha }}
 
       - name: Confirm encrypted signing key is available
         shell: bash
