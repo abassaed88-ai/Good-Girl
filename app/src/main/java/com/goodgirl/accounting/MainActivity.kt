@@ -3573,7 +3573,7 @@ private fun PartyManagementScreen(
                         fontSize = 12.sp
                     )
                 }
-                OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth().testTag("product-note"), label = { Text("ملاحظات") }, minLines = 2)
+                OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth(), label = { Text("ملاحظات") }, minLines = 2)
                 Button(
                     onClick = {
                         scope.launch {
@@ -4408,7 +4408,7 @@ private fun ProductManagementScreen(
                     val currentStock = products.firstOrNull { it.id == editingId }?.stockQuantity ?: "—"
                     Text("الرصيد الحالي: $currentStock — يُعدّل عبر حركات المخزون وليس من بطاقة المنتج.", color = MutedText, fontSize = 12.sp)
                 }
-                OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth(), label = { Text("ملاحظات") }, minLines = 2)
+                OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth().testTag("product-note"), label = { Text("ملاحظات") }, minLines = 2)
 
                 Button(
                     onClick = {
