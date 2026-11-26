@@ -583,6 +583,111 @@ class BackupIntegrityValidatorTest {
     }
 
     @Test
+    fun acceptsAuditedManualStockLossWithoutInvoiceWhenExpenseAndAdjustmentJournalMatch() {
+        val product = product().copy(stockQuantity = "4", purchaseCost = "4")
+        val movement = StockMovementEntity(
+            id = "m-manual-loss",
+            productId = "p1",
+            quantityDelta = "-2",
+            unitCostSnapshot = "3",
+            currencyCode = "SYP",
+            sourceType = "MANUAL_ADJUSTMENT",
+            sourceId = "m-manual-loss",
+            occurredAt = 2L
+        )
+        val audit = StockCostRecalculationAuditEntity(
+            id = "cost-audit-loss",
+            productId = "p1",
+            triggerType = "BACKDATED_PURCHASE",
+            triggerSourceId = "purchase-1",
+            reason = "تصحيح كلفة خسارة مخزون يدوية",
+            createdAt = 20L,
+            currencyCode = "SYP",
+            oldEndingQuantity = "4",
+            newEndingQuantity = "4",
+            oldEndingAverageCost = "3",
+            newEndingAverageCost = "4",
+            affectedStockOutCount = 1
+        )
+        val item = StockCostRecalculationItemEntity(
+            id = "cost-item-loss",
+            auditId = audit.id,
+            movementId = movement.id,
+            sourceType = movement.sourceType,
+            sourceId = movement.sourceId,
+            invoiceId = "",
+            currencyCode = "SYP",
+            quantity = "2",
+            oldUnitCost = "3",
+            newUnitCost = "4",
+            oldExtendedCost = "6",
+            newExtendedCost = "8"
+        )
+        val accounts = listOf(
+            AccountEntity("inventory", "1200", "المخزون", "ASSET", "DEBIT", true, true, 1L),
+            AccountEntity("expense", "7000", "المصروفات التشغيلية", "EXPENSE", "DEBIT", true, true, 1L)
+        )
+        val journals = listOf(
+            JournalEntryEntity(
+                id = "j-loss",
+                journalNumber = "J-LOSS",
+                sourceType = "MANUAL_STOCK_LOSS",
+                sourceId = movement.sourceId,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                occurredAt = movement.occurredAt,
+                description = "خسارة مخزون يدوية",
+                createdAt = 3L
+            ),
+            JournalEntryEntity(
+                id = "j-loss-adjustment",
+                journalNumber = "J-LOSS-ADJ",
+                sourceType = "STOCK_COST_RECALCULATION",
+                sourceId = "cost-audit-loss:m-manual-loss",
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                occurredAt = movement.occurredAt,
+                description = "تسوية كلفة خسارة المخزون",
+                createdAt = audit.createdAt
+            )
+        )
+        val journalLines = listOf(
+            JournalLineEntity("jl1", "j-loss", 1, "expense", "6", "0", ""),
+            JournalLineEntity("jl2", "j-loss", 2, "inventory", "0", "6", ""),
+            JournalLineEntity("jl3", "j-loss-adjustment", 1, "expense", "2", "0", ""),
+            JournalLineEntity("jl4", "j-loss-adjustment", 2, "inventory", "0", "2", "")
+        )
+        validate(
+            products = listOf(product),
+            units = listOf(baseUnit()),
+            movements = listOf(
+                StockMovementEntity("m-opening", "p1", "6", "3", "SYP", "OPENING_BALANCE", "p1", 1L),
+                movement
+            ),
+            entries = listOf(
+                LedgerEntryEntity(
+                    id = "ledger-loss",
+                    entryType = "EXPENSE",
+                    amount = "8",
+                    currencyCode = "SYP",
+                    exchangeRateSnapshot = "1",
+                    sourceType = "MANUAL_STOCK_LOSS",
+                    sourceId = movement.sourceId,
+                    occurredAt = movement.occurredAt
+                )
+            ),
+            accounts = accounts,
+            journalEntries = journals,
+            journalLines = journalLines,
+            stockCostBaselines = listOf(
+                StockCostBaselineEntity("p1", "0", "0", "SYP", 1L, 1L, "PRODUCT_ZERO_OPENING")
+            ),
+            stockCostRecalculationAudits = listOf(audit),
+            stockCostRecalculationItems = listOf(item)
+        )
+    }
+
+    @Test
     fun rejectsStockCostRecalculationItemWithoutAuditHeader() {
         assertThrows(IllegalArgumentException::class.java) {
             validate(

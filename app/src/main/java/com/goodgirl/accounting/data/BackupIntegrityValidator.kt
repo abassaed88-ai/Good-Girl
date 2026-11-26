@@ -90,6 +90,17 @@ object BackupIntegrityValidator {
         val invoiceById = invoices.associateBy { it.id }
         val movementById = movements.associateBy { it.id }
         val stockCostAuditById = stockCostRecalculationAudits.associateBy { it.id }
+        val ledgerBySource = ledgerEntries.associateBy { it.sourceType + "|" + it.sourceId }
+        val journalBySource = journalEntries.associateBy { it.sourceType + "|" + it.sourceId }
+        val latestCostItemByMovement = stockCostRecalculationItems
+            .groupBy { it.movementId }
+            .mapValues { (_, items) ->
+                items.maxWithOrNull(
+                    compareBy<StockCostRecalculationItemEntity> {
+                        stockCostAuditById[it.auditId]?.createdAt ?: Long.MIN_VALUE
+                    }.thenBy { it.auditId }
+                )!!
+            }
 
         productBarcodes.forEach { barcode ->
             require(barcode.productId in productById) {
@@ -327,9 +338,6 @@ object BackupIntegrityValidator {
             require(item.sourceType == movement.sourceType && item.sourceId == movement.sourceId) {
                 "مصدر تفصيل تدقيق الكلفة لا يطابق حركة المخزون"
             }
-            val invoice = invoiceById[item.invoiceId]
-                ?: throw IllegalArgumentException("فاتورة تفصيل تدقيق الكلفة غير موجودة")
-            require(invoice.kind == "SALE") { "تفصيل تدقيق كلفة المخزون يجب أن يرتبط بفاتورة مبيعات" }
             require(item.currencyCode == audit.currencyCode && item.currencyCode == movement.currencyCode) {
                 "عملة تفصيل تدقيق الكلفة لا تطابق سجل التدقيق وحركة المخزون"
             }
@@ -337,10 +345,72 @@ object BackupIntegrityValidator {
             nonNegative(item.newUnitCost, "الكلفة الجديدة في تفصيل التدقيق")
             nonNegative(item.oldExtendedCost, "القيمة السابقة في تفصيل التدقيق")
             nonNegative(item.newExtendedCost, "القيمة الجديدة في تفصيل التدقيق")
+            val oldExtended = decimal(item.oldExtendedCost, "القيمة السابقة في تفصيل التدقيق")
+            val newExtended = decimal(item.newExtendedCost, "القيمة الجديدة في تفصيل التدقيق")
             require(
                 decimal(item.oldUnitCost, "الكلفة السابقة").compareTo(decimal(item.newUnitCost, "الكلفة الجديدة")) != 0 ||
-                    decimal(item.oldExtendedCost, "القيمة السابقة").compareTo(decimal(item.newExtendedCost, "القيمة الجديدة")) != 0
+                    oldExtended.compareTo(newExtended) != 0
             ) { "تفصيل تدقيق الكلفة لا يتضمن أي تغيير فعلي" }
+
+            when (movement.sourceType.trim().uppercase()) {
+                "SALE_INVOICE" -> {
+                    val invoice = invoiceById[item.invoiceId]
+                        ?: throw IllegalArgumentException("فاتورة تفصيل تدقيق الكلفة غير موجودة")
+                    require(invoice.kind == "SALE") {
+                        "تفصيل تدقيق كلفة المخزون يجب أن يرتبط بفاتورة مبيعات"
+                    }
+                }
+                "MANUAL_ADJUSTMENT", "STOCKTAKE_ADJUSTMENT" -> {
+                    require(item.invoiceId.isBlank()) {
+                        "خسارة المخزون اليدوية أو الجردية لا يجوز ربطها بفاتورة مبيعات"
+                    }
+                    val expectedLedgerSource = if (movement.sourceType == "MANUAL_ADJUSTMENT") {
+                        "MANUAL_STOCK_LOSS"
+                    } else {
+                        "STOCKTAKE_LOSS"
+                    }
+                    val sourceLedger = ledgerBySource[expectedLedgerSource + "|" + movement.sourceId]
+                        ?: throw IllegalArgumentException("مصروف خسارة المخزون غير موجود في النسخة الاحتياطية")
+                    require(sourceLedger.entryType == "EXPENSE" &&
+                        sourceLedger.currencyCode == item.currencyCode
+                    ) { "مصروف خسارة المخزون لا يطابق نوع الحركة أو عملتها" }
+                    val latestItem = latestCostItemByMovement[movement.id]
+                    if (latestItem?.id == item.id) {
+                        require(decimal(sourceLedger.amount, "مصروف خسارة المخزون")
+                            .compareTo(newExtended) == 0
+                        ) { "مصروف خسارة المخزون لا يطابق أحدث كلفة تاريخية مدققة" }
+                    }
+
+                    val sourceJournal = journalBySource[expectedLedgerSource + "|" + movement.sourceId]
+                        ?: throw IllegalArgumentException("القيد الأصلي لخسارة المخزون غير موجود")
+                    require(sourceJournal.currencyCode == item.currencyCode &&
+                        sourceJournal.occurredAt == movement.occurredAt
+                    ) { "القيد الأصلي لخسارة المخزون لا يطابق العملة أو تاريخ الحركة" }
+
+                    val adjustmentSourceId = audit.id + ":" + movement.id
+                    val adjustmentJournal = journalBySource["STOCK_COST_RECALCULATION|" + adjustmentSourceId]
+                        ?: throw IllegalArgumentException("قيد تسوية خسارة المخزون غير موجود")
+                    require(adjustmentJournal.currencyCode == item.currencyCode &&
+                        adjustmentJournal.occurredAt == movement.occurredAt
+                    ) { "قيد تسوية خسارة المخزون لا يطابق العملة أو تاريخ الحركة" }
+                    val adjustmentLines = journalLinesByEntry[adjustmentJournal.id].orEmpty()
+                    require(adjustmentLines.size == 2) {
+                        "قيد تسوية خسارة المخزون يجب أن يحتوي على سطرين"
+                    }
+                    val debitLine = adjustmentLines.single { it.debit.toBigDecimal() > BigDecimal.ZERO }
+                    val creditLine = adjustmentLines.single { it.credit.toBigDecimal() > BigDecimal.ZERO }
+                    val difference = newExtended.subtract(oldExtended)
+                    val expectedDebitCode = if (difference > BigDecimal.ZERO) "7000" else "1200"
+                    val expectedCreditCode = if (difference > BigDecimal.ZERO) "1200" else "7000"
+                    val expectedAmount = difference.abs()
+                    require(accountById[debitLine.accountId]?.code == expectedDebitCode &&
+                        accountById[creditLine.accountId]?.code == expectedCreditCode &&
+                        decimal(debitLine.debit, "مدين تسوية خسارة المخزون").compareTo(expectedAmount) == 0 &&
+                        decimal(creditLine.credit, "دائن تسوية خسارة المخزون").compareTo(expectedAmount) == 0
+                    ) { "قيد تسوية خسارة المخزون لا يعكس فرق الكلفة الصحيح" }
+                }
+                else -> throw IllegalArgumentException("نوع حركة إخراج المخزون غير مدعوم في تدقيق الكلفة")
+            }
         }
         stockCostRecalculationAudits.forEach { audit ->
             require(audit.affectedStockOutCount == costItemsByAudit[audit.id].orEmpty().size) {
