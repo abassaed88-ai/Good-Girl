@@ -3746,8 +3746,14 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit, onHome: ()
                         SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.US).format(Date(audit.createdAt))
                     }
                     val auditItems = costAuditItems.filter { it.auditId == audit.id }
-                    val sourceInvoiceNumbers = auditItems.mapNotNull { item ->
-                        invoices.firstOrNull { it.id == item.invoiceId }?.invoiceNumber
+                    val affectedSources = auditItems.map { item ->
+                        when (item.sourceType.trim().uppercase()) {
+                            "SALE_INVOICE" -> invoices.firstOrNull { it.id == item.invoiceId }
+                                ?.let { "فاتورة بيع ${it.invoiceNumber}" } ?: "فاتورة بيع"
+                            "MANUAL_ADJUSTMENT" -> "خسارة مخزون يدوية"
+                            "STOCKTAKE_ADJUSTMENT" -> "نقص مكتشف بالجرد"
+                            else -> "حركة إخراج مخزون"
+                        }
                     }.distinct()
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -3777,13 +3783,13 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit, onHome: ()
                                 fontSize = 12.sp
                             )
                             Text(
-                                "عدد بنود المبيعات المتأثرة: ${audit.affectedStockOutCount}",
+                                "عدد حركات إخراج المخزون المتأثرة: ${audit.affectedStockOutCount}",
                                 color = MutedText,
                                 fontSize = 12.sp
                             )
-                            if (sourceInvoiceNumbers.isNotEmpty()) {
+                            if (affectedSources.isNotEmpty()) {
                                 Text(
-                                    "الفواتير المتأثرة: " + sourceInvoiceNumbers.joinToString("، "),
+                                    "المصادر المتأثرة: " + affectedSources.joinToString("، "),
                                     color = Ink,
                                     fontSize = 12.sp
                                 )
@@ -3792,10 +3798,15 @@ private fun StockHistoryScreen(productId: String, onBack: () -> Unit, onHome: ()
                                 Text("السبب: " + audit.reason, color = MutedText, fontSize = 11.sp)
                             }
                             auditItems.forEach { item ->
-                                val invoiceNumber = invoices.firstOrNull { it.id == item.invoiceId }?.invoiceNumber
-                                    ?: item.invoiceId
+                                val itemSourceLabel = when (item.sourceType.trim().uppercase()) {
+                                    "SALE_INVOICE" -> invoices.firstOrNull { it.id == item.invoiceId }
+                                        ?.let { "فاتورة بيع ${it.invoiceNumber}" } ?: "فاتورة بيع"
+                                    "MANUAL_ADJUSTMENT" -> "خسارة مخزون يدوية"
+                                    "STOCKTAKE_ADJUSTMENT" -> "نقص مكتشف بالجرد"
+                                    else -> "حركة إخراج مخزون"
+                                }
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Text("فاتورة $invoiceNumber", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    Text(itemSourceLabel, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
                                     Text(
                                         "الكلفة المعتمدة: ${item.oldUnitCost} ← ${item.newUnitCost} ${item.currencyCode}",
                                         color = MutedText,
