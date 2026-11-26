@@ -15,7 +15,7 @@ import com.goodgirl.accounting.domain.HistoricalStockCostEvent
 import java.math.BigDecimal
 import java.util.UUID
 
-const val ACCOUNTING_DATABASE_VERSION = 10
+const val ACCOUNTING_DATABASE_VERSION = 11
 
 private data class MigrationCurrencyBalances(
     var cash: BigDecimal = BigDecimal.ZERO,
@@ -707,6 +707,18 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Converts the current product cost from the previous weighted-average
+         * snapshot to the latest posted purchase-line cost. Historical sale
+         * snapshots and COGS journals are never changed; only stock still on
+         * hand receives a separate migration-dated valuation journal.
+         */
+        private val MIGRATION_10_11 = object : Migration(10, 11) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                LatestPurchaseCostPolicyMigrator.migrate(database, System.currentTimeMillis())
+            }
+        }
+
         @Volatile
         private var INSTANCE: AccountingDatabase? = null
 
@@ -716,7 +728,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11).build().also { INSTANCE = it }
             }
     }
 }
