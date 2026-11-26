@@ -17,19 +17,18 @@ import org.junit.runner.RunWith
 
 /**
  * Exercises invoice posting against a real in-memory SQLite/Room database.
- * It protects the historical-cost rule: a later purchase may change the
- * current weighted-average product cost, but must not rewrite previous sales.
+ * It protects the latest-purchase-cost rule: a later purchase reprices
+ * remaining stock, but must not rewrite any already-posted sale snapshot.
  */
 @RunWith(AndroidJUnit4::class)
 class AccountingFlowIntegrationTest {
 
     @Test
-    fun weightedAveragePurchaseDoesNotRewriteHistoricalSaleCostOrProfit() = runBlocking {
+    fun latestPurchaseCostRevaluesRemainingStockWithoutRewritingHistoricalSaleCostOrProfit() = runBlocking {
         val database = newInMemoryDatabase()
         try {
             val products = ProductRepository(database)
             val invoices = InvoiceRepository(database)
-
             products.addProduct(
                 sku = "FLOW-001",
                 name = "مادة اختبار",
@@ -37,7 +36,7 @@ class AccountingFlowIntegrationTest {
                 purchaseCost = "10",
                 salePrice = "15",
                 openingStock = "10",
-                note = "اختبار تكامل"
+                note = "اختبار تكلفة أحدث فاتورة"
             )
             val product = database.productDao().getAll().single()
             val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
@@ -52,14 +51,15 @@ class AccountingFlowIntegrationTest {
                 paidAmount = "30",
                 issuedAt = baselineAt + 1_000L
             )
-
-            val firstSaleLine = database.invoiceDao()
-                .getLines(database.invoiceDao().getAllInvoices().single().id)
-                .single()
+            val firstSale = database.invoiceDao().getAllInvoices().single()
+            val firstSaleLine = database.invoiceDao().getLines(firstSale.id).single()
             assertDecimal("10", firstSaleLine.unitCostSnapshot)
             assertDecimal("8", database.productDao().findById(product.id)!!.stockQuantity)
 
-            invoices.postInvoice(
+            val firstSaleJournal = database.journalEntryDao().findBySource("SALE_INVOICE", firstSale.id)!!
+            val firstSaleJournalLinesBefore = database.journalLineDao().getForEntry(firstSaleJournal.id)
+
+            val purchase = invoices.postInvoice(
                 invoiceNumber = "FLOW-PURCHASE-1",
                 kind = "PURCHASE",
                 partyId = null,
@@ -69,12 +69,23 @@ class AccountingFlowIntegrationTest {
                 paidAmount = "80",
                 issuedAt = baselineAt + 2_000L
             )
+            val afterPurchase = database.productDao().findById(product.id)!!
+            assertDecimal("20", afterPurchase.purchaseCost)
+            assertDecimal("12", afterPurchase.stockQuantity)
+            assertDecimal("10", database.invoiceDao().getLines(firstSale.id).single().unitCostSnapshot)
 
-            assertDecimal("13.33333333", database.productDao().findById(product.id)!!.purchaseCost)
-            assertDecimal("12", database.productDao().findById(product.id)!!.stockQuantity)
+            val purchaseInvoice = database.invoiceDao().findById(purchase.invoiceId)!!
+            val purchaseJournal = database.journalEntryDao()
+                .findBySource("PURCHASE_INVOICE", purchaseInvoice.id)!!
+            val purchaseJournalLines = database.journalLineDao().getForEntry(purchaseJournal.id)
+            val accountsById = database.accountDao().getAll().associateBy { it.id }
+            val inventoryDebits = purchaseJournalLines
+                .filter { accountsById[it.accountId]!!.code == "1200" }
+                .fold(BigDecimal.ZERO) { total, line -> total.add(line.debit.toBigDecimal()) }
+            assertDecimal("160", inventoryDebits.toPlainString())
             assertDecimal(
-                "10",
-                database.invoiceDao().getLines(firstSaleLine.invoiceId).single().unitCostSnapshot
+                "80",
+                purchaseJournalLines.single { accountsById[it.accountId]!!.code == "4100" }.credit
             )
 
             invoices.postInvoice(
@@ -87,17 +98,19 @@ class AccountingFlowIntegrationTest {
                 paidAmount = "15",
                 issuedAt = baselineAt + 3_000L
             )
-
             val sales = database.invoiceDao().getAllInvoices()
                 .filter { it.kind == "SALE" }
                 .sortedBy { it.issuedAt }
             val saleLines = sales.flatMap { database.invoiceDao().getLines(it.id) }
-
             assertEquals(2, sales.size)
             assertEquals(2, saleLines.size)
             assertDecimal("10", saleLines[0].unitCostSnapshot)
-            assertDecimal("13.33333333", saleLines[1].unitCostSnapshot)
+            assertDecimal("20", saleLines[1].unitCostSnapshot)
             assertDecimal("11", database.productDao().findById(product.id)!!.stockQuantity)
+            assertEquals(
+                firstSaleJournalLinesBefore,
+                database.journalLineDao().getForEntry(firstSaleJournal.id)
+            )
 
             val report = FinancialReportCalculator.calculate(
                 fromInclusive = 0L,
@@ -108,9 +121,188 @@ class AccountingFlowIntegrationTest {
             )
             val summary = report.currencySummaries.single { it.currencyCode == "SYP" }
             assertDecimal("45", summary.sales.toPlainString())
-            assertDecimal("33.33333333", summary.costOfGoodsSold.toPlainString())
-            assertDecimal("11.66666667", summary.grossProfit.toPlainString())
-            assertDecimal("11.66666667", report.products.single().profit.toPlainString())
+            assertDecimal("40", summary.costOfGoodsSold.toPlainString())
+            assertDecimal("5", summary.grossProfit.toPlainString())
+            assertDecimal("5", report.products.single().profit.toPlainString())
+
+            val statements = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 0L,
+                periodEndInclusive = Long.MAX_VALUE,
+                asOfInclusive = Long.MAX_VALUE,
+                accounts = database.accountDao().getAll(),
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll()
+            )
+            val balanceSheet = statements.balanceSheets.single { it.currencyCode == "SYP" }
+            assertDecimal("220", balanceSheet.assets.single { it.accountCode == "1200" }.amount.toPlainString())
+            assertDecimal(
+                "80",
+                statements.incomeStatements.single { it.currencyCode == "SYP" }
+                    .revenues.single { it.accountCode == "4100" }.amount.toPlainString()
+            )
+            assertDecimal(
+                balanceSheet.totalAssets.toPlainString(),
+                balanceSheet.totalLiabilitiesAndEquity.toPlainString()
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun repeatedPurchasesReplaceCurrentCostAndPostDownwardRevaluationSeparately() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+            products.addProduct(
+                sku = "FLOW-REPEAT-001",
+                name = "مادة تغير سعرها",
+                unit = "قطعة",
+                purchaseCost = "10",
+                salePrice = "15",
+                openingStock = "5",
+                note = "اختبار تكرار تحديث التكلفة"
+            )
+            val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
+
+            invoices.postInvoice(
+                invoiceNumber = "FLOW-REPEAT-PURCHASE-1",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "2", "20")),
+                paidAmount = "40",
+                issuedAt = baselineAt + 1_000L
+            )
+            assertDecimal("20", database.productDao().findById(product.id)!!.purchaseCost)
+            assertDecimal("7", database.productDao().findById(product.id)!!.stockQuantity)
+
+            val secondPurchase = invoices.postInvoice(
+                invoiceNumber = "FLOW-REPEAT-PURCHASE-2",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "1", "12")),
+                paidAmount = "12",
+                issuedAt = baselineAt + 2_000L
+            )
+            val updated = database.productDao().findById(product.id)!!
+            assertDecimal("12", updated.purchaseCost)
+            assertDecimal("8", updated.stockQuantity)
+
+            val invoice = database.invoiceDao().findById(secondPurchase.invoiceId)!!
+            val journal = database.journalEntryDao().findBySource("PURCHASE_INVOICE", invoice.id)!!
+            val lines = database.journalLineDao().getForEntry(journal.id)
+            val accounts = database.accountDao().getAll().associateBy { it.id }
+            assertDecimal("56", lines.single { accounts[it.accountId]!!.code == "7100" }.debit)
+            assertDecimal("56", lines.single { accounts[it.accountId]!!.code == "1200" && it.credit != "0" }.credit)
+
+            val statements = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 0L,
+                periodEndInclusive = Long.MAX_VALUE,
+                asOfInclusive = Long.MAX_VALUE,
+                accounts = database.accountDao().getAll(),
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll()
+            )
+            val balanceSheet = statements.balanceSheets.single { it.currencyCode == "SYP" }
+            assertDecimal("96", balanceSheet.assets.single { it.accountCode == "1200" }.amount.toPlainString())
+            assertDecimal(
+                balanceSheet.totalAssets.toPlainString(),
+                balanceSheet.totalLiabilitiesAndEquity.toPlainString()
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun repeatedProductLinesUseLastLineCostAndCreateOneRevaluation() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+            products.addProduct(
+                sku = "FLOW-MULTI-001",
+                name = "مادة مكررة بالفاتورة",
+                unit = "قطعة",
+                purchaseCost = "10",
+                salePrice = "15",
+                openingStock = "5",
+                note = "اختبار تكرار السطر"
+            )
+            val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
+
+            val purchase = invoices.postInvoice(
+                invoiceNumber = "FLOW-MULTI-PURCHASE",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(
+                    InvoiceLineDraft(product.id, "2", "20"),
+                    InvoiceLineDraft(product.id, "1", "30")
+                ),
+                paidAmount = "70",
+                issuedAt = baselineAt + 1_000L
+            )
+            val updated = database.productDao().findById(product.id)!!
+            assertDecimal("30", updated.purchaseCost)
+            assertDecimal("8", updated.stockQuantity)
+
+            val invoice = database.invoiceDao().findById(purchase.invoiceId)!!
+            val journal = database.journalEntryDao().findBySource("PURCHASE_INVOICE", invoice.id)!!
+            val journalLines = database.journalLineDao().getForEntry(journal.id)
+            val accounts = database.accountDao().getAll().associateBy { it.id }
+            assertDecimal("120", journalLines.single { accounts[it.accountId]!!.code == "4100" }.credit)
+            assertEquals(1, journalLines.count { accounts[it.accountId]!!.code == "4100" })
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun purchaseAtZeroStockUpdatesCurrentCostWithoutRevaluationGainOrLoss() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+            products.addProduct(
+                sku = "FLOW-ZERO-001",
+                name = "مادة نفد مخزونها",
+                unit = "قطعة",
+                purchaseCost = "10",
+                salePrice = "15",
+                openingStock = "0",
+                note = "اختبار شراء بعد نفاد المخزون"
+            )
+            val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
+
+            val purchase = invoices.postInvoice(
+                invoiceNumber = "FLOW-ZERO-PURCHASE",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "2", "20")),
+                paidAmount = "40",
+                issuedAt = baselineAt + 1_000L
+            )
+            val updated = database.productDao().findById(product.id)!!
+            assertDecimal("20", updated.purchaseCost)
+            assertDecimal("2", updated.stockQuantity)
+
+            val invoice = database.invoiceDao().findById(purchase.invoiceId)!!
+            val journal = database.journalEntryDao().findBySource("PURCHASE_INVOICE", invoice.id)!!
+            val lines = database.journalLineDao().getForEntry(journal.id)
+            val accounts = database.accountDao().getAll().associateBy { it.id }
+            assertTrue(lines.none { accounts[it.accountId]!!.code == "4100" || accounts[it.accountId]!!.code == "7100" })
         } finally {
             database.close()
         }
