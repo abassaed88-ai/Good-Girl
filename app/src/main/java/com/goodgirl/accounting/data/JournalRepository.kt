@@ -35,18 +35,59 @@ class JournalRepository(private val database: AccountingDatabase) {
             systemAccount("SYS-3000", "3000", "رأس المال", "EQUITY", "CREDIT", now),
             systemAccount("SYS-3100", "3100", "الأرباح المحتجزة", "EQUITY", "CREDIT", now),
             systemAccount("SYS-4000", "4000", "المبيعات", "REVENUE", "CREDIT", now),
-            systemAccount("SYS-4100", "4100", "أرباح إعادة تقييم المخزون", "REVENUE", "CREDIT", now),
             systemAccount("SYS-5000", "5000", "تكلفة البضاعة المباعة", "EXPENSE", "DEBIT", now),
             systemAccount("SYS-6000", "6000", "إيرادات أخرى", "REVENUE", "CREDIT", now),
-            systemAccount("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT", now),
-            systemAccount("SYS-7100", "7100", "خسائر إعادة تقييم المخزون", "EXPENSE", "DEBIT", now)
+            systemAccount("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT", now)
         )
         database.withTransaction {
             // Existing custom accounts are never replaced: INSERT IGNORE keeps
             // their identifiers and balances intact. A revaluation posting
             // performs a targeted collision check only when it needs that account.
             database.accountDao().insertIgnore(defaults)
+            ensureRevaluationAccount(
+                id = "SYS-4100",
+                preferredCode = "4100",
+                name = "أرباح إعادة تقييم المخزون",
+                accountType = "REVENUE",
+                normalSide = "CREDIT",
+                createdAt = now
+            )
+            ensureRevaluationAccount(
+                id = "SYS-7100",
+                preferredCode = "7100",
+                name = "خسائر إعادة تقييم المخزون",
+                accountType = "EXPENSE",
+                normalSide = "DEBIT",
+                createdAt = now
+            )
         }
+    }
+
+    private suspend fun ensureRevaluationAccount(
+        id: String,
+        preferredCode: String,
+        name: String,
+        accountType: String,
+        normalSide: String,
+        createdAt: Long
+    ) {
+        val dao = database.accountDao()
+        val existing = dao.findById(id)
+        if (existing != null) {
+            require(existing.accountType == accountType && existing.normalSide == normalSide) {
+                "حساب إعادة تقييم المخزون النظامي غير صالح"
+            }
+            return
+        }
+
+        var code = preferredCode
+        var suffix = 1
+        while (dao.findByCode(code) != null) {
+            code = preferredCode + suffix
+            suffix += 1
+            require(suffix < 10_000) { "تعذر تخصيص رمز لحساب إعادة تقييم المخزون" }
+        }
+        dao.insert(systemAccount(id, code, name, accountType, normalSide, createdAt))
     }
 
     suspend fun postJournalEntry(
