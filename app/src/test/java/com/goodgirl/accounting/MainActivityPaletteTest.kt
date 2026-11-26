@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
+/** Verifies that the saved palette selection is applied in both theme modes. */
 class MainActivityPaletteTest {
 
     @Test
