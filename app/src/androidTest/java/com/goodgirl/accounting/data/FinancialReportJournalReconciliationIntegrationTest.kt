@@ -6,6 +6,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.domain.FinancialReportCalculator
+import com.goodgirl.accounting.domain.CashFlowStatementCalculator
+import com.goodgirl.accounting.domain.TrialBalanceCalculator
 import com.goodgirl.accounting.domain.GeneralLedgerFinancialStatementsCalculator
 import java.math.BigDecimal
 import kotlinx.coroutines.runBlocking
@@ -148,6 +150,34 @@ class FinancialReportJournalReconciliationIntegrationTest {
                 0,
                 balanceSheet.totalAssets.compareTo(balanceSheet.totalLiabilitiesAndEquity)
             )
+
+            // The cash-flow closing balance must equal the cash account balance
+            // calculated independently from the complete general journal.
+            val entriesSnapshot = database.journalEntryDao().getAll()
+            val linesSnapshot = database.journalLineDao().getAll()
+            val accountsSnapshot = database.accountDao().getAll()
+            val trialBalance = TrialBalanceCalculator.calculate(
+                asOfInclusive = Long.MAX_VALUE,
+                accounts = accountsSnapshot,
+                entries = entriesSnapshot,
+                lines = linesSnapshot
+            )
+            val cashFlow = CashFlowStatementCalculator.calculate(
+                periodStartInclusive = 0L,
+                periodEndInclusive = Long.MAX_VALUE,
+                asOfInclusive = Long.MAX_VALUE,
+                cashAccountIds = setOf("SYS-1000"),
+                entries = entriesSnapshot,
+                lines = linesSnapshot
+            )
+            val cashStatement = cashFlow.statements.single { it.currencyCode == "SYP" }
+            val cashAccount = trialBalance.rows.single {
+                it.accountCode == "1000" && it.currencyCode == "SYP"
+            }
+            val ledgerCashBalance = cashAccount.debitBalance.subtract(cashAccount.creditBalance)
+            assertMoney(ledgerCashBalance.toPlainString(), cashStatement.actualClosingCashBalance)
+            assertMoney(ledgerCashBalance.toPlainString(), cashStatement.closingCashBalance)
+            assertMoney("0", cashStatement.reconciliationDifference)
         } finally {
             database.close()
         }
