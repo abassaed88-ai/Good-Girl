@@ -656,6 +656,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
             costOfGoodsSold.normalSide == "DEBIT"
         ) { "حساب تكلفة البضاعة المباعة غير صالح لترحيل تسوية الكلفة" }
 
+        PeriodClosingGuard.ensureOpen(database, invoice.currencyCode, invoice.issuedAt)
         val amount = delta.abs().stripTrailingZeros().toPlainString()
         val lines = if (delta > BigDecimal.ZERO) {
             listOf(

@@ -210,12 +210,12 @@ class StockAdjustmentJournalIntegrationTest {
             val stocktakeLossMovement = movementsBeforePurchase.single {
                 it.sourceType == "STOCKTAKE_ADJUSTMENT"
             }
-            assertMoney("20", database.ledgerDao().getAll().single {
+            assertDecimal("20", database.ledgerDao().getAll().single {
                 it.sourceType == "MANUAL_STOCK_LOSS"
-            }.amount.toBigDecimal())
-            assertMoney("10", database.ledgerDao().getAll().single {
+            }.amount)
+            assertDecimal("10", database.ledgerDao().getAll().single {
                 it.sourceType == "STOCKTAKE_LOSS"
-            }.amount.toBigDecimal())
+            }.amount)
 
             // This purchase is saved later but occurred before both stock losses.
             invoices.postInvoice(
@@ -230,8 +230,8 @@ class StockAdjustmentJournalIntegrationTest {
             )
 
             val currentProduct = database.productDao().findById(product.id)!!
-            assertMoney("17", currentProduct.stockQuantity.toBigDecimal())
-            assertMoney("15", currentProduct.purchaseCost.toBigDecimal())
+            assertDecimal("17", currentProduct.stockQuantity)
+            assertDecimal("15", currentProduct.purchaseCost)
 
             val audits = database.stockCostRecalculationAuditDao().getAll()
             val items = database.stockCostRecalculationItemDao().getAll()
@@ -240,19 +240,19 @@ class StockAdjustmentJournalIntegrationTest {
             assertEquals(2, audits.single().affectedStockOutCount)
             items.forEach { item ->
                 assertEquals("", item.invoiceId)
-                assertMoney("15", item.newUnitCost.toBigDecimal())
+                assertDecimal("15", item.newUnitCost)
             }
             val manualItem = items.single { it.movementId == manualLossMovement.id }
             val stocktakeItem = items.single { it.movementId == stocktakeLossMovement.id }
-            assertMoney("10", manualItem.oldExtendedCost.toBigDecimal())
-            assertMoney("15", manualItem.newExtendedCost.toBigDecimal())
-            assertMoney("20", items.single { it.movementId == manualLossMovement.id }.oldUnitCost.toBigDecimal())
-            assertMoney("10", stocktakeItem.oldExtendedCost.toBigDecimal())
-            assertMoney("15", stocktakeItem.newExtendedCost.toBigDecimal())
+            assertDecimal("20", manualItem.oldExtendedCost)
+            assertDecimal("30", manualItem.newExtendedCost)
+            assertDecimal("10", manualItem.oldUnitCost)
+            assertDecimal("10", stocktakeItem.oldExtendedCost)
+            assertDecimal("15", stocktakeItem.newExtendedCost)
 
             val ledger = database.ledgerDao().getAll()
-            assertMoney("30", ledger.single { it.sourceType == "MANUAL_STOCK_LOSS" }.amount.toBigDecimal())
-            assertMoney("15", ledger.single { it.sourceType == "STOCKTAKE_LOSS" }.amount.toBigDecimal())
+            assertDecimal("30", ledger.single { it.sourceType == "MANUAL_STOCK_LOSS" }.amount)
+            assertDecimal("15", ledger.single { it.sourceType == "STOCKTAKE_LOSS" }.amount)
 
             val adjustmentEntries = database.journalEntryDao().getAll().filter {
                 it.sourceType == "STOCK_COST_RECALCULATION"
@@ -273,7 +273,7 @@ class StockAdjustmentJournalIntegrationTest {
                 database.journalLineDao().getForEntry(it.id)
             }.filter { accounts.getValue(it.accountId).code == "7000" }
                 .fold(BigDecimal.ZERO) { sum, line -> sum + line.debit.toBigDecimal() }
-            assertMoney("15", totalLossAdjustments.toPlainString())
+            assertDecimal("15", totalLossAdjustments.toPlainString())
             val report = FinancialReportCalculator.calculate(
                 fromInclusive = 0L,
                 toInclusive = Long.MAX_VALUE,
@@ -282,9 +282,9 @@ class StockAdjustmentJournalIntegrationTest {
                 ledgerEntries = ledger
             )
             val summary = report.currencySummaries.single { it.currencyCode == "SYP" }
-            assertMoney("200", summary.purchases)
-            assertMoney("45", summary.expenses)
-            assertMoney("-45", summary.netProfit)
+            assertDecimal("200", summary.purchases.toPlainString())
+            assertDecimal("45", summary.expenses.toPlainString())
+            assertDecimal("-45", summary.netProfit.toPlainString())
 
             val statements = com.goodgirl.accounting.domain.GeneralLedgerFinancialStatementsCalculator.calculate(
                 periodStartInclusive = 0L,
@@ -295,8 +295,8 @@ class StockAdjustmentJournalIntegrationTest {
                 lines = database.journalLineDao().getAll()
             )
             val income = statements.incomeStatements.single { it.currencyCode == "SYP" }
-            assertMoney("45", income.expenses.single { it.accountCode == "7000" }.amount)
-            assertMoney(summary.netProfit.toPlainString(), income.netIncome)
+            assertDecimal("45", income.expenses.single { it.accountCode == "7000" }.amount.toPlainString())
+            assertDecimal(summary.netProfit.toPlainString(), income.netIncome.toPlainString())
         } finally {
             database.close()
         }
