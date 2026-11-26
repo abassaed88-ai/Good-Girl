@@ -868,6 +868,7 @@ private fun DashboardScreen(
                         title = tile.second,
                         icon = tile.third,
                         onClick = action,
+                        testTag = "dashboard-${tile.first}",
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -893,10 +894,12 @@ private fun DashboardTile(
     title: String,
     icon: ImageVector,
     onClick: () -> Unit,
+    testTag: String,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier
+            .testTag(testTag)
             .height(112.dp)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(17.dp),

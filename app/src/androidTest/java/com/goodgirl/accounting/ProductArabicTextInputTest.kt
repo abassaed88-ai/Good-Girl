@@ -22,7 +22,7 @@ class ProductArabicTextInputTest {
 
     @Test
     fun arabicLettersRenderImmediatelyInProductNameUnitAndNoteFields() {
-        composeRule.onNodeWithText("إدارة المخزون")
+        composeRule.onNodeWithTag("dashboard-products")
             .performClick()
 
         assertArabicCharactersAppearOneByOne(
