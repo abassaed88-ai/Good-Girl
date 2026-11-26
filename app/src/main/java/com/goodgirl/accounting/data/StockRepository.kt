@@ -41,6 +41,8 @@ class StockRepository(private val database: AccountingDatabase) {
                 )
                 val newBalance = StockInputRules.calculateNewBalance(product.stockQuantity, delta)
                 val recordedAt = nextMovementRecordedAt(productId, now)
+                // Keep the latest purchase-cost reference unchanged; this movement
+                // only changes quantity and is valued at the saved current cost.
                 database.productDao().update(
                     product.copy(
                         stockQuantity = newBalance,
@@ -102,6 +104,8 @@ class StockRepository(private val database: AccountingDatabase) {
             )
             resultingBalance = StockInputRules.calculateNewBalance(product.stockQuantity, cleanDelta)
             val recordedAt = nextMovementRecordedAt(productId, now)
+            // Manual stock movements never establish a new purchase cost.
+            // Only posting a purchase invoice may update product.purchaseCost.
             database.productDao().update(
                 product.copy(
                     stockQuantity = resultingBalance,
