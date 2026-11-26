@@ -1,6 +1,6 @@
 # Current purchase-cost policy (Good Girl)
 
-Status: approved product policy; implementation and integration tests are pending.
+Status: implemented on the development branch; Android integration validation is pending.
 
 ## User-approved behavior
 - A newly posted purchase invoice establishes the product's **current purchase cost** from the invoice's incoming unit cost (per base unit, after applicable line/invoice discount allocation).
@@ -10,8 +10,9 @@ Status: approved product policy; implementation and integration tests are pendin
 - Subsequent purchase invoices repeat this rule: latest purchase cost replaces the current carrying cost for all remaining stock, rather than blending with the prior cost using weighted average.
 
 ## Accounting/reporting safeguards required for implementation
-- The repricing of on-hand inventory must be accompanied by a balanced, source-linked, currency-specific inventory valuation adjustment journal and audit record, in the same Room transaction as purchase posting, inventory update, movement/audit records and invoice journals.
-- A cost update must not mutate old sale-line snapshots. Existing effective-cost audit/replay mechanisms must be evaluated and changed carefully so they do not silently rewrite historic sale profit under this policy.
+- The repricing of on-hand inventory is recorded in the same balanced, currency-specific purchase journal, with immutable line memos identifying the product, previous stock/cost, incoming quantity/value, latest cost and signed revaluation difference. This journal is linked to the source purchase invoice and remains included in encrypted backups.
+- Positive revaluation differences use a dedicated inventory-revaluation-gain account; negative differences use a dedicated inventory-revaluation-loss account. These are separate from sales revenue and cost of goods sold, so invoice-based product gross profit remains based on immutable sale snapshots. They appear separately in general-ledger income statements.
+- A cost update must not mutate old sale-line snapshots, stock-out movement cost snapshots, historical sale journals or invoice-based historical product profit. Invoice posting no longer invokes the old weighted-average stock-cost replay that could revise previously posted cost-of-goods-sold adjustments.
 - If inventory quantity is zero, update the product's current purchase-cost reference from the purchase without generating a zero-stock carrying-value adjustment.
 - If the invoice includes repeated lines for one product, calculate the product's latest incoming cost deterministically and apply the policy once to that product within the transaction.
 - Sale unit costs for future posted sales use the latest current product cost, captured as an immutable snapshot at sale posting.
