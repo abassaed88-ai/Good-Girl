@@ -339,7 +339,9 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 val preRevaluationValue = previousQuantity.multiply(previousUnitCost)
                     .add(accumulator.incomingExtendedCost)
                 val valueDelta = targetCarryingValue.subtract(preRevaluationValue)
-                if (valueDelta.compareTo(BigDecimal.ZERO) == 0) {
+                if (previousQuantity.compareTo(BigDecimal.ZERO) == 0 ||
+                    valueDelta.compareTo(BigDecimal.ZERO) == 0
+                ) {
                     null
                 } else {
                     InventoryRevaluationAdjustment(
