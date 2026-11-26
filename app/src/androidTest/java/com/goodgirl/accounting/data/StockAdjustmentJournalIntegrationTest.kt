@@ -177,6 +177,101 @@ class StockAdjustmentJournalIntegrationTest {
     }
 
     @Test
+    fun manualAndStocktakeGainsUseLatestPurchaseCostWithoutChangingProductCost() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val stock = StockRepository(database)
+            val invoices = InvoiceRepository(database)
+            products.addProduct(
+                sku = "LATEST-STOCK-IN-001",
+                name = "مادة تكلفة الشراء الأخيرة",
+                unit = "قطعة",
+                purchaseCost = "10",
+                salePrice = "30",
+                openingStock = "5",
+                note = "اختبار تكلفة آخر فاتورة للزيادات اليدوية",
+                priceCurrencyCode = "SYP",
+                openingExchangeRate = "1"
+            )
+            val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
+
+            invoices.postInvoice(
+                invoiceNumber = "LATEST-STOCK-IN-PURCHASE",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "2", "20")),
+                paidAmount = "40",
+                issuedAt = baselineAt + 1_000L
+            )
+            assertDecimal("20", database.productDao().findById(product.id)!!.purchaseCost)
+            assertDecimal("7", database.productDao().findById(product.id)!!.stockQuantity)
+
+            stock.adjustStock(
+                productId = product.id,
+                quantityDelta = "1",
+                note = "إضافة يدوية بعد تغيير سعر الشراء"
+            )
+            assertDecimal("20", database.productDao().findById(product.id)!!.purchaseCost)
+            assertDecimal("8", database.productDao().findById(product.id)!!.stockQuantity)
+
+            val manualGainMovement = database.stockMovementDao().getAll().single {
+                it.sourceType == "MANUAL_ADJUSTMENT" && it.quantityDelta == "1"
+            }
+            assertDecimal("20", manualGainMovement.unitCostSnapshot)
+
+            val stocktake = stock.reconcileStocktake(
+                productId = product.id,
+                countedQuantity = "10",
+                note = "زيادة فعلية بعد تغيير سعر الشراء"
+            )
+            assertEquals("2", stocktake.adjustmentDelta)
+            assertEquals("10", stocktake.resultingBalance)
+            assertDecimal("20", database.productDao().findById(product.id)!!.purchaseCost)
+
+            val stocktakeGainMovement = database.stockMovementDao().getAll().single {
+                it.sourceType == "STOCKTAKE_ADJUSTMENT" && it.quantityDelta == "2"
+            }
+            assertDecimal("20", stocktakeGainMovement.unitCostSnapshot)
+
+            val accounts = database.accountDao().getAll().associate { it.id to it.code }
+            val manualGain = database.journalEntryDao().getAll().single {
+                it.sourceType == "MANUAL_STOCK_GAIN"
+            }
+            val manualLines = database.journalLineDao().getForEntry(manualGain.id)
+            assertDecimal("20", manualLines.single { accounts.getValue(it.accountId) == "1200" }.debit)
+            assertDecimal("20", manualLines.single { accounts.getValue(it.accountId) == "6000" }.credit)
+
+            val stocktakeGain = database.journalEntryDao().getAll().single {
+                it.sourceType == "STOCKTAKE_GAIN"
+            }
+            val stocktakeLines = database.journalLineDao().getForEntry(stocktakeGain.id)
+            assertDecimal("40", stocktakeLines.single { accounts.getValue(it.accountId) == "1200" }.debit)
+            assertDecimal("40", stocktakeLines.single { accounts.getValue(it.accountId) == "6000" }.credit)
+
+            val statements = com.goodgirl.accounting.domain.GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 0L,
+                periodEndInclusive = Long.MAX_VALUE,
+                asOfInclusive = Long.MAX_VALUE,
+                accounts = database.accountDao().getAll(),
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll()
+            )
+            val balanceSheet = statements.balanceSheets.single { it.currencyCode == "SYP" }
+            assertDecimal("200", balanceSheet.assets.single { it.accountCode == "1200" }.amount.toPlainString())
+            assertDecimal(
+                balanceSheet.totalAssets.toPlainString(),
+                balanceSheet.totalLiabilitiesAndEquity.toPlainString()
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun newPurchaseRevaluesOnlyRemainingStockAndPreservesPriorManualLosses() = runBlocking {
         val database = newInMemoryDatabase()
         try {
