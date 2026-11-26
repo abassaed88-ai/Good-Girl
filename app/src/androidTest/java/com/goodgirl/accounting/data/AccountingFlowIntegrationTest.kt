@@ -79,13 +79,23 @@ class AccountingFlowIntegrationTest {
                 .findBySource("PURCHASE_INVOICE", purchaseInvoice.id)!!
             val purchaseJournalLines = database.journalLineDao().getForEntry(purchaseJournal.id)
             val accountsById = database.accountDao().getAll().associateBy { it.id }
-            val inventoryDebits = purchaseJournalLines
+            val inventoryPurchaseDebits = purchaseJournalLines
                 .filter { accountsById[it.accountId]!!.code == "1200" }
                 .fold(BigDecimal.ZERO) { total, line -> total.add(line.debit.toBigDecimal()) }
-            assertDecimal("160", inventoryDebits.toPlainString())
+            assertDecimal("80", inventoryPurchaseDebits.toPlainString())
+            val revaluationJournal = database.journalEntryDao().findBySource(
+                "PURCHASE_INVENTORY_REVALUATION",
+                purchaseInvoice.id
+            )!!
+            assertTrue(revaluationJournal.occurredAt >= purchaseInvoice.createdAt)
+            val revaluationLines = database.journalLineDao().getForEntry(revaluationJournal.id)
             assertDecimal(
                 "80",
-                purchaseJournalLines.single { accountsById[it.accountId]!!.code == "4100" }.credit
+                revaluationLines.single { accountsById[it.accountId]!!.code == "1200" }.debit
+            )
+            assertDecimal(
+                "80",
+                revaluationLines.single { accountsById[it.accountId]!!.code == "4100" }.credit
             )
 
             invoices.postInvoice(
@@ -196,7 +206,11 @@ class AccountingFlowIntegrationTest {
 
             val invoice = database.invoiceDao().findById(secondPurchase.invoiceId)!!
             val journal = database.journalEntryDao().findBySource("PURCHASE_INVOICE", invoice.id)!!
-            val lines = database.journalLineDao().getForEntry(journal.id)
+            val revaluationJournal = database.journalEntryDao().findBySource(
+                "PURCHASE_INVENTORY_REVALUATION",
+                invoice.id
+            )!!
+            val lines = database.journalLineDao().getForEntry(revaluationJournal.id)
             val accounts = database.accountDao().getAll().associateBy { it.id }
             assertDecimal("56", lines.single { accounts[it.accountId]!!.code == "7100" }.debit)
             assertDecimal("56", lines.single { accounts[it.accountId]!!.code == "1200" && it.credit != "0" }.credit)
@@ -256,11 +270,14 @@ class AccountingFlowIntegrationTest {
             assertDecimal("8", updated.stockQuantity)
 
             val invoice = database.invoiceDao().findById(purchase.invoiceId)!!
-            val journal = database.journalEntryDao().findBySource("PURCHASE_INVOICE", invoice.id)!!
-            val journalLines = database.journalLineDao().getForEntry(journal.id)
+            val revaluationJournal = database.journalEntryDao().findBySource(
+                "PURCHASE_INVENTORY_REVALUATION",
+                invoice.id
+            )!!
+            val revaluationLines = database.journalLineDao().getForEntry(revaluationJournal.id)
             val accounts = database.accountDao().getAll().associateBy { it.id }
-            assertDecimal("120", journalLines.single { accounts[it.accountId]!!.code == "4100" }.credit)
-            assertEquals(1, journalLines.count { accounts[it.accountId]!!.code == "4100" })
+            assertDecimal("120", revaluationLines.single { accounts[it.accountId]!!.code == "4100" }.credit)
+            assertEquals(1, revaluationLines.count { accounts[it.accountId]!!.code == "4100" })
         } finally {
             database.close()
         }
@@ -303,6 +320,9 @@ class AccountingFlowIntegrationTest {
             val lines = database.journalLineDao().getForEntry(journal.id)
             val accounts = database.accountDao().getAll().associateBy { it.id }
             assertTrue(lines.none { accounts[it.accountId]!!.code == "4100" || accounts[it.accountId]!!.code == "7100" })
+            assertTrue(
+                database.journalEntryDao().findBySource("PURCHASE_INVENTORY_REVALUATION", invoice.id) == null
+            )
         } finally {
             database.close()
         }
