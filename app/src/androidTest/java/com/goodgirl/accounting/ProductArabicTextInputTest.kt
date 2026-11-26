@@ -1,0 +1,58 @@
+package com.goodgirl.accounting
+
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextInput
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.Assert.assertEquals
+import org.junit.Rule
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class ProductArabicTextInputTest {
+
+    @get:Rule
+    val composeRule = createAndroidComposeRule<MainActivity>()
+
+    @Test
+    fun arabicLettersRenderImmediatelyInProductNameUnitAndNoteFields() {
+        composeRule.onNodeWithText("إدارة المخزون")
+            .performScrollTo()
+            .performClick()
+
+        assertArabicCharactersAppearOneByOne(
+            composeRule.onNodeWithTag("product-name"),
+            "عطر الياسمين"
+        )
+        assertArabicCharactersAppearOneByOne(
+            composeRule.onNodeWithTag("product-base-unit"),
+            "عبوة صغيرة"
+        )
+        assertArabicCharactersAppearOneByOne(
+            composeRule.onNodeWithTag("product-note").performScrollTo(),
+            "ملاحظات المادة"
+        )
+    }
+
+    private fun assertArabicCharactersAppearOneByOne(
+        field: SemanticsNodeInteraction,
+        expected: String
+    ) {
+        var typed = ""
+        expected.forEach { character ->
+            typed += character
+            field.performTextInput(character.toString())
+            composeRule.waitForIdle()
+            val visibleValue = field.fetchSemanticsNode()
+                .config[SemanticsProperties.EditableText]
+                .text
+            assertEquals("Arabic input after '$character'", typed, visibleValue)
+        }
+    }
+}

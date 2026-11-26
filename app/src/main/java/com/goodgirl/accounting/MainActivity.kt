@@ -3573,7 +3573,7 @@ private fun PartyManagementScreen(
                         fontSize = 12.sp
                     )
                 }
-                OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth(), label = { Text("ملاحظات") }, minLines = 2)
+                OutlinedTextField(note, { note = it }, modifier = Modifier.fillMaxWidth().testTag("product-note"), label = { Text("ملاحظات") }, minLines = 2)
                 Button(
                     onClick = {
                         scope.launch {
@@ -4313,7 +4313,7 @@ private fun ProductManagementScreen(
                 verticalArrangement = Arrangement.spacedBy(9.dp)
             ) {
                 Text(if (editingId == null) "إضافة منتج جديد" else "تعديل بيانات المنتج", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Ink)
-                OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth(), label = { Text("اسم المنتج *") }, singleLine = true)
+                OutlinedTextField(name, { name = it }, modifier = Modifier.fillMaxWidth().testTag("product-name"), label = { Text("اسم المنتج *") }, singleLine = true)
                 OutlinedTextField(sku, { sku = it }, modifier = Modifier.fillMaxWidth(), label = { Text("رمز المنتج (اختياري)") }, singleLine = true)
                 Box {
                     Button(onClick = { categoryMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) {
@@ -4332,7 +4332,7 @@ private fun ProductManagementScreen(
                         }
                     }
                 }
-                OutlinedTextField(unit, { unit = it }, modifier = Modifier.fillMaxWidth(), label = { Text("وحدة القياس الأساسية") }, singleLine = true)
+                OutlinedTextField(unit, { unit = it }, modifier = Modifier.fillMaxWidth().testTag("product-base-unit"), label = { Text("وحدة القياس الأساسية") }, singleLine = true)
                 val editingProduct = products.firstOrNull { it.id == editingId }
                 val canEditPurchaseCost = editingProduct == null ||
                     (editingProduct.stockQuantity.toBigDecimalOrNull()?.compareTo(BigDecimal.ZERO) == 0)
