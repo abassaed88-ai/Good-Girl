@@ -133,6 +133,8 @@ class AccountingFlowIntegrationTest {
             assertDecimal("45", summary.sales.toPlainString())
             assertDecimal("40", summary.costOfGoodsSold.toPlainString())
             assertDecimal("5", summary.grossProfit.toPlainString())
+            assertDecimal("80", summary.otherIncome.toPlainString())
+            assertDecimal("85", summary.netProfit.toPlainString())
             assertDecimal("5", report.products.single().profit.toPlainString())
 
             val statements = GeneralLedgerFinancialStatementsCalculator.calculate(
@@ -621,6 +623,8 @@ class AccountingFlowIntegrationTest {
             assertDecimal("30", saleSummary.sales.toPlainString())
             assertDecimal("20", saleSummary.costOfGoodsSold.toPlainString())
             assertDecimal("10", saleSummary.grossProfit.toPlainString())
+            assertDecimal("80", saleSummary.otherIncome.toPlainString())
+            assertDecimal("90", saleSummary.netProfit.toPlainString())
             assertDecimal("10", report.products.single().profit.toPlainString())
 
             val statements = GeneralLedgerFinancialStatementsCalculator.calculate(
