@@ -121,6 +121,7 @@ import com.goodgirl.accounting.domain.InvoiceDiscountAllocator
 import com.goodgirl.accounting.domain.PartyBalanceCalculator
 import com.goodgirl.accounting.domain.ProductInputRules
 import com.goodgirl.accounting.domain.ProductSearchRules
+import com.goodgirl.accounting.domain.ReportPeriodRules
 import com.goodgirl.accounting.domain.StockInputRules
 import java.math.BigDecimal
 import java.text.SimpleDateFormat
@@ -2213,22 +2214,10 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
     }
     val trialBalance = trialBalanceResult.getOrNull()
     val fromTime = remember(selectedPeriod) {
-        when (selectedPeriod) {
-            "TODAY" -> java.util.Calendar.getInstance().apply {
-                set(java.util.Calendar.HOUR_OF_DAY, 0)
-                set(java.util.Calendar.MINUTE, 0)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-            }.timeInMillis
-            "MONTH" -> java.util.Calendar.getInstance().apply {
-                set(java.util.Calendar.DAY_OF_MONTH, 1)
-                set(java.util.Calendar.HOUR_OF_DAY, 0)
-                set(java.util.Calendar.MINUTE, 0)
-                set(java.util.Calendar.SECOND, 0)
-                set(java.util.Calendar.MILLISECOND, 0)
-            }.timeInMillis
-            else -> 0L
-        }
+        ReportPeriodRules.startInclusive(
+            period = selectedPeriod,
+            reference = java.util.Calendar.getInstance()
+        )
     }
     val generalLedgerStatementsResult = remember(
         accounts, journalEntries, journalLines, fromTime, now
@@ -2291,7 +2280,9 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
                 try {
                     val label = when (selectedPeriod) {
                         "TODAY" -> "اليوم"
+                        "WEEK" -> "هذا الأسبوع"
                         "MONTH" -> "هذا الشهر"
+                        "YEAR" -> "هذه السنة"
                         else -> "كل المدة"
                     }
                     FinancialReportPdfExporter.write(
@@ -2350,7 +2341,9 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
             onClick = {
                 val periodSuffix = when (selectedPeriod) {
                     "TODAY" -> "Today"
+                    "WEEK" -> "Week"
                     "MONTH" -> "Month"
+                    "YEAR" -> "Year"
                     else -> "All"
                 }
                 val dateSuffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
@@ -2368,7 +2361,9 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
             onClick = {
                 val periodSuffix = when (selectedPeriod) {
                     "TODAY" -> "Today"
+                    "WEEK" -> "Week"
                     "MONTH" -> "Month"
+                    "YEAR" -> "Year"
                     else -> "All"
                 }
                 val dateSuffix = SimpleDateFormat("yyyyMMdd_HHmm", Locale.US).format(Date())
@@ -2384,13 +2379,19 @@ private fun FinancialReportsScreen(onBack: () -> Unit) {
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             TextButton(onClick = { selectedPeriod = "TODAY" }, enabled = selectedPeriod != "TODAY") { Text("اليوم") }
+            TextButton(onClick = { selectedPeriod = "WEEK" }, enabled = selectedPeriod != "WEEK") { Text("هذا الأسبوع") }
             TextButton(onClick = { selectedPeriod = "MONTH" }, enabled = selectedPeriod != "MONTH") { Text("هذا الشهر") }
+        }
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            TextButton(onClick = { selectedPeriod = "YEAR" }, enabled = selectedPeriod != "YEAR") { Text("هذه السنة") }
             TextButton(onClick = { selectedPeriod = "ALL" }, enabled = selectedPeriod != "ALL") { Text("كل المدة") }
         }
         Text(
             when (selectedPeriod) {
                 "TODAY" -> "نتائج اليوم حتى الآن"
+                "WEEK" -> "نتائج الأسبوع الحالي حتى الآن"
                 "MONTH" -> "نتائج الشهر الحالي حتى الآن"
+                "YEAR" -> "نتائج السنة الحالية حتى الآن"
                 else -> "إجمالي النتائج منذ بدء التسجيل"
             },
             color = MutedText,
