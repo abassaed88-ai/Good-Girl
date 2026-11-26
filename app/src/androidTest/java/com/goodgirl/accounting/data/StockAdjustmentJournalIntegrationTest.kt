@@ -81,21 +81,23 @@ class StockAdjustmentJournalIntegrationTest {
             stock.adjustStock(
                 productId = product.id,
                 quantityDelta = "5",
-                unitCost = "10",
                 note = "إضافة مخزون يدوية",
                 exchangeRateSnapshot = "15250"
+            )
+            assertDecimal("10", database.productDao().findById(product.id)!!.purchaseCost)
+            assertDecimal(
+                "10",
+                database.stockMovementDao().getAll().single { it.sourceType == "MANUAL_ADJUSTMENT" && it.quantityDelta.toBigDecimal() > BigDecimal.ZERO }.unitCostSnapshot
             )
             stock.adjustStock(
                 productId = product.id,
                 quantityDelta = "-2",
-                unitCost = "",
                 note = "سحب مخزون يدوي",
                 exchangeRateSnapshot = "15250"
             )
             val stocktakeLoss = stock.reconcileStocktake(
                 productId = product.id,
                 countedQuantity = "12",
-                unitCost = "",
                 note = "نقص مكتشف بالجرد",
                 exchangeRateSnapshot = "15300"
             )
@@ -103,12 +105,16 @@ class StockAdjustmentJournalIntegrationTest {
             val stocktakeGain = stock.reconcileStocktake(
                 productId = product.id,
                 countedQuantity = "14",
-                unitCost = "10",
                 note = "زيادة مكتشفة بالجرد",
                 exchangeRateSnapshot = "15400"
             )
             assertEquals("2", stocktakeGain.adjustmentDelta)
             assertEquals("14", stocktakeGain.resultingBalance)
+            assertDecimal("10", database.productDao().findById(product.id)!!.purchaseCost)
+            assertDecimal(
+                "10",
+                database.stockMovementDao().getAll().single { it.sourceType == "STOCKTAKE_ADJUSTMENT" && it.quantityDelta.toBigDecimal() > BigDecimal.ZERO }.unitCostSnapshot
+            )
 
             val journals = database.journalEntryDao().getAll()
             assertEquals(5, journals.size)
@@ -192,13 +198,11 @@ class StockAdjustmentJournalIntegrationTest {
             stock.adjustStock(
                 productId = product.id,
                 quantityDelta = "-2",
-                unitCost = "",
                 note = "خسارة مخزون يدوية"
             )
             val stocktake = stock.reconcileStocktake(
                 productId = product.id,
                 countedQuantity = "7",
-                unitCost = "",
                 note = "نقص مكتشف بالجرد"
             )
             assertEquals("-1", stocktake.adjustmentDelta)
