@@ -411,6 +411,15 @@ class EncryptedBackupRestoreIntegrationTest {
             assertEquals("مادة مستعادة", restored.name)
             assertEquals("11", restored.stockQuantity)
             assertEquals("3.50", restored.purchaseCost)
+            assertEquals(
+                "2.50",
+                database.invoiceDao().getLines("restored-invoice-001").single().unitCostSnapshot
+            )
+            val migrationIncome = database.ledgerDao().getAll().single {
+                it.sourceType == "MIGRATION_STOCK_REVALUATION_GAIN" && it.sourceId == productId
+            }
+            assertEquals("INCOME", migrationIncome.entryType)
+            assertEquals("7.00000004", migrationIncome.amount)
 
             val restoredBarcodes = database.productBarcodeDao().getAll()
             assertEquals(1, restoredBarcodes.size)
