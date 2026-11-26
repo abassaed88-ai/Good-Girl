@@ -183,6 +183,113 @@ class FinancialReportJournalReconciliationIntegrationTest {
         }
     }
 
+    @Test
+    fun backdatedPurchaseRecalculatesSaleCostAndKeepsProfitabilityReportInSyncWithJournal() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+            products.addProduct(
+                sku = "HIST-COST-001",
+                name = "مادة الكلفة التاريخية",
+                unit = "قطعة",
+                purchaseCost = "10",
+                salePrice = "15",
+                openingStock = "10",
+                note = "اختبار إعادة احتساب فاتورة شراء مؤرخة بأثر رجعي"
+            )
+            val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
+
+            // Record the later sale first. The purchase entered afterwards has
+            // an earlier business date and must therefore change that sale's
+            // effective weighted-average cost without rewriting its snapshot.
+            invoices.postInvoice(
+                invoiceNumber = "HIST-COST-SALE-1",
+                kind = "SALE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "2", "15")),
+                paidAmount = "30",
+                issuedAt = baselineAt + 2_000L
+            )
+            val saleInvoice = database.invoiceDao().getAllInvoices()
+                .single { it.invoiceNumber == "HIST-COST-SALE-1" }
+            val saleLine = database.invoiceDao().getLines(saleInvoice.id).single()
+            assertMoney("10", saleLine.unitCostSnapshot.toBigDecimal())
+
+            invoices.postInvoice(
+                invoiceNumber = "HIST-COST-PURCHASE-1",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "4", "20")),
+                paidAmount = "80",
+                issuedAt = baselineAt + 1_000L
+            )
+
+            val currentProduct = database.productDao().findById(product.id)!!
+            assertMoney("12", currentProduct.stockQuantity.toBigDecimal())
+            assertMoney("12.85714286", currentProduct.purchaseCost.toBigDecimal())
+            assertMoney("10", database.invoiceDao().getLines(saleInvoice.id).single().unitCostSnapshot.toBigDecimal())
+
+            val audits = database.stockCostRecalculationAuditDao().getAll()
+            val auditItems = database.stockCostRecalculationItemDao().getAll()
+            assertEquals(1, audits.size)
+            assertEquals(1, auditItems.size)
+            val auditItem = auditItems.single()
+            assertEquals(saleLine.id, auditItem.sourceId)
+            assertMoney("10", auditItem.oldUnitCost.toBigDecimal())
+            assertMoney("12.85714286", auditItem.newUnitCost.toBigDecimal())
+            assertMoney("20", auditItem.oldExtendedCost.toBigDecimal())
+            assertMoney("25.71428572", auditItem.newExtendedCost.toBigDecimal())
+
+            val auditsById = audits.associateBy { it.id }
+            val effectiveCostsByLineId = auditItems
+                .groupBy { it.sourceId }
+                .mapValues { (_, items) ->
+                    items.maxWithOrNull(
+                        compareBy<com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity> {
+                            auditsById[it.auditId]?.createdAt ?: Long.MIN_VALUE
+                        }.thenBy { it.auditId }
+                    )!!.newUnitCost
+                }
+            val report = FinancialReportCalculator.calculate(
+                fromInclusive = 0L,
+                toInclusive = Long.MAX_VALUE,
+                invoices = database.invoiceDao().getAllInvoices(),
+                lines = database.invoiceDao().getAllLines(),
+                ledgerEntries = database.ledgerDao().getAll(),
+                effectiveUnitCostsByLineId = effectiveCostsByLineId
+            )
+            val salesSummary = report.currencySummaries.single { it.currencyCode == "SYP" }
+            val productSummary = report.products.single()
+            assertMoney("30", salesSummary.sales)
+            assertMoney("80", salesSummary.purchases)
+            assertMoney("25.71428572", salesSummary.costOfGoodsSold)
+            assertMoney("4.28571428", salesSummary.netProfit)
+            assertMoney("25.71428572", productSummary.cost)
+            assertMoney("4.28571428", productSummary.profit)
+
+            val statements = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 0L,
+                periodEndInclusive = Long.MAX_VALUE,
+                asOfInclusive = Long.MAX_VALUE,
+                accounts = database.accountDao().getAll(),
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll()
+            )
+            val incomeStatement = statements.incomeStatements.single { it.currencyCode == "SYP" }
+            assertMoney("25.71428572", incomeStatement.expenses.single { it.accountCode == "5000" }.amount)
+            assertMoney("4.28571428", incomeStatement.netIncome)
+            assertMoney(salesSummary.netProfit.toPlainString(), incomeStatement.netIncome)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun newInMemoryDatabase(): AccountingDatabase {
         val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
         return Room.inMemoryDatabaseBuilder(context, AccountingDatabase::class.java)
