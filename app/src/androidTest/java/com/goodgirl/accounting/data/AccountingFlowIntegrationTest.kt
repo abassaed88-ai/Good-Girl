@@ -674,8 +674,7 @@ class AccountingFlowIntegrationTest {
                 "PURCHASE_INVENTORY_REVALUATION",
                 purchase.invoiceId
             )!!
-            assertTrue(revaluation.occurredAt >= purchaseInvoice.createdAt)
-            assertTrue(revaluation.occurredAt > backdatedPurchaseAt)
+            assertEquals(purchaseInvoice.createdAt, revaluation.occurredAt)
             val accounts = database.accountDao().getAll().associateBy { it.id }
             val revaluationLines = database.journalLineDao().getForEntry(revaluation.id)
             assertDecimal(
