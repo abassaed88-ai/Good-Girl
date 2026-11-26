@@ -5,6 +5,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.data.local.AccountEntity
 import com.goodgirl.accounting.domain.JournalLineDraft
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
@@ -73,6 +74,36 @@ class JournalRepositoryIntegrationTest {
                 }
             }
             assertEquals(1, repository.observeEntries().first().size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun refusesToReplaceAnExistingCustomAccountWithReservedRevaluationCode() = runBlocking {
+        val database = newDatabase()
+        try {
+            database.accountDao().insert(
+                AccountEntity(
+                    id = "CUSTOM-4100",
+                    code = "4100",
+                    name = "حساب مخصص قديم",
+                    accountType = "ASSET",
+                    normalSide = "DEBIT",
+                    isSystem = false,
+                    isActive = true,
+                    createdAt = 1L
+                )
+            )
+            val repository = JournalRepository(database)
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking { repository.ensureSystemAccounts() }
+            }
+
+            val existing = database.accountDao().findByCode("4100")
+            assertEquals("CUSTOM-4100", existing!!.id)
+            assertEquals("حساب مخصص قديم", existing.name)
+            assertTrue(database.accountDao().findByCode("7100") == null)
         } finally {
             database.close()
         }
