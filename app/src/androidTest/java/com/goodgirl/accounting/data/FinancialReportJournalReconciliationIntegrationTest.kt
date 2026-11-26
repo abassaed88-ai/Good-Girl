@@ -116,12 +116,12 @@ class FinancialReportJournalReconciliationIntegrationTest {
             // The purchase increases stock; it is not an immediate P&L expense.
             assertMoney("80", salesSummary.purchases)
             assertMoney("45", salesSummary.sales)
-            assertMoney("33.33333333", salesSummary.costOfGoodsSold)
-            assertMoney("11.66666667", salesSummary.grossProfit)
-            assertMoney("12.75", salesSummary.otherIncome)
+            assertMoney("40", salesSummary.costOfGoodsSold)
+            assertMoney("5", salesSummary.grossProfit)
+            assertMoney("92.75", salesSummary.otherIncome)
             assertMoney("3.5", salesSummary.expenses)
-            assertMoney("20.91666667", salesSummary.netProfit)
-            assertMoney("11.66666667", productSummary.profit)
+            assertMoney("94.25", salesSummary.netProfit)
+            assertMoney("5", productSummary.profit)
 
             // Match sales, cost of goods, other income and operating expenses
             // to the corresponding general-ledger account balances.
@@ -134,15 +134,19 @@ class FinancialReportJournalReconciliationIntegrationTest {
                 incomeStatement.revenues.single { it.accountCode == "6000" }.amount
             )
             assertMoney(
-                "33.33333333",
+                "80",
+                incomeStatement.revenues.single { it.accountCode == "4100" }.amount
+            )
+            assertMoney(
+                "40",
                 incomeStatement.expenses.single { it.accountCode == "5000" }.amount
             )
             assertMoney(
                 "3.5",
                 incomeStatement.expenses.single { it.accountCode == "7000" }.amount
             )
-            assertMoney("57.75", incomeStatement.totalRevenue)
-            assertMoney("36.83333333", incomeStatement.totalExpenses)
+            assertMoney("137.75", incomeStatement.totalRevenue)
+            assertMoney("43.5", incomeStatement.totalExpenses)
             assertMoney(salesSummary.netProfit.toPlainString(), incomeStatement.netIncome)
 
             val balanceSheet = statements.balanceSheets.single { it.currencyCode == "SYP" }
@@ -184,7 +188,7 @@ class FinancialReportJournalReconciliationIntegrationTest {
     }
 
     @Test
-    fun backdatedPurchaseRecalculatesSaleCostAndKeepsProfitabilityReportInSyncWithJournal() = runBlocking {
+    fun backdatedPurchaseRepricesRemainingStockWithoutRewritingHistoricalSaleCostOrProfit() = runBlocking {
         val database = newInMemoryDatabase()
         try {
             val products = ProductRepository(database)
@@ -201,9 +205,9 @@ class FinancialReportJournalReconciliationIntegrationTest {
             val product = database.productDao().getAll().single()
             val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
 
-            // Record the later sale first. The purchase entered afterwards has
-            // an earlier business date and must therefore change that sale's
-            // effective weighted-average cost without rewriting its snapshot.
+            // Record the sale first, then enter a later purchase with an earlier
+            // issue date. The purchase changes the current stock cost, but must
+            // preserve the already-posted sale snapshot, COGS journal and profit.
             invoices.postInvoice(
                 invoiceNumber = "HIST-COST-SALE-1",
                 kind = "SALE",
@@ -232,46 +236,43 @@ class FinancialReportJournalReconciliationIntegrationTest {
 
             val currentProduct = database.productDao().findById(product.id)!!
             assertMoney("12", currentProduct.stockQuantity.toBigDecimal())
-            assertMoney("12.85714286", currentProduct.purchaseCost.toBigDecimal())
+            assertMoney("20", currentProduct.purchaseCost.toBigDecimal())
             assertMoney("10", database.invoiceDao().getLines(saleInvoice.id).single().unitCostSnapshot.toBigDecimal())
 
-            val audits = database.stockCostRecalculationAuditDao().getAll()
-            val auditItems = database.stockCostRecalculationItemDao().getAll()
-            assertEquals(1, audits.size)
-            assertEquals(1, auditItems.size)
-            val auditItem = auditItems.single()
-            assertEquals(saleLine.id, auditItem.sourceId)
-            assertMoney("10", auditItem.oldUnitCost.toBigDecimal())
-            assertMoney("12.85714286", auditItem.newUnitCost.toBigDecimal())
-            assertMoney("20", auditItem.oldExtendedCost.toBigDecimal())
-            assertMoney("25.71428572", auditItem.newExtendedCost.toBigDecimal())
+            // No historical replay or journal correction is produced for the
+            // old sale. The only new valuation is for stock still on hand.
+            assertEquals(0, database.stockCostRecalculationAuditDao().getAll().size)
+            assertEquals(0, database.stockCostRecalculationItemDao().getAll().size)
+            val saleJournal = database.journalEntryDao().findBySource("SALE_INVOICE", saleInvoice.id)!!
+            assertMoney(
+                "20",
+                database.journalLineDao().getForEntry(saleJournal.id)
+                    .single { database.accountDao().findById(it.accountId)!!.code == "5000" }.debit
+            )
+            val revaluation = database.journalEntryDao().findBySource(
+                "PURCHASE_INVENTORY_REVALUATION",
+                database.invoiceDao().getAllInvoices().single { it.invoiceNumber == "HIST-COST-PURCHASE-1" }.id
+            )!!
+            assertEquals(true, revaluation.occurredAt > database.invoiceDao().getAllInvoices()
+                .single { it.invoiceNumber == "HIST-COST-PURCHASE-1" }.issuedAt)
 
-            val auditsById = audits.associateBy { it.id }
-            val effectiveCostsByLineId = auditItems
-                .groupBy { it.sourceId }
-                .mapValues { (_, items) ->
-                    items.maxWithOrNull(
-                        compareBy<com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity> {
-                            auditsById[it.auditId]?.createdAt ?: Long.MIN_VALUE
-                        }.thenBy { it.auditId }
-                    )!!.newUnitCost
-                }
             val report = FinancialReportCalculator.calculate(
                 fromInclusive = 0L,
                 toInclusive = Long.MAX_VALUE,
                 invoices = database.invoiceDao().getAllInvoices(),
                 lines = database.invoiceDao().getAllLines(),
-                ledgerEntries = database.ledgerDao().getAll(),
-                effectiveUnitCostsByLineId = effectiveCostsByLineId
+                ledgerEntries = database.ledgerDao().getAll()
             )
             val salesSummary = report.currencySummaries.single { it.currencyCode == "SYP" }
             val productSummary = report.products.single()
             assertMoney("30", salesSummary.sales)
             assertMoney("80", salesSummary.purchases)
-            assertMoney("25.71428572", salesSummary.costOfGoodsSold)
-            assertMoney("4.28571428", salesSummary.netProfit)
-            assertMoney("25.71428572", productSummary.cost)
-            assertMoney("4.28571428", productSummary.profit)
+            assertMoney("20", salesSummary.costOfGoodsSold)
+            assertMoney("10", salesSummary.grossProfit)
+            assertMoney("80", salesSummary.otherIncome)
+            assertMoney("90", salesSummary.netProfit)
+            assertMoney("20", productSummary.cost)
+            assertMoney("10", productSummary.profit)
 
             val statements = GeneralLedgerFinancialStatementsCalculator.calculate(
                 periodStartInclusive = 0L,
@@ -282,8 +283,9 @@ class FinancialReportJournalReconciliationIntegrationTest {
                 lines = database.journalLineDao().getAll()
             )
             val incomeStatement = statements.incomeStatements.single { it.currencyCode == "SYP" }
-            assertMoney("25.71428572", incomeStatement.expenses.single { it.accountCode == "5000" }.amount)
-            assertMoney("4.28571428", incomeStatement.netIncome)
+            assertMoney("20", incomeStatement.expenses.single { it.accountCode == "5000" }.amount)
+            assertMoney("80", incomeStatement.revenues.single { it.accountCode == "4100" }.amount)
+            assertMoney("90", incomeStatement.netIncome)
             assertMoney(salesSummary.netProfit.toPlainString(), incomeStatement.netIncome)
         } finally {
             database.close()
