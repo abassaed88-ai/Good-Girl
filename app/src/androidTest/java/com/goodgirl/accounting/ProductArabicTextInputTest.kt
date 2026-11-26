@@ -2,7 +2,6 @@ package com.goodgirl.accounting
 
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
-import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -26,7 +25,7 @@ class ProductArabicTextInputTest {
         composeRule.onNodeWithTag("dashboard-products")
             .performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("إضافة منتج جديد").assertExists()
+        composeRule.onNodeWithText("إضافة منتج جديد").fetchSemanticsNode()
 
         assertArabicCharactersAppearOneByOne(
             composeRule.onNodeWithTag("product-name").performScrollTo(),
