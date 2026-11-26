@@ -9,7 +9,7 @@ Status: implemented on the development branch; Android integration validation is
 - Never rewrite posted historical sale invoices, their original line snapshots, or historical profit/cost results already reported for those sales.
 - Subsequent purchase invoices repeat this rule: latest purchase cost replaces the current carrying cost for all remaining stock, rather than blending with the prior cost using weighted average.
 
-## Accounting/reporting safeguards required for implementation
+## Implemented accounting and reporting rules
 - The repricing of on-hand inventory is recorded in a separate, balanced, currency-specific inventory-revaluation journal in the same Room transaction. It is source-linked to the purchase invoice, and its immutable line memos identify the product, previous stock/cost, incoming quantity/value, latest cost and signed revaluation difference. It remains included in encrypted backups.
 - The revaluation journal is dated at the actual recording time, rather than the purchase invoice's potentially backdated issue time. This prevents the act of repricing current stock from rewriting earlier-period inventory valuation results.
 - Positive revaluation differences use a dedicated inventory-revaluation-gain account; negative differences use a dedicated inventory-revaluation-loss account. They are mirrored as non-cash income/expense ledger rows so the simplified financial report and general-ledger income statement reconcile. These are separate from sales revenue and cost of goods sold, so invoice-based product gross profit remains based on immutable sale snapshots. They appear separately in reports.
@@ -17,9 +17,10 @@ Status: implemented on the development branch; Android integration validation is
 - If inventory quantity is zero, update the product's current purchase-cost reference from the purchase without generating a zero-stock carrying-value adjustment.
 - If the invoice includes repeated lines for one product, calculate the product's latest incoming cost deterministically and apply the policy once to that product within the transaction.
 - Sale unit costs for future posted sales use the latest current product cost, captured as an immutable snapshot at sale posting.
+- Manual stock additions and positive stocktake differences use the same latest current purchase cost for their movement and journal valuation. They do not accept a separate incoming cost and never change the product's current purchase-cost reference. Stock removals use that same current cost as well.
 - SYP and USD remain separate. Reject a purchase currency incompatible with the current stock unless a supported, explicit currency correction flow is used.
-- Backdated purchase invoices, historical cost replay, stock-loss costing, currency corrections, closed periods and the general-ledger/inventory reconciliation require a dedicated review before implementation; do not assume the old weighted-average replay model remains suitable.
-- Tests must cover a prior sale at old cost, remaining stock revaluation on new purchase, a new sale at the latest cost, unchanged prior invoice/report cost and profit, journal balancing, idempotency/rollback, repeated purchase changes, zero stock, multi-line invoice, currency and backup/restore.
+- Backdated purchase invoices, legacy historical-cost audit records, stock-loss costing, currency corrections, closed periods and the general-ledger/inventory reconciliation require validation. New invoice posting and manual/stocktake stock movements no longer invoke the old weighted-average replay model.
+- Tests cover a prior sale at old cost, remaining stock revaluation on new purchase, a new sale at the latest cost, unchanged prior invoice/report cost and profit, manual and stocktake gains at the latest purchase cost without changing it, journal balancing, repeated purchase changes, zero stock, multi-line invoice and rounded unit-cost handling. CI, currency, backup/restore and rollback validation remain pending for this implementation head.
 
 ## Example
 Existing 30 ml at $1/ml, previously sold 20 ml from an initial 50 ml. A new purchase of 20 ml at $1.50/ml is posted:
