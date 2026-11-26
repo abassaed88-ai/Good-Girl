@@ -37,6 +37,10 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.BusinessCenter
 import androidx.compose.material.icons.filled.Inventory
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Straighten
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalOffer
@@ -5275,16 +5279,51 @@ private fun ProductListItem(
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = CardSurface)
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(product.name, color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                    TextButton(onClick = onEdit) { Text("تعديل") }
-                    TextButton(onClick = onStockAdjustment) { Text("حركة مخزون") }
-                    TextButton(onClick = onManageUnits) { Text("الوحدات") }
-                    TextButton(onClick = onManageBarcodes) { Text("باركود") }
-                    TextButton(onClick = onViewHistory) { Text("السجل") }
-                }
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                product.name,
+                color = Ink,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                maxLines = 2
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ProductActionItem(
+                    icon = Icons.Filled.Edit,
+                    label = "تعديل",
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f)
+                )
+                ProductActionItem(
+                    icon = Icons.Filled.Inventory,
+                    label = "المخزون",
+                    onClick = onStockAdjustment,
+                    modifier = Modifier.weight(1f)
+                )
+                ProductActionItem(
+                    icon = Icons.Filled.Straighten,
+                    label = "الوحدات",
+                    onClick = onManageUnits,
+                    modifier = Modifier.weight(1f)
+                )
+                ProductActionItem(
+                    icon = Icons.Filled.QrCodeScanner,
+                    label = "باركود",
+                    onClick = onManageBarcodes,
+                    modifier = Modifier.weight(1f)
+                )
+                ProductActionItem(
+                    icon = Icons.Filled.History,
+                    label = "السجل",
+                    onClick = onViewHistory,
+                    modifier = Modifier.weight(1f)
+                )
             }
             if (product.sku.isNotBlank()) {
                 Text("الرمز: ${product.sku}", color = MutedText, fontSize = 12.sp)
@@ -5295,12 +5334,62 @@ private fun ProductListItem(
             if (isLowStock) {
                 Text("تنبيه: المخزون منخفض", color = SoftRed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("الرصيد: ${product.stockQuantity} ${product.baseUnit}", color = BrandBlue, fontSize = 13.sp)
-                Text("سعر البيع: ${product.salePrice} ${product.priceCurrencyCode}", color = SoftGreen, fontSize = 13.sp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "الرصيد: ${product.stockQuantity} ${product.baseUnit}",
+                    color = BrandBlue,
+                    fontSize = 13.sp
+                )
+                Text(
+                    "سعر البيع: ${product.salePrice} ${product.priceCurrencyCode}",
+                    color = SoftGreen,
+                    fontSize = 13.sp
+                )
             }
-            Text("الكلفة: ${product.purchaseCost} ${product.priceCurrencyCode}", color = MutedText, fontSize = 12.sp)
+            Text(
+                "الكلفة: ${product.purchaseCost} ${product.priceCurrencyCode}",
+                color = MutedText,
+                fontSize = 12.sp
+            )
         }
+    }
+}
+
+@Composable
+private fun ProductActionItem(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier
+            .height(54.dp)
+            .clickable(onClick = onClick)
+            .background(
+                MaterialTheme.colorScheme.surfaceVariant,
+                RoundedCornerShape(10.dp)
+            )
+            .padding(horizontal = 2.dp, vertical = 5.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = label,
+            tint = BrandBlue,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            label,
+            color = Ink,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1
+        )
     }
 }
 
