@@ -1695,6 +1695,7 @@ private fun InvoiceManagementScreen(
     val database = remember(context) { AccountingDatabase.getInstance(context) }
     val repository = remember(database) { InvoiceRepository(database) }
     val barcodeRepository = remember(database) { ProductBarcodeRepository(database) }
+    val productRepository = remember(database) { ProductRepository(database) }
     val products by database.productDao().observeActiveProducts().collectAsState(initial = emptyList())
     val partyKind = if (kind == "SALE") "CUSTOMER" else "SUPPLIER"
     val parties by database.partyDao().observeByKind(partyKind).collectAsState(initial = emptyList())
@@ -1767,6 +1768,17 @@ private fun InvoiceManagementScreen(
     var isSavingPayment by remember { mutableStateOf(false) }
     var paymentMessage by remember { mutableStateOf<String?>(null) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
+    var unknownBarcodeValue by remember { mutableStateOf("") }
+    var unknownBarcodeFormat by remember { mutableStateOf("EAN_13") }
+    var showUnknownBarcodeDialog by remember { mutableStateOf(false) }
+    var showLinkBarcodeDialog by remember { mutableStateOf(false) }
+    var showCreateBarcodeProductDialog by remember { mutableStateOf(false) }
+    var createBarcodeProductName by remember { mutableStateOf("") }
+    var createBarcodeProductSku by remember { mutableStateOf("") }
+    var createBarcodeProductUnit by remember { mutableStateOf("قطعة") }
+    var createBarcodePurchaseCost by remember { mutableStateOf("0") }
+    var createBarcodeSalePrice by remember { mutableStateOf("0") }
+    var isCreatingBarcodeProduct by remember { mutableStateOf(false) }
 
     val productUnits by database.productUnitDao()
         .observeForProduct(selectedProductId ?: "")
@@ -1775,6 +1787,29 @@ private fun InvoiceManagementScreen(
     val selectedUnit = productUnits.firstOrNull { it.unitName == selectedUnitName }
         ?: productUnits.firstOrNull { it.isBaseUnit }
     val selectedParty = parties.firstOrNull { it.id == selectedPartyId }
+    fun selectProductFromBarcode(product: ProductEntity) {
+        require(product.isActive) { "لا يمكن استخدام مادة مؤرشفة" }
+        if (draftLines.isNotEmpty() && product.priceCurrencyCode != currencyCode) {
+            throw IllegalArgumentException(
+                "عملة المادة لا تطابق عملة الفاتورة الحالية. أكمل الفاتورة أو ابدأ فاتورة جديدة بهذه العملة."
+            )
+        }
+        if (draftLines.isEmpty() && product.priceCurrencyCode != currencyCode) {
+            currencyCode = product.priceCurrencyCode
+            exchangeRate = if (product.priceCurrencyCode == "USD") {
+                context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+                    .getString("usd_syp_rate", "1") ?: "1"
+            } else "1"
+        }
+        selectedProductId = product.id
+        selectedUnitName = product.baseUnit
+        unitPrice = if (kind == "SALE") product.salePrice else product.purchaseCost
+        quantity = "1"
+        lineDiscount = "0"
+    }
+    val barcodeLinkCandidates = products.filter {
+        draftLines.isEmpty() || it.priceCurrencyCode == currencyCode
+    }
     val screenTitle = if (kind == "SALE") "فاتورة بيع جديدة" else "فاتورة شراء جديدة"
     val unitPriceLabel = if (kind == "SALE") "سعر البيع للوحدة" else "كلفة الشراء للوحدة"
 
@@ -2153,32 +2188,29 @@ private fun InvoiceManagementScreen(
         ) {
             Surface(modifier = Modifier.fillMaxSize(), color = activePalette.background) {
                 BarcodeScannerScreen(
-                    onBarcodeDetected = { value, _ ->
+                    onBarcodeDetected = { value, format ->
                         scope.launch {
                             try {
                                 val product = barcodeRepository.findProductByBarcode(value)
-                                    ?.takeIf { it.isActive }
-                                    ?: throw IllegalArgumentException("لا توجد مادة فعالة مرتبطة بهذا الباركود")
-                                if (draftLines.isNotEmpty() && product.priceCurrencyCode != currencyCode) {
-                                    throw IllegalArgumentException("عملة المادة لا تطابق عملة الفاتورة الحالية. أكمل الفاتورة أو ابدأ فاتورة جديدة بهذه العملة.")
+                                if (product == null) {
+                                    if (kind == "PURCHASE") {
+                                        unknownBarcodeValue = value.trim()
+                                        unknownBarcodeFormat = format
+                                        showUnknownBarcodeDialog = true
+                                    } else {
+                                        throw IllegalArgumentException(
+                                            "الباركود غير مسجل. ابحث عن المادة يدوياً أو اربطه بها من شاشة المنتجات."
+                                        )
+                                    }
+                                } else {
+                                    if (!product.isActive) {
+                                        throw IllegalArgumentException("الباركود مرتبط بمادة مؤرشفة؛ اختر مادة فعالة أو أعد تفعيلها.")
+                                    }
+                                    selectProductFromBarcode(product)
+                                    message = "تم اختيار " + product.name + "؛ أدخل كمية الاستلام وكلفة هذه الدفعة."
                                 }
-                                if (draftLines.isEmpty() && product.priceCurrencyCode != currencyCode) {
-                                    currencyCode = product.priceCurrencyCode
-                                    exchangeRate = if (product.priceCurrencyCode == "USD") {
-                                        context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
-                                            .getString("usd_syp_rate", "1") ?: "1"
-                                    } else "1"
-                                }
-                                val scannedPrice = if (kind == "SALE") product.salePrice else product.purchaseCost
-                                // Select the scanned item but keep quantity editable before
-                                // the user explicitly adds the line to the invoice draft.
-                                selectedProductId = product.id
-                                selectedUnitName = product.baseUnit
-                                unitPrice = scannedPrice
-                                lineDiscount = "0"
-                                message = "تم اختيار " + product.name + "؛ حدّد الكمية ثم اضغط إضافة إلى الفاتورة."
                             } catch (error: Exception) {
-                                message = error.message ?: "تعذر إضافة المادة من الباركود"
+                                message = error.message ?: "تعذر التعامل مع الباركود"
                             } finally {
                                 showBarcodeScanner = false
                             }
@@ -2188,6 +2220,189 @@ private fun InvoiceManagementScreen(
                 )
             }
         }
+    }
+
+    if (showUnknownBarcodeDialog && kind == "PURCHASE") {
+        AlertDialog(
+            onDismissRequest = { showUnknownBarcodeDialog = false },
+            title = { Text("باركود جديد غير مسجل") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("الرمز المقروء: $unknownBarcodeValue")
+                    Text("اختر الإجراء المناسب. لن تتم إضافة أي كمية إلى المخزون حتى ترحيل فاتورة الشراء.")
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        showUnknownBarcodeDialog = false
+                        showLinkBarcodeDialog = true
+                    }) { Text("ربطه بمنتج موجود") }
+                    TextButton(onClick = {
+                        createBarcodeProductName = ""
+                        createBarcodeProductSku = ""
+                        createBarcodeProductUnit = "قطعة"
+                        createBarcodePurchaseCost = "0"
+                        createBarcodeSalePrice = "0"
+                        showUnknownBarcodeDialog = false
+                        showCreateBarcodeProductDialog = true
+                    }) { Text("إنشاء منتج جديد") }
+                    TextButton(onClick = { showUnknownBarcodeDialog = false }) { Text("إلغاء") }
+                }
+            }
+        )
+    }
+
+    if (showLinkBarcodeDialog && kind == "PURCHASE") {
+        AlertDialog(
+            onDismissRequest = { showLinkBarcodeDialog = false },
+            title = { Text("اختر بطاقة المنتج لربط الباركود") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().height(320.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("الباركود: $unknownBarcodeValue", color = MutedText, fontSize = 12.sp)
+                    if (barcodeLinkCandidates.isEmpty()) {
+                        Text("لا توجد منتجات فعالة مناسبة. يمكنك إنشاء بطاقة جديدة أو إنهاء الفاتورة الحالية.")
+                    } else {
+                        barcodeLinkCandidates.forEach { product ->
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        try {
+                                            barcodeRepository.registerOriginalBarcode(
+                                                productId = product.id,
+                                                value = unknownBarcodeValue,
+                                                format = unknownBarcodeFormat
+                                            )
+                                            selectProductFromBarcode(product)
+                                            message = "تم ربط الباركود بالمادة " + product.name +
+                                                ". أدخل كمية الاستلام وكلفة هذه الدفعة."
+                                            showLinkBarcodeDialog = false
+                                        } catch (error: Exception) {
+                                            message = error.message ?: "تعذر ربط الباركود بالمادة"
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(product.name, color = Ink, fontWeight = FontWeight.Bold)
+                                    Text(
+                                        "المخزون: " + product.stockQuantity + " " + product.baseUnit +
+                                            " — العملة: " + product.priceCurrencyCode,
+                                        color = MutedText,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLinkBarcodeDialog = false }) { Text("إغلاق") }
+            }
+        )
+    }
+
+    if (showCreateBarcodeProductDialog && kind == "PURCHASE") {
+        AlertDialog(
+            onDismissRequest = { if (!isCreatingBarcodeProduct) showCreateBarcodeProductDialog = false },
+            title = { Text("إنشاء بطاقة منتج للباركود الجديد") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().height(360.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text("الباركود: $unknownBarcodeValue", color = MutedText, fontSize = 12.sp)
+                    OutlinedTextField(
+                        value = createBarcodeProductName,
+                        onValueChange = { createBarcodeProductName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("اسم المنتج") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = createBarcodeProductSku,
+                        onValueChange = { createBarcodeProductSku = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("رمز المنتج (اختياري)") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = createBarcodeProductUnit,
+                        onValueChange = { createBarcodeProductUnit = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("وحدة القياس الأساسية") },
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = createBarcodePurchaseCost,
+                        onValueChange = { createBarcodePurchaseCost = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("كلفة شراء الوحدة لهذه الدفعة") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                    OutlinedTextField(
+                        value = createBarcodeSalePrice,
+                        onValueChange = { createBarcodeSalePrice = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("سعر البيع الافتراضي") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                    Text(
+                        "سيُنشأ المنتج برصيد افتتاحي صفر. أدخل كمية الشراء في الفاتورة الحالية ليُضاف المخزون مرة واحدة فقط.",
+                        color = MutedText,
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isCreatingBarcodeProduct && createBarcodeProductName.isNotBlank(),
+                    onClick = {
+                        isCreatingBarcodeProduct = true
+                        scope.launch {
+                            try {
+                                val productId = productRepository.addProduct(
+                                    sku = createBarcodeProductSku,
+                                    name = createBarcodeProductName,
+                                    unit = createBarcodeProductUnit,
+                                    purchaseCost = createBarcodePurchaseCost,
+                                    salePrice = createBarcodeSalePrice,
+                                    openingStock = "0",
+                                    note = "تم إنشاء بطاقة المنتج من استلام باركود $unknownBarcodeValue",
+                                    priceCurrencyCode = currencyCode,
+                                    openingExchangeRate = exchangeRate,
+                                    initialBarcode = unknownBarcodeValue,
+                                    initialBarcodeFormat = unknownBarcodeFormat
+                                )
+                                val createdProduct = database.productDao().findById(productId)
+                                    ?: error("تم إنشاء المنتج ولكن تعذر استرجاع بطاقته")
+                                selectProductFromBarcode(createdProduct)
+                                message = "تم إنشاء بطاقة " + createdProduct.name +
+                                    " وربط الباركود بها برصيد افتتاحي صفر. أدخل كمية الاستلام ثم أضفها للفاتورة."
+                                showCreateBarcodeProductDialog = false
+                            } catch (error: Exception) {
+                                message = error.message ?: "تعذر إنشاء بطاقة المنتج"
+                            } finally {
+                                isCreatingBarcodeProduct = false
+                            }
+                        }
+                    }
+                ) { Text(if (isCreatingBarcodeProduct) "جارٍ الإنشاء..." else "إنشاء وربط الباركود") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isCreatingBarcodeProduct,
+                    onClick = { showCreateBarcodeProductDialog = false }
+                ) { Text("إلغاء") }
+            }
+        )
     }
 }
 

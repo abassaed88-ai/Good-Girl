@@ -74,6 +74,73 @@ class ProductBarcodeRepositoryIntegrationTest {
         }
     }
 
+
+    @Test
+    fun createsNewProductAndUnknownBarcodeAtomicallyWithZeroOpeningStock() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val productId = ProductRepository(database).addProduct(
+                sku = "BARCODE-NEW-001",
+                name = "منتج جديد من الاستلام",
+                unit = "قطعة",
+                purchaseCost = "7",
+                salePrice = "12",
+                openingStock = "0",
+                note = "إنشاء عبر باركود",
+                initialBarcode = "4006381333931",
+                initialBarcodeFormat = "EAN_13"
+            )
+
+            val product = database.productDao().findById(productId)
+            assertEquals("0", product?.stockQuantity)
+            assertEquals("7", product?.purchaseCost)
+            assertEquals(productId, ProductBarcodeRepository(database)
+                .findProductByBarcode("4006381333931")?.id)
+            assertEquals(1, database.productBarcodeDao().getAll().size)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun duplicateBarcodePreventsCreatingSecondProduct() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            products.addProduct(
+                sku = "BARCODE-NEW-002",
+                name = "المنتج الأول",
+                unit = "قطعة",
+                purchaseCost = "1",
+                salePrice = "2",
+                openingStock = "0",
+                note = "اختبار",
+                initialBarcode = "4006381333931",
+                initialBarcodeFormat = "EAN_13"
+            )
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    products.addProduct(
+                        sku = "BARCODE-NEW-003",
+                        name = "المنتج المكرر",
+                        unit = "قطعة",
+                        purchaseCost = "1",
+                        salePrice = "2",
+                        openingStock = "0",
+                        note = "اختبار",
+                        initialBarcode = "4006381333931",
+                        initialBarcodeFormat = "EAN_13"
+                    )
+                }
+            }
+            assertEquals(1, database.productDao().getAll().size)
+            assertEquals(1, database.productBarcodeDao().getAll().size)
+        } finally {
+            database.close()
+        }
+    }
+
     private fun newInMemoryDatabase(): AccountingDatabase {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         return Room.inMemoryDatabaseBuilder(context, AccountingDatabase::class.java)

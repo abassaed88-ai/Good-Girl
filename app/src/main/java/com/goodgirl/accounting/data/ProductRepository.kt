@@ -10,6 +10,8 @@ import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.data.local.StockCostBaselineEntity
 import com.goodgirl.accounting.domain.ProductInputRules
+import com.goodgirl.accounting.domain.BarcodeInputRules
+import com.goodgirl.accounting.data.local.ProductBarcodeEntity
 import com.goodgirl.accounting.domain.JournalEntryRules
 import com.goodgirl.accounting.domain.JournalLineDraft
 import kotlinx.coroutines.flow.Flow
@@ -31,7 +33,9 @@ class ProductRepository(private val database: AccountingDatabase) {
         priceCurrencyCode: String = "SYP",
         categoryId: String? = null,
         lowStockThreshold: String = "0",
-        openingExchangeRate: String = "1"
+        openingExchangeRate: String = "1",
+        initialBarcode: String? = null,
+        initialBarcodeFormat: String? = null
     ): String {
         val now = System.currentTimeMillis()
         val productId = UUID.randomUUID().toString()
@@ -43,10 +47,23 @@ class ProductRepository(private val database: AccountingDatabase) {
         val cleanThreshold = ProductInputRules.normalizeNonNegativeDecimal(lowStockThreshold, "حد تنبيه المخزون")
         val cleanSku = sku.trim()
         val cleanCurrency = ProductInputRules.normalizeCurrencyCode(priceCurrencyCode)
+        val cleanInitialBarcode = initialBarcode?.trim()?.takeIf { it.isNotEmpty() }
+        val cleanInitialBarcodeFormat = initialBarcodeFormat?.trim()?.takeIf { it.isNotEmpty() }
+        require((cleanInitialBarcode == null) == (cleanInitialBarcodeFormat == null)) {
+            "يجب تحديد رقم الباركود وصيغته معاً"
+        }
+        val normalizedInitialBarcode = cleanInitialBarcode?.let {
+            BarcodeInputRules.normalize(it, cleanInitialBarcodeFormat!!)
+        }
 
         return database.withTransaction {
             if (categoryId != null) {
                 require(database.categoryDao().findById(categoryId) != null) { "التصنيف المحدد غير موجود" }
+            }
+            if (normalizedInitialBarcode != null) {
+                require(database.productBarcodeDao().findByValue(normalizedInitialBarcode) == null) {
+                    "رقم الباركود مستخدم لمنتج آخر"
+                }
             }
             database.productDao().insert(
                 ProductEntity(
@@ -65,6 +82,19 @@ class ProductRepository(private val database: AccountingDatabase) {
                     updatedAt = now
                 )
             )
+
+            if (normalizedInitialBarcode != null) {
+                database.productBarcodeDao().insert(
+                    ProductBarcodeEntity(
+                        id = UUID.randomUUID().toString(),
+                        productId = productId,
+                        barcodeValue = normalizedInitialBarcode,
+                        format = cleanInitialBarcodeFormat!!,
+                        origin = "ORIGINAL",
+                        createdAt = now
+                    )
+                )
+            }
 
             database.stockCostBaselineDao().insert(
                 StockCostBaselineEntity(
