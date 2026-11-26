@@ -15,7 +15,6 @@ class StockRepository(private val database: AccountingDatabase) {
     suspend fun reconcileStocktake(
         productId: String,
         countedQuantity: String,
-        unitCost: String,
         note: String,
         exchangeRateSnapshot: String = "1"
     ): StocktakeResult {
@@ -84,7 +83,6 @@ class StockRepository(private val database: AccountingDatabase) {
     suspend fun adjustStock(
         productId: String,
         quantityDelta: String,
-        unitCost: String,
         note: String,
         exchangeRateSnapshot: String = "1"
     ): String {
