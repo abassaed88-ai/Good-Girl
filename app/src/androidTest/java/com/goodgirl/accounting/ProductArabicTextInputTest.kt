@@ -46,7 +46,9 @@ class ProductArabicTextInputTest {
         field: SemanticsNodeInteraction,
         expected: String
     ) {
-        var typed = ""
+        var typed = field.fetchSemanticsNode()
+            .config[SemanticsProperties.EditableText]
+            .text
         expected.forEach { character ->
             typed += character
             field.performTextInput(character.toString())
