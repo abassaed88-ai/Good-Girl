@@ -1,11 +1,11 @@
 # Historical stock costing and correction design
 
-Status: core historical replay and selected correction paths are implemented on the development branch and covered by unit/Android integration tests. Room v9 persists trusted per-product baselines and separate movement recording timestamps, with conservative reconstruction/fallback. Backdated invoices replay weighted-average cost; append-only audit items retain old/new values; sale-cost changes post balanced inventory/COGS adjustments; manual and stocktake losses update the effective expense and post balanced inventory/expense differences while preserving the original source journal. The profitability report uses the latest effective sale-line cost, and encrypted-backup validation understands the new non-invoice loss audit records. The complete test matrix and all legacy-data edge cases are not yet closed.
+Status: historical weighted-average replay remains available for legacy audit interpretation and selected stock-loss corrections, but **new purchase invoice posting no longer invokes this replay**. New purchases set the current product cost to the latest incoming unit cost, revalue the remaining on-hand stock through a separate source-linked journal dated at recording time, and preserve already-posted sale snapshots and COGS journals. Existing legacy audit rows remain intact for historical continuity; the full legacy-data migration and exceptional backdated/closed-period cases still require validation.
 
 ## 1. Accounting invariants
 
 1. Posted invoice snapshots are immutable. Never rewrite an existing `InvoiceLineEntity.unitCostSnapshot`, line price, invoice total, or original journal lines after posting.
-2. A backdated purchase or sale can change the effective weighted-average cost of later stock-out movements. Record the difference explicitly and preserve both the previous and recalculated amounts.
+2. Legacy historical-replay records may explain cost changes created by older app versions. New purchase invoices must not use this replay to alter an already-posted sale or its cost-of-goods-sold journal. A purchase's current-stock revaluation is instead recorded at the time it is actually entered.
 3. The product's current on-hand quantity and average cost must equal a replay of its trusted baseline plus every movement recorded after that baseline.
 4. Every journal correction is balanced, currency-specific, source-linked, idempotent, and written in the same Room transaction as its audit records and inventory update.
 5. SYP and USD are replayed and posted separately. A currency label correction is an explicit boundary; values are not implicitly converted.
@@ -36,7 +36,7 @@ For existing v8 rows, initialize `recordedAt` from the linked invoice's `created
 
 ## 4. Replay and event handling
 
-The replay starts with the immutable baseline and processes only movements recorded after it. It uses decimal arithmetic and weighted-average costing.
+The legacy replay starts with the immutable baseline and processes only movements recorded after it. It uses decimal arithmetic and weighted-average costing. This legacy algorithm is no longer called by the new purchase-posting path.
 
 - Positive purchases and positive manual/stocktake gains add quantity at their saved incoming unit cost.
 - Sale movements and negative manual/stocktake adjustments consume quantity at the weighted-average cost at that point in the timeline.
