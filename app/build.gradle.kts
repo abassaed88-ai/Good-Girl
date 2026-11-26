@@ -18,9 +18,34 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // CI can supply a persistent signing key through environment variables.
+    // Never store the keystore or its passwords in the repository.
+    val signingStoreFile = System.getenv("GG_SIGNING_STORE_FILE")
+    val signingStorePassword = System.getenv("GG_SIGNING_STORE_PASSWORD")
+    val signingKeyAlias = System.getenv("GG_SIGNING_KEY_ALIAS")
+    val signingKeyPassword = System.getenv("GG_SIGNING_KEY_PASSWORD")
+    val persistentSigningAvailable = !signingStoreFile.isNullOrBlank() &&
+        !signingStorePassword.isNullOrBlank() &&
+        !signingKeyAlias.isNullOrBlank() &&
+        !signingKeyPassword.isNullOrBlank()
+
+    if (persistentSigningAvailable) {
+        signingConfigs {
+            create("goodGirlPersistent") {
+                storeFile = file(signingStoreFile!!)
+                storePassword = signingStorePassword
+                keyAlias = signingKeyAlias
+                keyPassword = signingKeyPassword
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            if (persistentSigningAvailable) {
+                signingConfig = signingConfigs.getByName("goodGirlPersistent")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
