@@ -56,6 +56,13 @@ private data class HistoricalStockLossCorrection(
     val ledgerEntry: LedgerEntryEntity
 )
 
+private data class PurchaseCostRevaluationAccumulator(
+    val originalProduct: ProductEntity,
+    var incomingQuantity: BigDecimal = BigDecimal.ZERO,
+    var incomingExtendedCost: BigDecimal = BigDecimal.ZERO,
+    var latestIncomingUnitCost: BigDecimal? = null
+)
+
 class InvoiceRepository(private val database: AccountingDatabase) {
     fun observeInvoices(): Flow<List<InvoiceEntity>> = database.invoiceDao().observeAll()
 
@@ -176,6 +183,7 @@ class InvoiceRepository(private val database: AccountingDatabase) {
         var lineDiscountTotal = BigDecimal.ZERO
         val storedLines = mutableListOf<InvoiceLineEntity>()
         val productStateBeforePosting = linkedMapOf<String, ProductEntity>()
+        val purchaseCostRevaluations = linkedMapOf<String, PurchaseCostRevaluationAccumulator>()
 
         database.withTransaction {
             if (partyId != null) {
@@ -270,17 +278,25 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                     )
                 } else {
                     val incomingBaseCost = purchaseUnitCosts[lineIndex]
-                    val newStock = currentStock.add(baseQuantity).stripTrailingZeros().toPlainString()
-                    val newAverageCost = InvoicePostingRules.calculateWeightedAverageCost(
-                        currentQuantity = product.stockQuantity,
-                        currentUnitCost = product.purchaseCost,
-                        incomingQuantity = baseQuantity.stripTrailingZeros().toPlainString(),
-                        incomingUnitCost = incomingBaseCost
+                    val incomingUnitCost = incomingBaseCost.toBigDecimal()
+                    val accumulator = purchaseCostRevaluations.getOrPut(product.id) {
+                        PurchaseCostRevaluationAccumulator(
+                            originalProduct = productStateBeforePosting.getValue(product.id)
+                        )
+                    }
+                    accumulator.incomingQuantity = accumulator.incomingQuantity.add(baseQuantity)
+                    accumulator.incomingExtendedCost = accumulator.incomingExtendedCost.add(
+                        baseQuantity.multiply(incomingUnitCost)
                     )
+                    // For repeated product lines, the last invoice line is
+                    // treated as the latest incoming purchase cost.
+                    accumulator.latestIncomingUnitCost = incomingUnitCost
+
+                    val newStock = currentStock.add(baseQuantity).stripTrailingZeros().toPlainString()
                     database.productDao().update(
                         product.copy(
                             stockQuantity = newStock,
-                            purchaseCost = newAverageCost,
+                            purchaseCost = incomingUnitCost.stripTrailingZeros().toPlainString(),
                             updatedAt = now
                         )
                     )
@@ -320,6 +336,33 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 )
             }
 
+            val inventoryRevaluations = purchaseCostRevaluations.mapNotNull { (productId, accumulator) ->
+                val original = accumulator.originalProduct
+                val previousQuantity = original.stockQuantity.toBigDecimal()
+                val previousUnitCost = original.purchaseCost.toBigDecimal()
+                val latestUnitCost = accumulator.latestIncomingUnitCost
+                    ?: throw IllegalStateException("لم تُحدد أحدث تكلفة شراء للمادة $productId")
+                val targetCarryingValue = previousQuantity.add(accumulator.incomingQuantity)
+                    .multiply(latestUnitCost)
+                val preRevaluationValue = previousQuantity.multiply(previousUnitCost)
+                    .add(accumulator.incomingExtendedCost)
+                val valueDelta = targetCarryingValue.subtract(preRevaluationValue)
+                if (valueDelta.compareTo(BigDecimal.ZERO) == 0) {
+                    null
+                } else {
+                    InventoryRevaluationAdjustment(
+                        productId = productId,
+                        productName = original.name,
+                        previousStockQuantity = previousQuantity.stripTrailingZeros().toPlainString(),
+                        previousUnitCost = previousUnitCost.stripTrailingZeros().toPlainString(),
+                        incomingQuantity = accumulator.incomingQuantity.stripTrailingZeros().toPlainString(),
+                        incomingExtendedCost = accumulator.incomingExtendedCost.stripTrailingZeros().toPlainString(),
+                        newUnitCost = latestUnitCost.stripTrailingZeros().toPlainString(),
+                        valueDelta = valueDelta.stripTrailingZeros().toPlainString()
+                    )
+                }
+            }
+
             require(cleanInvoiceDiscount <= subtotal.subtract(lineDiscountTotal)) {
                 "خصم الفاتورة أكبر من قيمة الفاتورة بعد خصومات المواد"
             }
@@ -352,7 +395,12 @@ class InvoiceRepository(private val database: AccountingDatabase) {
             database.invoiceDao().insertLines(storedLines)
             val postedInvoice = database.invoiceDao().findById(invoiceId)
                 ?: error("تعذر استرجاع الفاتورة بعد ترحيلها")
-            InvoiceJournalPoster.post(database, postedInvoice, storedLines)
+            InvoiceJournalPoster.post(
+                database = database,
+                invoice = postedInvoice,
+                lines = storedLines,
+                inventoryRevaluations = inventoryRevaluations
+            )
 
             if (amounts.remaining > BigDecimal.ZERO) {
                 database.ledgerDao().insert(
@@ -387,13 +435,6 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 )
             }
 
-            reconcileHistoricalStockCosts(
-                triggerType = cleanKind,
-                triggerSourceId = invoiceId,
-                reason = "إعادة احتساب كلفة المخزون بسبب الفاتورة $cleanNumber",
-                originalProducts = productStateBeforePosting,
-                now = now
-            )
         }
 
         val totalDiscount = lineDiscountTotal.add(cleanInvoiceDiscount)
