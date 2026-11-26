@@ -66,6 +66,16 @@ internal object InvoiceJournalPoster {
             account("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT"),
             account("SYS-7100", "7100", "خسائر إعادة تقييم المخزون", "EXPENSE", "DEBIT")
         )
+        accounts.forEach { required ->
+            val existingByCode = database.accountDao().findByCode(required.code)
+            require(existingByCode == null || existingByCode.id == required.id) {
+                "رمز الحساب ${required.code} مستخدم لحساب آخر؛ أوقف ترحيل الفاتورة لتجنب قيد غير مكتمل"
+            }
+            val existingById = database.accountDao().findById(required.id)
+            require(existingById == null || existingById.code == required.code) {
+                "معرّف الحساب النظامي ${required.id} مرتبط برمز مختلف"
+            }
+        }
         database.accountDao().insertIgnore(accounts)
 
         val total = invoice.total.toBigDecimal()
