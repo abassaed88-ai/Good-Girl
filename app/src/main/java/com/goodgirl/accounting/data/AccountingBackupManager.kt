@@ -22,6 +22,7 @@ import com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
 import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
+import com.goodgirl.accounting.data.local.LatestPurchaseCostPolicyMigrator
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -339,6 +340,16 @@ class AccountingBackupManager(
             database.exchangeRateHistoryDao().insertAll(exchangeRateHistory)
             database.exchangeRateAuditDao().insertAll(exchangeRateAudits)
             database.exchangeRateCorrectionItemDao().insertAll(exchangeRateCorrectionItems)
+
+            // Legacy backups were captured before latest-purchase-cost policy.
+            // Convert them inside the same atomic restore transaction so the
+            // restored product references and inventory valuation journal agree.
+            if (backupDatabaseVersion < ACCOUNTING_DATABASE_VERSION) {
+                LatestPurchaseCostPolicyMigrator.migrate(
+                    database.openHelper.writableDatabase,
+                    System.currentTimeMillis()
+                )
+            }
         }
 
         context.getSharedPreferences("good_girl_settings", Context.MODE_PRIVATE).edit()
