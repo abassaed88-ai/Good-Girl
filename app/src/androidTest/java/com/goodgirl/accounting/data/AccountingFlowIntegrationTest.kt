@@ -618,7 +618,7 @@ class AccountingFlowIntegrationTest {
             val product = database.productDao().getAll().single()
             val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
             val saleAt = baselineAt + 3_000L
-            val backdatedPurchaseAt = baselineAt - 1_000L
+            val backdatedPurchaseAt = baselineAt + 2_000L
 
             val sale = invoices.postInvoice(
                 invoiceNumber = "BACKDATE-SALE-1",
