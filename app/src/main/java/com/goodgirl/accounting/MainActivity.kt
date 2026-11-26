@@ -4297,6 +4297,7 @@ private fun ProductManagementScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .testTag("product-management-screen")
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)

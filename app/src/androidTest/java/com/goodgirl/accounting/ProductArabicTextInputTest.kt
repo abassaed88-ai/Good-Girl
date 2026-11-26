@@ -23,9 +23,10 @@ class ProductArabicTextInputTest {
     @Test
     fun arabicLettersRenderImmediatelyInProductNameUnitAndNoteFields() {
         composeRule.onNodeWithTag("dashboard-products")
+            .performScrollTo()
             .performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("إضافة منتج جديد").fetchSemanticsNode()
+        composeRule.onNodeWithTag("product-management-screen").fetchSemanticsNode()
 
         assertArabicCharactersAppearOneByOne(
             composeRule.onNodeWithTag("product-name").performScrollTo(),
