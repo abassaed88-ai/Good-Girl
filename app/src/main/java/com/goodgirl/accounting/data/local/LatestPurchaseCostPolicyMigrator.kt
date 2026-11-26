@@ -73,15 +73,15 @@ internal object LatestPurchaseCostPolicyMigrator {
                 return@forEach
             }
 
-            val inventoryAccount = database.query(
-                "SELECT accountType, normalSide, isActive FROM accounts WHERE id = 'SYS-1200' LIMIT 1"
-            ).use { cursor ->
-                require(cursor.moveToFirst()) { "حساب المخزون النظامي غير موجود أثناء ترقية تكلفة الشراء" }
-                require(cursor.getString(0) == "ASSET" && cursor.getString(1) == "DEBIT" && cursor.getInt(2) == 1) {
-                    "حساب المخزون النظامي غير صالح لإعادة التقييم"
-                }
-                "SYS-1200"
-            }
+            val inventoryAccount = ensureSystemAccount(
+                database = database,
+                id = "SYS-1200",
+                preferredCode = "1200",
+                name = "المخزون",
+                accountType = "ASSET",
+                normalSide = "DEBIT",
+                createdAt = appliedAt
+            )
 
             val positive = stockValueDelta.signum() > 0
             val revaluationAccountId = ensureRevaluationAccount(
@@ -199,14 +199,35 @@ internal object LatestPurchaseCostPolicyMigrator {
         accountType: String,
         normalSide: String,
         createdAt: Long
+    ): String = ensureSystemAccount(
+        database = database,
+        id = id,
+        preferredCode = preferredCode,
+        name = name,
+        accountType = accountType,
+        normalSide = normalSide,
+        createdAt = createdAt
+    )
+
+    private fun ensureSystemAccount(
+        database: SupportSQLiteDatabase,
+        id: String,
+        preferredCode: String,
+        name: String,
+        accountType: String,
+        normalSide: String,
+        createdAt: Long
     ): String {
         database.query(
             "SELECT accountType, normalSide, isActive FROM accounts WHERE id = ? LIMIT 1",
             arrayOf(id)
         ).use { cursor ->
             if (cursor.moveToFirst()) {
-                require(cursor.getString(0) == accountType && cursor.getString(1) == normalSide && cursor.getInt(2) == 1) {
-                    "حساب إعادة تقييم المخزون النظامي غير صالح"
+                require(cursor.getString(0) == accountType &&
+                    cursor.getString(1) == normalSide &&
+                    cursor.getInt(2) == 1
+                ) {
+                    "الحساب النظامي غير صالح أثناء ترقية تكلفة الشراء"
                 }
                 return id
             }
@@ -222,7 +243,7 @@ internal object LatestPurchaseCostPolicyMigrator {
             if (!occupied) break
             code = preferredCode + suffix
             suffix += 1
-            require(suffix < 10_000) { "تعذر تخصيص رمز حساب لإعادة تقييم المخزون" }
+            require(suffix < 10_000) { "تعذر تخصيص رمز حساب أثناء ترقية تكلفة الشراء" }
         }
 
         database.execSQL(
