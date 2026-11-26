@@ -286,6 +286,77 @@ class AccountingFlowIntegrationTest {
     }
 
     @Test
+    fun revaluationUsesExactInvoiceValueWhenUnitCostRequiresRounding() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+            products.addProduct(
+                sku = "FLOW-ROUND-001",
+                name = "مادة تكلفة كسرية",
+                unit = "قطعة",
+                purchaseCost = "1",
+                salePrice = "5",
+                openingStock = "1",
+                note = "اختبار تقريب تكلفة الوحدة"
+            )
+            val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
+            val purchase = invoices.postInvoice(
+                invoiceNumber = "FLOW-ROUND-PURCHASE",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(
+                    InvoiceLineDraft(product.id, "3", "3.333333333333333333")
+                ),
+                paidAmount = "9.999999999999999999",
+                issuedAt = baselineAt + 1_000L
+            )
+
+            val current = database.productDao().findById(product.id)!!
+            assertDecimal("4", current.stockQuantity)
+            assertDecimal("3.33333333", current.purchaseCost)
+
+            val invoice = database.invoiceDao().findById(purchase.invoiceId)!!
+            val purchaseJournal = database.journalEntryDao()
+                .findBySource("PURCHASE_INVOICE", invoice.id)!!
+            val purchaseLines = database.journalLineDao().getForEntry(purchaseJournal.id)
+            val revaluation = database.journalEntryDao().findBySource(
+                "PURCHASE_INVENTORY_REVALUATION",
+                invoice.id
+            )!!
+            val revaluationLines = database.journalLineDao().getForEntry(revaluation.id)
+            val accounts = database.accountDao().getAll().associateBy { it.id }
+            assertDecimal(
+                "9.999999999999999999",
+                purchaseLines.single { accounts[it.accountId]!!.code == "1200" }.debit
+            )
+            assertDecimal(
+                "2.333333320000000001",
+                revaluationLines.single { accounts[it.accountId]!!.code == "1200" }.debit
+            )
+
+            val statements = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 0L,
+                periodEndInclusive = Long.MAX_VALUE,
+                asOfInclusive = Long.MAX_VALUE,
+                accounts = database.accountDao().getAll(),
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll()
+            )
+            val balanceSheet = statements.balanceSheets.single { it.currencyCode == "SYP" }
+            assertDecimal(
+                "13.33333332",
+                balanceSheet.assets.single { it.accountCode == "1200" }.amount.toPlainString()
+            )
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun purchaseAtZeroStockUpdatesCurrentCostWithoutRevaluationGainOrLoss() = runBlocking {
         val database = newInMemoryDatabase()
         try {
