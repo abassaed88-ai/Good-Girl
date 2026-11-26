@@ -171,7 +171,7 @@ class StockAdjustmentJournalIntegrationTest {
     }
 
     @Test
-    fun backdatedPurchaseRevaluesManualAndStocktakeLossesWithBalancedExpenseAdjustments() = runBlocking {
+    fun newPurchaseRevaluesOnlyRemainingStockAndPreservesPriorManualLosses() = runBlocking {
         val database = newInMemoryDatabase()
         try {
             val products = ProductRepository(database)
@@ -184,7 +184,7 @@ class StockAdjustmentJournalIntegrationTest {
                 purchaseCost = "10",
                 salePrice = "15",
                 openingStock = "10",
-                note = "اختبار إعادة احتساب خسائر المخزون"
+                note = "اختبار حماية تكلفة خسائر المخزون السابقة"
             )
             val product = database.productDao().getAll().single()
             val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
@@ -203,22 +203,19 @@ class StockAdjustmentJournalIntegrationTest {
             )
             assertEquals("-1", stocktake.adjustmentDelta)
 
-            val movementsBeforePurchase = database.stockMovementDao().getAll()
-            val manualLossMovement = movementsBeforePurchase.single {
-                it.sourceType == "MANUAL_ADJUSTMENT"
-            }
-            val stocktakeLossMovement = movementsBeforePurchase.single {
-                it.sourceType == "STOCKTAKE_ADJUSTMENT"
-            }
-            assertDecimal("20", database.ledgerDao().getAll().single {
-                it.sourceType == "MANUAL_STOCK_LOSS"
-            }.amount)
-            assertDecimal("10", database.ledgerDao().getAll().single {
-                it.sourceType == "STOCKTAKE_LOSS"
-            }.amount)
+            val lossLedgerBefore = database.ledgerDao().getAll()
+                .filter { it.sourceType == "MANUAL_STOCK_LOSS" || it.sourceType == "STOCKTAKE_LOSS" }
+                .sortedBy { it.sourceType }
+            assertEquals(2, lossLedgerBefore.size)
+            assertDecimal("20", lossLedgerBefore.single { it.sourceType == "MANUAL_STOCK_LOSS" }.amount)
+            assertDecimal("10", lossLedgerBefore.single { it.sourceType == "STOCKTAKE_LOSS" }.amount)
 
-            // This purchase is saved later but occurred before both stock losses.
-            invoices.postInvoice(
+            val lossJournalsBefore = database.journalEntryDao().getAll()
+                .filter { it.sourceType == "MANUAL_STOCK_LOSS" || it.sourceType == "STOCKTAKE_LOSS" }
+                .associate { it.sourceType to database.journalLineDao().getForEntry(it.id) }
+
+            // The invoice is entered later with an earlier issue date.
+            val purchase = invoices.postInvoice(
                 invoiceNumber = "HIST-LOSS-PURCHASE-1",
                 kind = "PURCHASE",
                 partyId = null,
@@ -231,60 +228,56 @@ class StockAdjustmentJournalIntegrationTest {
 
             val currentProduct = database.productDao().findById(product.id)!!
             assertDecimal("17", currentProduct.stockQuantity)
-            assertDecimal("15", currentProduct.purchaseCost)
+            assertDecimal("20", currentProduct.purchaseCost)
 
-            val audits = database.stockCostRecalculationAuditDao().getAll()
-            val items = database.stockCostRecalculationItemDao().getAll()
-            assertEquals(1, audits.size)
-            assertEquals(2, items.size)
-            assertEquals(2, audits.single().affectedStockOutCount)
-            items.forEach { item ->
-                assertEquals("", item.invoiceId)
-                assertDecimal("15", item.newUnitCost)
-            }
-            val manualItem = items.single { it.movementId == manualLossMovement.id }
-            val stocktakeItem = items.single { it.movementId == stocktakeLossMovement.id }
-            assertDecimal("20", manualItem.oldExtendedCost)
-            assertDecimal("30", manualItem.newExtendedCost)
-            assertDecimal("10", manualItem.oldUnitCost)
-            assertDecimal("10", stocktakeItem.oldExtendedCost)
-            assertDecimal("15", stocktakeItem.newExtendedCost)
+            // The purchase reprices only the quantity still on hand. It must
+            // not generate new cost-replay audit rows for old stock losses.
+            assertTrue(database.stockCostRecalculationAuditDao().getAll().isEmpty())
+            assertTrue(database.stockCostRecalculationItemDao().getAll().isEmpty())
+            assertTrue(
+                database.journalEntryDao().getAll().none {
+                    it.sourceType == "STOCK_COST_RECALCULATION"
+                }
+            )
+            val lossLedgerAfter = database.ledgerDao().getAll()
+                .filter { it.sourceType == "MANUAL_STOCK_LOSS" || it.sourceType == "STOCKTAKE_LOSS" }
+                .sortedBy { it.sourceType }
+            assertEquals(lossLedgerBefore, lossLedgerAfter)
+            val lossJournalsAfter = database.journalEntryDao().getAll()
+                .filter { it.sourceType == "MANUAL_STOCK_LOSS" || it.sourceType == "STOCKTAKE_LOSS" }
+                .associate { it.sourceType to database.journalLineDao().getForEntry(it.id) }
+            assertEquals(lossJournalsBefore, lossJournalsAfter)
 
-            val ledger = database.ledgerDao().getAll()
-            assertDecimal("30", ledger.single { it.sourceType == "MANUAL_STOCK_LOSS" }.amount)
-            assertDecimal("15", ledger.single { it.sourceType == "STOCKTAKE_LOSS" }.amount)
-
-            val adjustmentEntries = database.journalEntryDao().getAll().filter {
-                it.sourceType == "STOCK_COST_RECALCULATION"
-            }
-            assertEquals(2, adjustmentEntries.size)
+            val purchaseInvoice = database.invoiceDao().findById(purchase.invoiceId)!!
+            val revaluation = database.journalEntryDao().findBySource(
+                "PURCHASE_INVENTORY_REVALUATION",
+                purchase.invoiceId
+            )!!
+            assertTrue(revaluation.occurredAt >= purchaseInvoice.createdAt)
+            assertTrue(revaluation.occurredAt > purchaseInvoice.issuedAt)
             val accounts = database.accountDao().getAll().associateBy { it.id }
-            adjustmentEntries.forEach { entry ->
-                assertEquals("SYP", entry.currencyCode)
-                val lines = database.journalLineDao().getForEntry(entry.id)
-                assertEquals(2, lines.size)
-                val debit = lines.fold(BigDecimal.ZERO) { sum, line -> sum + line.debit.toBigDecimal() }
-                val credit = lines.fold(BigDecimal.ZERO) { sum, line -> sum + line.credit.toBigDecimal() }
-                assertEquals(0, debit.compareTo(credit))
-                assertEquals("7000", accounts.getValue(lines.single { it.debit != "0" }.accountId).code)
-                assertEquals("1200", accounts.getValue(lines.single { it.credit != "0" }.accountId).code)
-            }
-            val totalLossAdjustments = adjustmentEntries.flatMap {
-                database.journalLineDao().getForEntry(it.id)
-            }.filter { accounts.getValue(it.accountId).code == "7000" }
-                .fold(BigDecimal.ZERO) { sum, line -> sum + line.debit.toBigDecimal() }
-            assertDecimal("15", totalLossAdjustments.toPlainString())
+            val revaluationLines = database.journalLineDao().getForEntry(revaluation.id)
+            assertDecimal(
+                "70",
+                revaluationLines.single { accounts[it.accountId]!!.code == "1200" }.debit
+            )
+            assertDecimal(
+                "70",
+                revaluationLines.single { accounts[it.accountId]!!.code == "4100" }.credit
+            )
+
             val report = FinancialReportCalculator.calculate(
                 fromInclusive = 0L,
                 toInclusive = Long.MAX_VALUE,
                 invoices = database.invoiceDao().getAllInvoices(),
                 lines = database.invoiceDao().getAllLines(),
-                ledgerEntries = ledger
+                ledgerEntries = database.ledgerDao().getAll()
             )
             val summary = report.currencySummaries.single { it.currencyCode == "SYP" }
             assertDecimal("200", summary.purchases.toPlainString())
-            assertDecimal("45", summary.expenses.toPlainString())
-            assertDecimal("-45", summary.netProfit.toPlainString())
+            assertDecimal("70", summary.otherIncome.toPlainString())
+            assertDecimal("30", summary.expenses.toPlainString())
+            assertDecimal("40", summary.netProfit.toPlainString())
 
             val statements = com.goodgirl.accounting.domain.GeneralLedgerFinancialStatementsCalculator.calculate(
                 periodStartInclusive = 0L,
@@ -295,7 +288,8 @@ class StockAdjustmentJournalIntegrationTest {
                 lines = database.journalLineDao().getAll()
             )
             val income = statements.incomeStatements.single { it.currencyCode == "SYP" }
-            assertDecimal("45", income.expenses.single { it.accountCode == "7000" }.amount.toPlainString())
+            assertDecimal("70", income.revenues.single { it.accountCode == "4100" }.amount.toPlainString())
+            assertDecimal("30", income.expenses.single { it.accountCode == "7000" }.amount.toPlainString())
             assertDecimal(summary.netProfit.toPlainString(), income.netIncome.toPlainString())
         } finally {
             database.close()
