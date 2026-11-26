@@ -255,10 +255,7 @@ class FinancialReportJournalReconciliationIntegrationTest {
             )!!
             val backdatedInvoice = database.invoiceDao().getAllInvoices()
                 .single { it.invoiceNumber == "HIST-COST-PURCHASE-1" }
-            assertMoney(
-                backdatedInvoice.createdAt.toString(),
-                revaluation.occurredAt.toBigDecimal()
-            )
+            assertEquals(backdatedInvoice.createdAt, revaluation.occurredAt)
 
             val report = FinancialReportCalculator.calculate(
                 fromInclusive = 0L,
