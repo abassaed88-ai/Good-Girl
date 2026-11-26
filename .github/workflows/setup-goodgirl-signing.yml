@@ -1,7 +1,9 @@
 name: Initialize Good Girl signing key
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - hardening/inventory-accounting-20261123
 
 permissions:
   contents: write
@@ -13,6 +15,7 @@ concurrency:
 jobs:
   initialize:
     name: Create and encrypt the permanent app signing key
+    if: contains(github.event.head_commit.message, '[initialize-signing-key]')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
