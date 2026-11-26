@@ -1,26 +1,33 @@
 name: Build signed Good Girl release
 
 on:
+  push:
+    branches:
+      - hardening/inventory-accounting-20261123
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: good-girl-signed-release
+  group: good-girl-signed-release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   signed-release:
-    name: Validate and build permanently signed release
-    if: github.ref == 'refs/heads/main'
+    name: Validate and build permanently signed APK
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' &&
+       github.ref == 'refs/heads/hardening/inventory-accounting-20261123' &&
+       contains(github.event.head_commit.message, '[verify-signed-dev]'))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Check out approved main branch
+      - name: Check out the selected protected build branch
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref }}
 
       - name: Confirm encrypted signing key is available
         shell: bash
@@ -37,12 +44,12 @@ jobs:
             exit 1
           fi
           test -s .github/signing/goodgirl-release.keystore.gpg || {
-            echo "::error::The encrypted signing keystore is missing from main."
+            echo "::error::The encrypted signing keystore is missing from the selected branch."
             exit 1
           }
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -85,9 +92,8 @@ jobs:
         run: |
           set -euo pipefail
           KEYSTORE="$RUNNER_TEMP/goodgirl-release.keystore"
-          gpg --batch --yes --quiet --pinentry-mode loopback \
-            --passphrase "$GG_SIGNING_MASTER_PASSWORD" \
-            --decrypt --output "$KEYSTORE" .github/signing/goodgirl-release.keystore.gpg
+          printf '%s' "$GG_SIGNING_MASTER_PASSWORD" | gpg --batch --yes --quiet --pinentry-mode loopback \
+            --passphrase-fd 0 --decrypt --output "$KEYSTORE" .github/signing/goodgirl-release.keystore.gpg
           chmod 600 "$KEYSTORE"
           keytool -list -keystore "$KEYSTORE" -storetype JKS \
             -storepass "$GG_SIGNING_MASTER_PASSWORD" -alias goodgirl-release >/dev/null
@@ -109,9 +115,10 @@ jobs:
           set -euo pipefail
           APK="app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
-          APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}"
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -type f -name apksigner 2>/dev/null | sort -V | tail -n 1)"
           if [ -z "$APKSIGNER" ]; then
-            echo "::error::Android apksigner was not found."
+            echo "::error::Android apksigner was not found under $SDK_ROOT/build-tools."
             exit 1
           fi
 
@@ -130,10 +137,10 @@ jobs:
           fi
           echo "Persistent signing certificate verified: $ACTUAL"
 
-      - name: Upload signed release APK
+      - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: good-girl-signed-release-apk
+          name: ${{ github.ref == 'refs/heads/main' && 'good-girl-signed-release-apk' || 'good-girl-signed-development-apk' }}
           path: app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
           retention-days: 30
