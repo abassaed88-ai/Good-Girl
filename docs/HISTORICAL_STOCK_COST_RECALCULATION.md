@@ -1,6 +1,6 @@
 # Historical stock costing and correction design
 
-Status: partially implemented on the development branch. Room v9 now persists trusted per-product stock-cost baselines and separate movement recording timestamps, with conservative reconstruction/fallback and encrypted-backup preservation. Invoice replay, append-only recalculation audits, adjustment journals, and report integration remain unfinished; this document is not a claim that the full feature is implemented.
+Status: core historical replay and selected correction paths are implemented on the development branch and covered by unit/Android integration tests. Room v9 persists trusted per-product baselines and separate movement recording timestamps, with conservative reconstruction/fallback. Backdated invoices replay weighted-average cost; append-only audit items retain old/new values; sale-cost changes post balanced inventory/COGS adjustments; manual and stocktake losses update the effective expense and post balanced inventory/expense differences while preserving the original source journal. The profitability report uses the latest effective sale-line cost, and encrypted-backup validation understands the new non-invoice loss audit records. The complete test matrix and all legacy-data edge cases are not yet closed.
 
 ## 1. Accounting invariants
 
@@ -64,7 +64,7 @@ For each affected posted sale invoice, group changed lines by invoice and curren
 
 The adjustment journal's `occurredAt` is the original invoice's `issuedAt`, so the invoice profitability report and general-ledger income statement describe the same business period. Its `createdAt` is the actual correction time, and the audit record explains when and why it was changed. Formal period locking is not currently implemented; when period closing is added, this policy must be revisited with an explicit closed-period adjustment policy.
 
-For a negative manual/stocktake movement whose carrying cost changes, preserve the original journal lines and add a balanced adjustment against the original stock-loss expense account (SYS-7000) and inventory (SYS-1200). Its source ledger amount may be updated to the newly effective expense only if the old and new values are recorded in the audit item; the journal correction remains a separate immutable entry.
+For a negative manual/stocktake movement whose carrying cost changes, the implementation preserves the original journal lines, updates the source expense ledger row to the newly effective amount, and adds a balanced source-keyed adjustment against stock-loss expense (SYS-7000) and inventory (SYS-1200). The append-only audit item records both old and new amounts. The correction is transactional and is rejected if the original source expense/journal is missing, the source currency does not match, or the movement date belongs to a closed period. A zero-value legacy loss that never created a source ledger/journal is rejected because its original exchange-rate snapshot is unavailable.
 
 New sale invoices use the replayed effective cost as their initial immutable line snapshot before the original invoice journal is posted. They must not receive a second adjustment for their own initial cost.
 
@@ -76,21 +76,22 @@ One `Room.withTransaction` must contain: validation, invoice/movement insertion,
 
 The invoice/product profitability report must use the latest effective cost for each sale line while retaining the original line snapshot. General-ledger statements consume the adjustment journals. Tests must reconcile the two reports by invoice and currency. Cash-flow totals should remain unchanged by non-cash cost adjustments.
 
-Room v9 baselines and movement recording timestamps are included in encrypted backup export, integrity validation, and transactional restore. Older backups receive an explicitly marked `LEGACY_BACKUP_FALLBACK` baseline at a conservative restore boundary. Future recalculation audit tables must be added to the same encrypted-backup cycle when introduced.
+Room v9 baselines and movement recording timestamps are included in encrypted backup export, integrity validation, and transactional restore. Older backups receive an explicitly marked `LEGACY_BACKUP_FALLBACK` baseline at a conservative restore boundary. Stock-cost baselines, recalculation audits, and item rows are serialized in encrypted backups; validation checks manual/stocktake loss items against their source ledger, original journal, and balanced adjustment journal.
 
 ## 8. Required test matrix before adding invoice date pickers
 
-1. Backdated purchase between two sales changes only later effective sale costs and posts the exact balanced difference.
-2. Backdated sale changes the cost of later sales and rejects a chronological negative stock balance.
-3. Two or more products in one invoice; repeated product lines; same-millisecond events; stable movement ordering.
-4. Repeated recalculation with no new changes produces no duplicate amount or journal.
-5. Multiple corrections to the same line compare against the latest effective cost and retain all earlier audit rows.
-6. Backdated changes before the baseline, before product creation, or across a missing-history boundary are rejected with rollback.
-7. Negative manual adjustment and stocktake loss cost changes have matching expense/inventory corrections.
-8. Currency correction boundaries keep the numeric value unchanged, separate old/new currency journals, and never combine SYP and USD.
-9. Migration v8-to-v9 preserves products, movements, balances, accounts, journals, and creates exactly one baseline per product.
-10. Encrypted backup/restore preserves baselines and complete audit history.
-11. Failure injection at each transactional stage leaves no partial invoice, movement, audit item, ledger update, or journal.
-12. Invoice profitability and general-ledger statements reconcile after one or more recalculations.
+Already covered by automated tests on the current branch: (1) a backdated purchase changes later sale cost and the profitability report reconciles with the general ledger; (7) negative manual adjustment and stocktake loss changes update the effective expense and post balanced inventory/expense corrections; (10) encrypted backup validation accepts a correctly audited non-invoice stock-loss correction and rejects malformed or unmatched records.
+
+Remaining test matrix before enabling full invoice date pickers:
+1. Backdated purchase between two sales changes only the later effective sale costs and posts the exact balanced difference, including multiple products and repeated invoice lines.
+2. Backdated sale changes later sale costs and rejects a chronological negative stock balance.
+3. Multiple stock-loss correction cycles compare against the latest effective item and retain every prior audit row without duplicate adjustments.
+4. Same-millisecond events, stable ordering, and multiple currency boundaries remain deterministic.
+5. Backdated changes before the baseline, before product creation, or across a missing-history boundary are rejected with full rollback.
+6. Currency correction boundaries preserve numeric value, separate old/new currency journals, and never combine SYP and USD.
+7. All supported Room migrations and encrypted backup restore preserve baselines, movements, audit history, ledger rows, and adjustment journals.
+8. Failure injection at each transaction stage leaves no partial invoice, movement, audit item, ledger update, or journal.
+9. Period-closing guards reject adjustments into closed periods without partial writes.
+10. Invoice profitability, daily-sales profit, and general-ledger statements reconcile after one or more correction cycles.
 
 The sale and purchase date pickers must be added only after this engine and the test matrix pass.
