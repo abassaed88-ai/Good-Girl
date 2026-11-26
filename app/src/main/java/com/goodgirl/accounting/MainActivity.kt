@@ -5028,26 +5028,19 @@ private fun ProductManagementScreen(
                     }
                     Text(
                         when {
-                            isStockDecrease -> "سيُسجّل النقص بمتوسط الكلفة الحالي دون تغيير متوسط كلفة المنتج."
-                            requiresIncomingCost == true -> "الزيادة ستدخل في متوسط كلفة المخزون؛ أدخل كلفة الكمية المضافة."
+                            isStockDecrease -> "سيُسجّل النقص بآخر تكلفة شراء معتمدة، دون تغيير تكلفة الشراء الحالية."
+                            requiresIncomingCost == true -> "ستُقيّم الزيادة بآخر تكلفة شراء معتمدة، ولن تتغير تكلفة الشراء الحالية للمادة."
                             stocktakeMode && adjustmentDeltaPreview?.signum() == 0 -> "الكمية الفعلية تطابق الرصيد المسجل؛ لن تُنشأ حركة."
-                            else -> "عند إضافة كمية، أدخل كلفتها ليُحدّث التطبيق متوسط كلفة المخزون تلقائياً."
+                            else -> "ستُقيّم حركة المخزون بآخر تكلفة شراء معتمدة، دون تغييرها."
                         },
                         color = MutedText,
                         fontSize = 12.sp
                     )
-                    OutlinedTextField(
-                        if (requiresIncomingCost == true) adjustmentCost else adjustingProduct.purchaseCost,
-                        { adjustmentCost = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        label = {
-                            Text(
-                                if (requiresIncomingCost == true) "كلفة الوحدة للكمية المضافة"
-                                else "متوسط كلفة الوحدة المعتمد"
-                            )
-                        },
-                        enabled = requiresIncomingCost == true,
-                        singleLine = true
+                    Text(
+                        "كلفة التقييم المعتمدة: ${adjustingProduct.purchaseCost} ${adjustingProduct.priceCurrencyCode} للوحدة",
+                        color = BrandBlue,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold
                     )
                     OutlinedTextField(
                         adjustmentNote,
@@ -5070,7 +5063,6 @@ private fun ProductManagementScreen(
                                         val result = stockRepository.reconcileStocktake(
                                             productId = adjustingProduct.id,
                                             countedQuantity = countedQuantity,
-                                            unitCost = adjustmentCost,
                                             note = noteToSave,
                                             exchangeRateSnapshot = if (adjustingProduct.priceCurrencyCode == "SYP") "1" else (
                                             context.getSharedPreferences(
@@ -5090,7 +5082,6 @@ private fun ProductManagementScreen(
                                         val newBalance = stockRepository.adjustStock(
                                             productId = adjustingProduct.id,
                                             quantityDelta = deltaToSave,
-                                            unitCost = adjustmentCost,
                                             note = noteToSave,
                                             exchangeRateSnapshot = if (adjustingProduct.priceCurrencyCode == "SYP") "1" else (
                                             context.getSharedPreferences(
