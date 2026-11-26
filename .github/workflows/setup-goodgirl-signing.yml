@@ -1,0 +1,108 @@
+name: Initialize Good Girl signing key
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: good-girl-signing-key-init-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  initialize:
+    name: Create and encrypt the permanent app signing key
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out selected development branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Validate setup request and master password
+        shell: bash
+        env:
+          GG_SIGNING_MASTER_PASSWORD: ${{ secrets.GG_SIGNING_MASTER_PASSWORD }}
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            echo "::error::Run this setup only on the development branch, never on main."
+            exit 1
+          fi
+          if [ -z "$GG_SIGNING_MASTER_PASSWORD" ]; then
+            echo "::error::Add the repository Actions secret GG_SIGNING_MASTER_PASSWORD before running this workflow."
+            exit 1
+          fi
+          if [ "${#GG_SIGNING_MASTER_PASSWORD}" -lt 32 ]; then
+            echo "::error::The master password must contain at least 32 characters."
+            exit 1
+          fi
+          if [ -e ".github/signing/goodgirl-release.keystore.gpg" ]; then
+            echo "::error::An encrypted signing key already exists. Refusing to replace it."
+            exit 1
+          fi
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Generate and encrypt keystore
+        shell: bash
+        env:
+          GG_SIGNING_MASTER_PASSWORD: ${{ secrets.GG_SIGNING_MASTER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/goodgirl-release.keystore"
+          ENCRYPTED=".github/signing/goodgirl-release.keystore.gpg"
+          mkdir -p .github/signing
+          chmod 700 .github/signing
+
+          keytool -genkeypair -noprompt \
+            -keystore "$KEYSTORE" \
+            -storetype JKS \
+            -storepass "$GG_SIGNING_MASTER_PASSWORD" \
+            -keypass "$GG_SIGNING_MASTER_PASSWORD" \
+            -alias goodgirl-release \
+            -keyalg RSA -keysize 3072 -sigalg SHA256withRSA \
+            -validity 10000 \
+            -dname "CN=Good Girl, OU=Mobile Accounting, O=Good Girl, C=SY"
+
+          chmod 600 "$KEYSTORE"
+          gpg --batch --yes --quiet --pinentry-mode loopback \
+            --passphrase "$GG_SIGNING_MASTER_PASSWORD" \
+            --symmetric --cipher-algo AES256 --s2k-mode 3 \
+            --s2k-digest-algo SHA512 --s2k-count 65011712 \
+            --output "$ENCRYPTED" "$KEYSTORE"
+
+          gpg --batch --yes --quiet --pinentry-mode loopback \
+            --passphrase "$GG_SIGNING_MASTER_PASSWORD" \
+            --decrypt --output "$RUNNER_TEMP/goodgirl-signing-check.keystore" "$ENCRYPTED"
+
+          cmp "$KEYSTORE" "$RUNNER_TEMP/goodgirl-signing-check.keystore"
+          keytool -list -keystore "$RUNNER_TEMP/goodgirl-signing-check.keystore" \
+            -storetype JKS -storepass "$GG_SIGNING_MASTER_PASSWORD" \
+            -alias goodgirl-release >/dev/null
+
+          rm -f "$KEYSTORE" "$RUNNER_TEMP/goodgirl-signing-check.keystore"
+          test -s "$ENCRYPTED"
+          echo "Encrypted signing keystore created and integrity-checked."
+
+      - name: Commit encrypted keystore to this development branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/signing/goodgirl-release.keystore.gpg
+          git commit -m "chore: add encrypted Good Girl signing keystore [skip ci]"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: Remove temporary signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/goodgirl-release.keystore" \
+                "$RUNNER_TEMP/goodgirl-signing-check.keystore"
