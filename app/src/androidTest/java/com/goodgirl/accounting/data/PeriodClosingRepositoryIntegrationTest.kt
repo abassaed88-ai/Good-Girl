@@ -142,6 +142,7 @@ class PeriodClosingRepositoryIntegrationTest {
                     )
                 }
             }
+            Unit
         } finally {
             database.close()
         }
