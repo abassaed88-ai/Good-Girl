@@ -32,24 +32,9 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Configure persistent APK signing (when secrets are present)
-        env:
-          GG_SIGNING_KEYSTORE_BASE64: ${{ secrets.GG_SIGNING_KEYSTORE_BASE64 }}
-          GG_SIGNING_STORE_PASSWORD: ${{ secrets.GG_SIGNING_STORE_PASSWORD }}
-          GG_SIGNING_KEY_ALIAS: ${{ secrets.GG_SIGNING_KEY_ALIAS }}
-          GG_SIGNING_KEY_PASSWORD: ${{ secrets.GG_SIGNING_KEY_PASSWORD }}
-        run: |
-          if [ -n "$GG_SIGNING_KEYSTORE_BASE64" ] && [ -n "$GG_SIGNING_STORE_PASSWORD" ] && [ -n "$GG_SIGNING_KEY_ALIAS" ] && [ -n "$GG_SIGNING_KEY_PASSWORD" ]; then
-            echo "$GG_SIGNING_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/goodgirl-release.keystore"
-            chmod 600 "$RUNNER_TEMP/goodgirl-release.keystore"
-            echo "GG_SIGNING_STORE_FILE=$RUNNER_TEMP/goodgirl-release.keystore" >> "$GITHUB_ENV"
-            echo "GG_SIGNING_STORE_PASSWORD=$GG_SIGNING_STORE_PASSWORD" >> "$GITHUB_ENV"
-            echo "GG_SIGNING_KEY_ALIAS=$GG_SIGNING_KEY_ALIAS" >> "$GITHUB_ENV"
-            echo "GG_SIGNING_KEY_PASSWORD=$GG_SIGNING_KEY_PASSWORD" >> "$GITHUB_ENV"
-            echo "Persistent signing configured."
-          else
-            echo "::warning::Persistent signing secrets are not configured; APK will use the temporary Android debug signature."
-          fi
+      - name: Keep pull-request builds isolated from signing credentials
+        if: github.event_name == 'pull_request'
+        run: echo "Pull-request validation builds use the temporary Android debug signature."
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
