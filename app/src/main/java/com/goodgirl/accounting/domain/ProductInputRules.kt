@@ -28,7 +28,7 @@ object ProductInputRules {
         val previous = normalizeNonNegativeDecimal(currentCost, "كلفة الشراء الحالية")
         val requested = normalizeNonNegativeDecimal(requestedCost, "كلفة الشراء").toBigDecimal()
         require(quantity.compareTo(BigDecimal.ZERO) == 0 || requested.compareTo(previous.toBigDecimal()) == 0) {
-            "لا يمكن تعديل متوسط كلفة المخزون يدوياً مع وجود رصيد؛ سجّل فاتورة شراء أو حركة إضافة مخزون لتوثيق الكلفة الجديدة"
+            "لا يمكن تغيير كلفة الشراء الحالية يدوياً مع وجود رصيد؛ سجّل فاتورة شراء جديدة لتحديث الكلفة المعتمدة للمخزون"
         }
         return requested.stripTrailingZeros().toPlainString()
     }
