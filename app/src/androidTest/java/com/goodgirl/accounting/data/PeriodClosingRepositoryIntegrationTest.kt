@@ -245,6 +245,140 @@ class PeriodClosingRepositoryIntegrationTest {
         }
     }
 
+
+    @Test
+    fun reopeningEarlierPeriodKeepsLaterCloseActiveAndReclosePreservesCumulativeEarnings() = runBlocking {
+        val database = newDatabase()
+        try {
+            val journals = JournalRepository(database)
+            journals.ensureSystemAccounts()
+            val accounts = database.accountDao().getAll().associateBy { it.code }
+            val closingRepository = PeriodClosingRepository(database)
+
+            suspend fun postSale(number: String, sourceId: String, occurredAt: Long, amount: String) {
+                journals.postJournalEntry(
+                    number, "TEST_SALE", sourceId, "SYP", "1", occurredAt,
+                    "مبيعات اختبار تعدد الفترات",
+                    listOf(
+                        JournalLineDraft(accounts.getValue("1000").id, debit = amount),
+                        JournalLineDraft(accounts.getValue("4000").id, credit = amount)
+                    )
+                )
+            }
+            suspend fun postExpense(number: String, sourceId: String, occurredAt: Long, amount: String) {
+                journals.postJournalEntry(
+                    number, "TEST_EXPENSE", sourceId, "SYP", "1", occurredAt,
+                    "مصروف اختبار تعدد الفترات",
+                    listOf(
+                        JournalLineDraft(accounts.getValue("7000").id, debit = amount),
+                        JournalLineDraft(accounts.getValue("1000").id, credit = amount)
+                    )
+                )
+            }
+
+            // First accounting period: profit 100 - 25 = 75.
+            postSale("MULTI-P1-SALE", "multi-p1-sale", 1_100, "100")
+            postExpense("MULTI-P1-EXP", "multi-p1-exp", 1_500, "25")
+            val firstCloseId = closingRepository.closePeriod(
+                1_000, 2_000, "SYP", accounts.getValue("3100").id, "MULTI-P1-CLOSE-1"
+            )
+
+            // Second period remains independently closed: profit 200 - 50 = 150.
+            postSale("MULTI-P2-SALE", "multi-p2-sale", 3_100, "200")
+            postExpense("MULTI-P2-EXP", "multi-p2-exp", 3_500, "50")
+            val secondCloseId = closingRepository.closePeriod(
+                3_000, 4_000, "SYP", accounts.getValue("3100").id, "MULTI-P2-CLOSE-1"
+            )
+
+            val beforeReopen = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 1_000,
+                periodEndInclusive = 4_000,
+                asOfInclusive = 4_500,
+                accounts = database.accountDao().getAll(),
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll()
+            )
+            assertEquals(BigDecimal("225"), beforeReopen.incomeStatements.single().netIncome)
+            assertEquals(BigDecimal("225"), beforeReopen.balanceSheets.single().retainedEarnings)
+            assertEquals(
+                0,
+                beforeReopen.balanceSheets.single().totalAssets.compareTo(
+                    beforeReopen.balanceSheets.single().totalLiabilitiesAndEquity
+                )
+            )
+
+            // Reopen only the first period. The reversal is dated after the second close,
+            // so it does not create a posting inside the still-closed second period.
+            closingRepository.reopenPeriod(
+                closingEntryId = firstCloseId,
+                reversalJournalNumber = "MULTI-P1-REOPEN",
+                occurredAt = 5_000,
+                reason = "تصحيح الفترة الأولى مع بقاء الثانية مغلقة"
+            )
+            val afterReopenEntries = database.journalEntryDao().getAll()
+            assertTrue(!PeriodClosingRepository.isClosedDate(afterReopenEntries, "SYP", 1_700))
+            assertTrue(PeriodClosingRepository.isClosedDate(afterReopenEntries, "SYP", 3_700))
+            val activeAfterReopen = PeriodClosingRepository.activeClosures(afterReopenEntries)
+            assertEquals(1, activeAfterReopen.size)
+            assertEquals(secondCloseId, activeAfterReopen.single().closingEntry.id)
+
+            // A backdated correction is now permitted in period one, but period two stays guarded.
+            postSale("MULTI-P1-CORRECTION", "multi-p1-correction", 1_750, "30")
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    postSale("MULTI-P2-BLOCKED", "multi-p2-blocked", 3_750, "10")
+                }
+            }
+
+            val reopenedStatements = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 1_000,
+                periodEndInclusive = 4_000,
+                asOfInclusive = 5_000,
+                accounts = database.accountDao().getAll(),
+                entries = database.journalEntryDao().getAll(),
+                lines = database.journalLineDao().getAll()
+            )
+            assertEquals(BigDecimal("255"), reopenedStatements.incomeStatements.single().netIncome)
+            assertEquals(BigDecimal("255"), reopenedStatements.balanceSheets.single().retainedEarnings)
+            assertEquals(
+                0,
+                reopenedStatements.balanceSheets.single().totalAssets.compareTo(
+                    reopenedStatements.balanceSheets.single().totalLiabilitiesAndEquity
+                )
+            )
+
+            // Reclose period one while period two remains closed and unchanged.
+            val recloseId = closingRepository.closePeriod(
+                1_000, 2_000, "SYP", accounts.getValue("3100").id, "MULTI-P1-CLOSE-2"
+            )
+            assertTrue(recloseId != firstCloseId)
+            val entriesAfterReclose = database.journalEntryDao().getAll()
+            val activeAfterReclose = PeriodClosingRepository.activeClosures(entriesAfterReclose)
+            assertEquals(2, activeAfterReclose.size)
+            assertTrue(PeriodClosingRepository.isClosedDate(entriesAfterReclose, "SYP", 1_700))
+            assertTrue(PeriodClosingRepository.isClosedDate(entriesAfterReclose, "SYP", 3_700))
+
+            val afterReclose = GeneralLedgerFinancialStatementsCalculator.calculate(
+                periodStartInclusive = 1_000,
+                periodEndInclusive = 4_000,
+                asOfInclusive = 5_000,
+                accounts = database.accountDao().getAll(),
+                entries = entriesAfterReclose,
+                lines = database.journalLineDao().getAll()
+            )
+            assertEquals(BigDecimal("255"), afterReclose.incomeStatements.single().netIncome)
+            assertEquals(BigDecimal("255"), afterReclose.balanceSheets.single().retainedEarnings)
+            assertEquals(
+                0,
+                afterReclose.balanceSheets.single().totalAssets.compareTo(
+                    afterReclose.balanceSheets.single().totalLiabilitiesAndEquity
+                )
+            )
+        } finally {
+            database.close()
+        }
+    }
+
     private fun newDatabase(): AccountingDatabase =
         Room.inMemoryDatabaseBuilder(
             InstrumentationRegistry.getInstrumentation().targetContext,
