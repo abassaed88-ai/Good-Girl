@@ -132,7 +132,7 @@ import java.util.Locale
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-private data class AppPalette(
+internal data class AppPalette(
     val brandBlue: Color,
     val background: Color,
     val cardSurface: Color,
@@ -217,8 +217,12 @@ private val DarkRosePalette = AppPalette(
     surfaceVariant = Color(0xFF443543)
 )
 
-private fun appPaletteFor(isDark: Boolean, paletteId: String): AppPalette =
-    if (isDark) DarkPalette else LightPalette
+internal fun appPaletteFor(isDark: Boolean, paletteId: String): AppPalette =
+    when (normalizeAppPaletteId(paletteId)) {
+        "mint" -> if (isDark) DarkMintPalette else LightMintPalette
+        "rose" -> if (isDark) DarkRosePalette else LightRosePalette
+        else -> if (isDark) DarkPalette else LightPalette
+    }
 
 
 private val homeShortcutOptions = listOf(
@@ -1204,10 +1208,41 @@ private fun SettingsScreen(
             ) {
                 Text("ألوان التطبيق", color = Ink, fontWeight = FontWeight.Bold)
                 Text(
-                    "تم اعتماد التصميم الأزرق الجليدي الفاتح مع البطاقات البيضاء واللمسات التركوازية، والوضع الداكن الكحلي. سيُطبّق النمط نفسه على جميع الشاشات.",
+                    "اختر مجموعة الألوان. عند تفعيل الوضع الداكن تتحول المجموعة المختارة إلى نسختها الداكنة تلقائياً.",
                     color = MutedText,
                     fontSize = 12.sp
                 )
+                listOf(
+                    "ocean" to "الأزرق الجليدي",
+                    "mint" to "النعناعي",
+                    "rose" to "الوردي الهادئ"
+                ).forEach { (id, label) ->
+                    val selected = paletteId == id
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { onPaletteChanged(id) }
+                            .background(
+                                color = if (selected) {
+                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.14f)
+                                } else {
+                                    Color.Transparent
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(label, color = Ink, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                        Text(
+                            if (selected) "محدد" else "اختيار",
+                            color = if (selected) MaterialTheme.colorScheme.primary else MutedText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
             }
         }
         Card(
