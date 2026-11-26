@@ -402,8 +402,9 @@ class PartySettlementIntegrationTest {
             )
             val summary = report.currencySummaries.single { it.currencyCode == "SYP" }
             assertDecimal("12", summary.purchases.toPlainString())
+            assertDecimal("4", summary.otherIncome.toPlainString())
             assertDecimal("0", summary.expenses.toPlainString())
-            assertDecimal("0", summary.netProfit.toPlainString())
+            assertDecimal("4", summary.netProfit.toPlainString())
         } finally {
             database.close()
         }
