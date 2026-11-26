@@ -44,7 +44,8 @@ internal object InvoiceJournalPoster {
         database: AccountingDatabase,
         invoice: InvoiceEntity,
         lines: List<InvoiceLineEntity>,
-        inventoryRevaluations: List<InventoryRevaluationAdjustment> = emptyList()
+        inventoryRevaluations: List<InventoryRevaluationAdjustment> = emptyList(),
+        revaluationOccurredAt: Long = System.currentTimeMillis()
     ) {
         require(invoice.status == "POSTED") { "لا يمكن ترحيل قيد لفاتورة غير مرحلة" }
         require(invoice.kind == "SALE" || invoice.kind == "PURCHASE") { "نوع الفاتورة غير مدعوم محاسبياً" }
@@ -107,30 +108,18 @@ internal object InvoiceJournalPoster {
             addCredit(CASH, paid, "مدفوعات فاتورة الشراء " + invoice.invoiceNumber)
             addCredit(PAYABLES, remaining, "ذمم المورد من فاتورة الشراء " + invoice.invoiceNumber)
 
-            inventoryRevaluations.forEach { adjustment ->
-                val delta = adjustment.valueDelta.toBigDecimal()
-                if (delta.compareTo(BigDecimal.ZERO) != 0) {
-                    val amount = delta.abs().stripTrailingZeros().toPlainString()
-                    val memo = buildString {
-                        append("تقييم مخزون ${adjustment.productName} (${adjustment.productId})")
-                        append(": رصيد سابق ${adjustment.previousStockQuantity} × ${adjustment.previousUnitCost}")
-                        append("، وارد جديد ${adjustment.incomingQuantity} بقيمة ${adjustment.incomingExtendedCost}")
-                        append("، التكلفة الحالية ${adjustment.newUnitCost}")
-                        append("، فرق التقييم ${delta.stripTrailingZeros().toPlainString()}")
-                    }
-                    if (delta.signum() > 0) {
-                        addDebit(INVENTORY, amount, memo)
-                        addCredit("SYS-4100", delta, memo)
-                    } else {
-                        addDebit("SYS-7100", delta.abs(), memo)
-                        addCredit(INVENTORY, amount, memo)
-                    }
-                }
-            }
         }
 
         // A zero-value invoice with no cost has no financial journal impact.
-        if (drafts.isEmpty()) return
+        if (drafts.isEmpty()) {
+            postInventoryRevaluationJournal(
+                database = database,
+                invoice = invoice,
+                adjustments = inventoryRevaluations,
+                occurredAt = revaluationOccurredAt
+            )
+            return
+        }
 
         val normalized = JournalEntryRules.normalize(
             currencyCode = invoice.currencyCode,
@@ -162,6 +151,123 @@ internal object InvoiceJournalPoster {
                 } else {
                     "قيد فاتورة شراء " + invoice.invoiceNumber
                 },
+                createdAt = System.currentTimeMillis()
+            )
+        )
+        database.journalLineDao().insertAll(
+            normalized.lines.mapIndexed { index, line ->
+                JournalLineEntity(
+                    id = UUID.randomUUID().toString(),
+                    journalEntryId = entryId,
+                    lineNumber = index + 1,
+                    accountId = line.accountId,
+                    debit = line.debit,
+                    credit = line.credit,
+                    memo = line.memo
+                )
+            }
+        )
+
+        postInventoryRevaluationJournal(
+            database = database,
+            invoice = invoice,
+            adjustments = inventoryRevaluations,
+            occurredAt = revaluationOccurredAt
+        )
+    }
+
+    /**
+     * Posts the repricing of stock that remains on hand when the purchase is
+     * recorded. Its date is the actual recording time, not a backdated invoice
+     * issue date, so an old invoice date cannot rewrite earlier stock valuation
+     * reports. The sourceId links this immutable journal to the purchase.
+     */
+    private suspend fun postInventoryRevaluationJournal(
+        database: AccountingDatabase,
+        invoice: InvoiceEntity,
+        adjustments: List<InventoryRevaluationAdjustment>,
+        occurredAt: Long
+    ) {
+        if (adjustments.isEmpty()) return
+        require(invoice.kind == "PURCHASE") {
+            "إعادة تقييم المخزون تتطلب فاتورة شراء"
+        }
+        PeriodClosingGuard.ensureOpen(database, invoice.currencyCode, occurredAt)
+        require(
+            database.journalEntryDao().findBySource("PURCHASE_INVENTORY_REVALUATION", invoice.id) == null
+        ) { "تم ترحيل إعادة تقييم المخزون لهذه الفاتورة مسبقاً" }
+
+        val inventory = database.accountDao().findById(INVENTORY)
+            ?: throw IllegalStateException("حساب المخزون غير موجود")
+        val gain = database.accountDao().findById("SYS-4100")
+            ?: throw IllegalStateException("حساب أرباح إعادة تقييم المخزون غير موجود")
+        val loss = database.accountDao().findById("SYS-7100")
+            ?: throw IllegalStateException("حساب خسائر إعادة تقييم المخزون غير موجود")
+        require(inventory.isActive && inventory.accountType == "ASSET" && inventory.normalSide == "DEBIT") {
+            "حساب المخزون غير صالح لإعادة التقييم"
+        }
+        require(gain.isActive && gain.accountType == "REVENUE" && gain.normalSide == "CREDIT") {
+            "حساب أرباح إعادة تقييم المخزون غير صالح"
+        }
+        require(loss.isActive && loss.accountType == "EXPENSE" && loss.normalSide == "DEBIT") {
+            "حساب خسائر إعادة تقييم المخزون غير صالح"
+        }
+
+        val drafts = mutableListOf<JournalLineDraft>()
+        adjustments.forEach { adjustment ->
+            val delta = adjustment.valueDelta.toBigDecimal()
+            if (delta.compareTo(BigDecimal.ZERO) != 0) {
+                val amount = delta.abs().stripTrailingZeros().toPlainString()
+                val memo = buildString {
+                    append("تقييم مخزون ${adjustment.productName} (${adjustment.productId})")
+                    append(": رصيد سابق ${adjustment.previousStockQuantity} × ${adjustment.previousUnitCost}")
+                    append("، وارد جديد ${adjustment.incomingQuantity} بقيمة ${adjustment.incomingExtendedCost}")
+                    append("، التكلفة الحالية ${adjustment.newUnitCost}")
+                    append("، فرق التقييم ${delta.stripTrailingZeros().toPlainString()}")
+                }
+                if (delta.signum() > 0) {
+                    drafts += JournalLineDraft(
+                        accountId = inventory.id,
+                        debit = amount,
+                        memo = memo
+                    )
+                    drafts += JournalLineDraft(
+                        accountId = gain.id,
+                        credit = amount,
+                        memo = memo
+                    )
+                } else {
+                    drafts += JournalLineDraft(
+                        accountId = loss.id,
+                        debit = amount,
+                        memo = memo
+                    )
+                    drafts += JournalLineDraft(
+                        accountId = inventory.id,
+                        credit = amount,
+                        memo = memo
+                    )
+                }
+            }
+        }
+        if (drafts.isEmpty()) return
+
+        val normalized = JournalEntryRules.normalize(
+            currencyCode = invoice.currencyCode,
+            exchangeRateSnapshot = invoice.exchangeRateSnapshot,
+            lines = drafts
+        )
+        val entryId = UUID.randomUUID().toString()
+        database.journalEntryDao().insert(
+            JournalEntryEntity(
+                id = entryId,
+                journalNumber = "AUTO-REVAL-" + UUID.randomUUID().toString().replace("-", "").take(16),
+                sourceType = "PURCHASE_INVENTORY_REVALUATION",
+                sourceId = invoice.id,
+                currencyCode = normalized.currencyCode,
+                exchangeRateSnapshot = normalized.exchangeRateSnapshot,
+                occurredAt = occurredAt,
+                description = "إعادة تقييم المخزون حسب أحدث تكلفة شراء للفاتورة ${invoice.invoiceNumber}",
                 createdAt = System.currentTimeMillis()
             )
         )
