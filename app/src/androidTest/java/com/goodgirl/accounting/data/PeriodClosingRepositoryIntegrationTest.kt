@@ -4,6 +4,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.data.local.JournalEntryEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.domain.GeneralLedgerFinancialStatementsCalculator
 import com.goodgirl.accounting.domain.JournalLineDraft
@@ -92,6 +93,59 @@ class PeriodClosingRepositoryIntegrationTest {
         }
     }
 
+    @Test
+    fun malformedActiveClosureIsVisibleAndKeepsItsCurrencyFailClosed() = runBlocking {
+        val database = newDatabase()
+        try {
+            val journals = JournalRepository(database)
+            journals.ensureSystemAccounts()
+            val accounts = database.accountDao().getAll().associateBy { it.code }
+            database.journalEntryDao().insert(
+                JournalEntryEntity(
+                    id = "malformed-close-id",
+                    journalNumber = "MALFORMED-CLOSE-001",
+                    sourceType = PeriodClosingRepository.SOURCE_TYPE,
+                    sourceId = "SYP:not-a-valid-start:2000",
+                    currencyCode = "SYP",
+                    exchangeRateSnapshot = "1",
+                    occurredAt = 2_000,
+                    description = "قيد إقفال بنطاق تالف لاختبار الحماية",
+                    createdAt = 2_000
+                )
+            )
+
+            val entries = database.journalEntryDao().getAll()
+            assertTrue(PeriodClosingRepository.activeClosures(entries).isEmpty())
+            val malformed = PeriodClosingRepository.malformedClosures(entries)
+            assertEquals(1, malformed.size)
+            assertEquals("MALFORMED-CLOSE-001", malformed.single().closingEntry.journalNumber)
+            assertTrue(PeriodClosingRepository.isClosedDate(entries, "SYP", 1_700))
+            assertTrue(PeriodClosingRepository.isClosedDate(entries, "SYP", Long.MAX_VALUE))
+            assertTrue(!PeriodClosingRepository.isClosedDate(entries, "USD", 1_700))
+
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    PeriodClosingRepository(database).closePeriod(
+                        1_000, 3_000, "SYP", accounts.getValue("3100").id, "MALFORMED-CLOSE-002"
+                    )
+                }
+            }
+            assertThrows(IllegalArgumentException::class.java) {
+                runBlocking {
+                    journals.postJournalEntry(
+                        "MALFORMED-CLOSE-BLOCKED", "TEST_SALE", "malformed-close-sale",
+                        "SYP", "1", 1_700, "يجب منع الترحيل عند تعذر قراءة الإغلاق",
+                        listOf(
+                            JournalLineDraft(accounts.getValue("1000").id, debit = "5"),
+                            JournalLineDraft(accounts.getValue("4000").id, credit = "5")
+                        )
+                    )
+                }
+            }
+        } finally {
+            database.close()
+        }
+    }
     @Test
     fun capturesTheLatestExchangeRateEffectiveOnTheDollarClosingDate() = runBlocking {
         val database = newDatabase()

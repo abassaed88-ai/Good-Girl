@@ -21,6 +21,11 @@ data class ActivePeriodClosure(
     val periodEndInclusive: Long
 )
 
+/** A persisted closing journal whose encoded date range cannot be trusted. */
+data class MalformedPeriodClosure(
+    val closingEntry: JournalEntryEntity
+)
+
 /**
  * Closing and reopening are represented by immutable, balanced journal entries.
  * A reopening never edits or deletes the original closing entry.
@@ -234,6 +239,27 @@ class PeriodClosingRepository(private val database: AccountingDatabase) {
                 }
                 .sortedWith(
                     compareByDescending<ActivePeriodClosure> { it.periodEndInclusive }
+                        .thenByDescending { it.closingEntry.createdAt }
+                )
+                .toList()
+        }
+
+        /**
+         * Returns active close journals with an invalid or unreadable encoded range.
+         * These records remain visible for manual review and are deliberately not
+         * eligible for automatic reopening because their actual date range is unknown.
+         */
+        fun malformedClosures(entries: List<JournalEntryEntity>): List<MalformedPeriodClosure> {
+            val reversedCloseIds = entries.asSequence()
+                .filter { it.sourceType == REVERSAL_SOURCE_TYPE }
+                .map { it.sourceId }
+                .toSet()
+            return entries.asSequence()
+                .filter { it.sourceType == SOURCE_TYPE && it.id !in reversedCloseIds }
+                .filter { decodeRange(it.sourceId) == null }
+                .map(::MalformedPeriodClosure)
+                .sortedWith(
+                    compareByDescending<MalformedPeriodClosure> { it.closingEntry.occurredAt }
                         .thenByDescending { it.closingEntry.createdAt }
                 )
                 .toList()

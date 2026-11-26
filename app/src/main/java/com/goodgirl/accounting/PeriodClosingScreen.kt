@@ -101,6 +101,9 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
     val activeClosures = remember(journalEntries) {
         PeriodClosingRepository.activeClosures(journalEntries)
     }
+    val malformedClosures = remember(journalEntries) {
+        PeriodClosingRepository.malformedClosures(journalEntries)
+    }
 
     fun showDatePicker(initial: Long, onPicked: (Long) -> Unit, endOfDay: Boolean) {
         val selected = Calendar.getInstance().apply { timeInMillis = initial }
@@ -231,7 +234,7 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text("الفترات المغلقة النشطة", style = MaterialTheme.typography.titleMedium)
-                if (activeClosures.isEmpty()) {
+                if (activeClosures.isEmpty() && malformedClosures.isEmpty()) {
                     Text("لا توجد فترات مغلقة حالياً.")
                 } else {
                     activeClosures.forEach { closure ->
@@ -264,6 +267,36 @@ fun PeriodClosingScreen(onBack: () -> Unit) {
                                 }
                             ) { Text("إعادة فتح") }
                         }
+                    }
+                }
+            }
+        }
+
+        if (malformedClosures.isNotEmpty()) {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Column(
+                    Modifier.fillMaxWidth().padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "قيود إقفال تحتاج إلى مراجعة",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Text(
+                        "تعذّر قراءة نطاق التاريخ في القيود التالية. حفاظاً على سلامة الحسابات، يتعامل التطبيق مع عملتها على أنها مغلقة ويمنع الترحيل عليها. لا يمكن إعادة فتحها تلقائياً قبل مراجعة بيانات القيد.",
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    malformedClosures.forEach { malformed ->
+                        Text(
+                            "قيد " + malformed.closingEntry.journalNumber + " — " + malformed.closingEntry.currencyCode,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
                     }
                 }
             }
