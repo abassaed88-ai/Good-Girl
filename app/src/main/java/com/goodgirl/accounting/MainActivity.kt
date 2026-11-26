@@ -223,6 +223,7 @@ private fun appPaletteFor(isDark: Boolean, paletteId: String): AppPalette =
 
 private val homeShortcutOptions = listOf(
     "daily_sales" to "المبيعات اليومية",
+    "pos" to "نقطة البيع",
     "price_settings" to "تحديد سعر البيع",
     "sales" to "المبيعات والفواتير",
     "purchases" to "المشتريات",
@@ -477,6 +478,10 @@ private fun GoodGirlApp() {
                     },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
+                "pos" -> PointOfSaleScreen(
+                    onBack = { requestNavigation("dashboard") },
+                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
+                )
                 "sales" -> InvoiceManagementScreen(
                     kind = "SALE",
                     onBack = { requestNavigation(salesReturnPage) },
@@ -556,6 +561,7 @@ private fun GoodGirlApp() {
                     visibleShortcutIds = visibleShortcutIds,
                     homeShortcutLabels = homeShortcutLabels,
                     onOpenDailySales = { activePage = "daily_sales" },
+                    onOpenPos = { activePage = "pos" },
                     onOpenPriceSettings = { activePage = "price_settings" },
                     onOpenSales = {
                         salesReturnPage = "dashboard"
@@ -684,6 +690,7 @@ internal fun previousAppPage(
 @Composable
 private fun DashboardScreen(
     onOpenDailySales: () -> Unit,
+    onOpenPos: () -> Unit,
     onOpenPriceSettings: () -> Unit,
     onOpenSales: () -> Unit,
     onOpenPurchases: () -> Unit,
@@ -757,6 +764,7 @@ private fun DashboardScreen(
 
     val dashboardTiles = listOf(
         Triple("daily_sales", homeShortcutLabels["daily_sales"].orEmpty().ifBlank { "المبيعات اليومية" }, Icons.Filled.BarChart) to onOpenDailySales,
+        Triple("pos", homeShortcutLabels["pos"].orEmpty().ifBlank { "نقطة البيع" }, Icons.Filled.ShoppingCart) to onOpenPos,
         Triple("sales", homeShortcutLabels["sales"].orEmpty().ifBlank { "إضافة مبيع" }, Icons.Filled.ShoppingCart) to onOpenSales,
         Triple("products", homeShortcutLabels["products"].orEmpty().ifBlank { "إدارة المخزون" }, Icons.Filled.Inventory) to onOpenProducts,
         Triple("accounts", homeShortcutLabels["accounts"].orEmpty().ifBlank { "قائمة الحسابات" }, Icons.Filled.MenuBook) to onOpenAccounts,
