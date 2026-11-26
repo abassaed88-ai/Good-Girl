@@ -2,6 +2,7 @@ package com.goodgirl.accounting
 
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertExists
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -24,13 +25,15 @@ class ProductArabicTextInputTest {
     fun arabicLettersRenderImmediatelyInProductNameUnitAndNoteFields() {
         composeRule.onNodeWithTag("dashboard-products")
             .performClick()
+        composeRule.waitForIdle()
+        composeRule.onNodeWithText("إضافة منتج جديد").assertExists()
 
         assertArabicCharactersAppearOneByOne(
-            composeRule.onNodeWithTag("product-name"),
+            composeRule.onNodeWithTag("product-name").performScrollTo(),
             "عطر الياسمين"
         )
         assertArabicCharactersAppearOneByOne(
-            composeRule.onNodeWithTag("product-base-unit"),
+            composeRule.onNodeWithTag("product-base-unit").performScrollTo(),
             "عبوة صغيرة"
         )
         assertArabicCharactersAppearOneByOne(
