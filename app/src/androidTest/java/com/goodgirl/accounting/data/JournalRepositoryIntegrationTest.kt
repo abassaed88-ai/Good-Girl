@@ -100,6 +100,9 @@ class JournalRepositoryIntegrationTest {
             val existing = database.accountDao().findByCode("4100")
             assertEquals("CUSTOM-4100", existing!!.id)
             assertEquals("حساب مخصص قديم", existing.name)
+            val systemGainAccount = database.accountDao().findById("SYS-4100")!!
+            assertTrue(systemGainAccount.isSystem)
+            assertTrue(systemGainAccount.code != "4100")
             assertEquals("SYS-7100", database.accountDao().findByCode("7100")!!.id)
         } finally {
             database.close()
