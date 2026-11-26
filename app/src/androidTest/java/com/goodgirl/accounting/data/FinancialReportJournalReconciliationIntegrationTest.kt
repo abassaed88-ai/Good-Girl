@@ -247,7 +247,7 @@ class FinancialReportJournalReconciliationIntegrationTest {
             assertMoney(
                 "20",
                 database.journalLineDao().getForEntry(saleJournal.id)
-                    .single { database.accountDao().findById(it.accountId)!!.code == "5000" }.debit
+                    .single { database.accountDao().findById(it.accountId)!!.code == "5000" }.debit.toBigDecimal()
             )
             val revaluation = database.journalEntryDao().findBySource(
                 "PURCHASE_INVENTORY_REVALUATION",
