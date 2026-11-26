@@ -16,27 +16,30 @@ class StockInputRulesTest {
     }
 
     @Test
-    fun stockInAdjustmentUpdatesWeightedAverageCost() {
+    fun manualStockInUsesLatestPurchaseCostWithoutChangingIt() {
         val result = StockInputRules.calculateAdjustmentCost(
-            currentQuantity = "10",
-            currentAverageCost = "10",
-            quantityDelta = "5",
-            incomingUnitCost = "20"
+            currentPurchaseCost = "20",
+            quantityDelta = "5"
         )
         assertEquals("20", result.movementUnitCost)
-        assertEquals("13.33333333", result.resultingAverageCost)
+    }
+
+    @Test
+    fun stocktakeGainUsesLatestPurchaseCostWithoutChangingIt() {
+        val result = StockInputRules.calculateAdjustmentCost(
+            currentPurchaseCost = "12.5",
+            quantityDelta = "3"
+        )
+        assertEquals("12.5", result.movementUnitCost)
     }
 
     @Test
     fun stockOutUsesCurrentAverageCostWithoutChangingIt() {
         val result = StockInputRules.calculateAdjustmentCost(
-            currentQuantity = "10",
-            currentAverageCost = "12.5",
-            quantityDelta = "-3",
-            incomingUnitCost = ""
+            currentPurchaseCost = "12.5",
+            quantityDelta = "-3"
         )
         assertEquals("12.5", result.movementUnitCost)
-        assertEquals("12.5", result.resultingAverageCost)
     }
 
     @Test
