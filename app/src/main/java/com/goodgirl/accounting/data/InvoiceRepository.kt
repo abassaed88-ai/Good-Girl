@@ -271,8 +271,14 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                         )
                     }
                     accumulator.incomingQuantity = accumulator.incomingQuantity.add(baseQuantity)
+                    // Use the exact discounted invoice-line value here, not
+                    // rounded unit cost × quantity. The purchase journal debits
+                    // this exact line value; the revaluation then reconciles it
+                    // to the product's stored (8-decimal) current unit cost.
+                    val incomingLineValue = lineNetAmounts[lineIndex]
+                        .subtract(invoiceDiscountShares[lineIndex])
                     accumulator.incomingExtendedCost = accumulator.incomingExtendedCost.add(
-                        baseQuantity.multiply(incomingUnitCost)
+                        incomingLineValue
                     )
                     // For repeated product lines, the last invoice line is
                     // treated as the latest incoming purchase cost.
