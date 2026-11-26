@@ -92,6 +92,7 @@ object BackupIntegrityValidator {
         val stockCostAuditById = stockCostRecalculationAudits.associateBy { it.id }
         val ledgerBySource = ledgerEntries.associateBy { it.sourceType + "|" + it.sourceId }
         val journalBySource = journalEntries.associateBy { it.sourceType + "|" + it.sourceId }
+        val journalLinesByEntry = journalLines.groupBy { it.journalEntryId }
         val latestCostItemByMovement = stockCostRecalculationItems
             .groupBy { it.movementId }
             .mapValues { (_, items) ->
@@ -442,7 +443,6 @@ object BackupIntegrityValidator {
             requireCurrency(entry.currencyCode, "عملة القيد المالي")
             requireRate(entry.exchangeRateSnapshot, entry.currencyCode, "سعر صرف القيد المالي")
         }
-        val journalLinesByEntry = journalLines.groupBy { it.journalEntryId }
         journalLines.forEach { line ->
             require(line.journalEntryId in journalById) { "سطر قيد يومية مرتبط بقيد غير موجود" }
             require(line.accountId in accountById) { "سطر قيد يومية مرتبط بحساب غير موجود" }
