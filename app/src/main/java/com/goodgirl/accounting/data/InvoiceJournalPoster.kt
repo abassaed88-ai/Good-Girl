@@ -6,6 +6,7 @@ import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import com.goodgirl.accounting.data.local.JournalEntryEntity
 import com.goodgirl.accounting.data.local.JournalLineEntity
+import com.goodgirl.accounting.data.local.LedgerEntryEntity
 import com.goodgirl.accounting.domain.JournalEntryRules
 import com.goodgirl.accounting.domain.JournalLineDraft
 import java.math.BigDecimal
@@ -251,6 +252,48 @@ internal object InvoiceJournalPoster {
             }
         }
         if (drafts.isEmpty()) return
+
+        // Mirror each revaluation side into the simplified profit report as
+        // separate non-cash income/expense rows. The general journal remains
+        // the accounting source of truth; both records share the invoice source.
+        val totalGain = adjustments.fold(BigDecimal.ZERO) { total, item ->
+            val delta = item.valueDelta.toBigDecimal()
+            if (delta.signum() > 0) total.add(delta) else total
+        }
+        val totalLoss = adjustments.fold(BigDecimal.ZERO) { total, item ->
+            val delta = item.valueDelta.toBigDecimal()
+            if (delta.signum() < 0) total.add(delta.abs()) else total
+        }
+        if (totalGain.signum() > 0) {
+            database.ledgerDao().insert(
+                LedgerEntryEntity(
+                    id = UUID.randomUUID().toString(),
+                    entryType = "INCOME",
+                    amount = totalGain.stripTrailingZeros().toPlainString(),
+                    currencyCode = invoice.currencyCode,
+                    exchangeRateSnapshot = invoice.exchangeRateSnapshot,
+                    sourceType = "PURCHASE_INVENTORY_REVALUATION_GAIN",
+                    sourceId = invoice.id,
+                    occurredAt = occurredAt,
+                    note = "أرباح إعادة تقييم المخزون حسب أحدث تكلفة شراء للفاتورة ${invoice.invoiceNumber}"
+                )
+            )
+        }
+        if (totalLoss.signum() > 0) {
+            database.ledgerDao().insert(
+                LedgerEntryEntity(
+                    id = UUID.randomUUID().toString(),
+                    entryType = "EXPENSE",
+                    amount = totalLoss.stripTrailingZeros().toPlainString(),
+                    currencyCode = invoice.currencyCode,
+                    exchangeRateSnapshot = invoice.exchangeRateSnapshot,
+                    sourceType = "PURCHASE_INVENTORY_REVALUATION_LOSS",
+                    sourceId = invoice.id,
+                    occurredAt = occurredAt,
+                    note = "خسائر إعادة تقييم المخزون حسب أحدث تكلفة شراء للفاتورة ${invoice.invoiceNumber}"
+                )
+            )
+        }
 
         val normalized = JournalEntryRules.normalize(
             currencyCode = invoice.currencyCode,
