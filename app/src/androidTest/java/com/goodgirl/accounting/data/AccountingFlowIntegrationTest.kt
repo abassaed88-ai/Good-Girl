@@ -475,9 +475,14 @@ class AccountingFlowIntegrationTest {
             )
 
             val entries = database.journalEntryDao().getAll()
-            assertEquals(3, entries.size)
+            assertEquals(4, entries.size)
             assertEquals(
-                setOf("PRODUCT_OPENING_STOCK", "SALE_INVOICE", "PURCHASE_INVOICE"),
+                setOf(
+                    "PRODUCT_OPENING_STOCK",
+                    "SALE_INVOICE",
+                    "PURCHASE_INVOICE",
+                    "PURCHASE_INVENTORY_REVALUATION"
+                ),
                 entries.map { it.sourceType }.toSet()
             )
             val accounts = database.accountDao().getAll().associateBy { it.id }
@@ -496,7 +501,9 @@ class AccountingFlowIntegrationTest {
             assertDecimal("20", saleLines.single { accounts[it.accountId]!!.code == "5000" }.debit)
             assertDecimal("20", saleLines.single { accounts[it.accountId]!!.code == "1200" }.credit)
 
-            val purchaseEntry = entries.single { it.sourceId == purchase.invoiceId }
+            val purchaseEntry = entries.single {
+                it.sourceType == "PURCHASE_INVOICE" && it.sourceId == purchase.invoiceId
+            }
             val purchaseLines = database.journalLineDao().getForEntry(purchaseEntry.id)
             assertEquals(2, purchaseLines.size)
             assertDecimal("40", purchaseLines.single { accounts[it.accountId]!!.code == "1200" }.debit)
@@ -517,7 +524,7 @@ class AccountingFlowIntegrationTest {
 
 
     @Test
-    fun backdatedPurchaseRecalculatesPriorSaleAndPostsBalancedCostAdjustment() = runBlocking {
+    fun backdatedPurchaseChangesCurrentStockCostButNeverRewritesPostedSaleCostOrProfit() = runBlocking {
         val database = newInMemoryDatabase()
         try {
             val products = ProductRepository(database)
@@ -529,7 +536,7 @@ class AccountingFlowIntegrationTest {
                 purchaseCost = "10",
                 salePrice = "15",
                 openingStock = "10",
-                note = "اختبار إعادة احتساب الكلفة"
+                note = "اختبار حماية تكلفة البيع السابقة"
             )
             val product = database.productDao().getAll().single()
             val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
@@ -546,9 +553,13 @@ class AccountingFlowIntegrationTest {
                 paidAmount = "30",
                 issuedAt = saleAt
             )
-            assertDecimal("10", database.invoiceDao().getLines(sale.invoiceId).single().unitCostSnapshot)
+            val originalSaleLine = database.invoiceDao().getLines(sale.invoiceId).single()
+            assertDecimal("10", originalSaleLine.unitCostSnapshot)
+            val originalSaleJournal = database.journalEntryDao()
+                .findBySource("SALE_INVOICE", sale.invoiceId)!!
+            val originalSaleJournalLines = database.journalLineDao().getForEntry(originalSaleJournal.id)
 
-            invoices.postInvoice(
+            val purchase = invoices.postInvoice(
                 invoiceNumber = "BACKDATE-PURCHASE-1",
                 kind = "PURCHASE",
                 partyId = null,
@@ -559,50 +570,60 @@ class AccountingFlowIntegrationTest {
                 issuedAt = backdatedPurchaseAt
             )
 
-            val unchangedSaleLine = database.invoiceDao().getLines(sale.invoiceId).single()
-            assertDecimal("10", unchangedSaleLine.unitCostSnapshot)
-            assertDecimal("12.85714286", database.productDao().findById(product.id)!!.purchaseCost)
-            assertDecimal("12", database.productDao().findById(product.id)!!.stockQuantity)
+            val updatedProduct = database.productDao().findById(product.id)!!
+            assertDecimal("20", updatedProduct.purchaseCost)
+            assertDecimal("12", updatedProduct.stockQuantity)
 
-            val audit = database.stockCostRecalculationAuditDao().getAll()
-                .single { it.triggerType == "PURCHASE" }
-            assertEquals(1, audit.affectedStockOutCount)
-            val item = database.stockCostRecalculationItemDao().getForAudit(audit.id).single()
-            assertEquals(sale.invoiceId, item.invoiceId)
-            assertEquals(unchangedSaleLine.id, item.sourceId)
-            assertDecimal("10", item.oldUnitCost)
-            assertDecimal("12.85714286", item.newUnitCost)
-            assertDecimal("20", item.oldExtendedCost)
-            assertDecimal("25.71428572", item.newExtendedCost)
+            // Historical sale and its posted COGS journal stay immutable.
+            assertDecimal(
+                "10",
+                database.invoiceDao().getLines(sale.invoiceId).single().unitCostSnapshot
+            )
+            assertEquals(
+                originalSaleJournalLines,
+                database.journalLineDao().getForEntry(originalSaleJournal.id)
+            )
+            assertTrue(
+                database.stockCostRecalculationAuditDao().getAll().isEmpty()
+            )
+            assertTrue(
+                database.journalEntryDao().getAll().none {
+                    it.sourceType == "STOCK_COST_RECALCULATION"
+                }
+            )
 
-            val adjustment = database.journalEntryDao().getAll()
-                .single { it.sourceType == "STOCK_COST_RECALCULATION" }
-            assertEquals(saleAt, adjustment.occurredAt)
+            val purchaseInvoice = database.invoiceDao().findById(purchase.invoiceId)!!
+            val revaluation = database.journalEntryDao().findBySource(
+                "PURCHASE_INVENTORY_REVALUATION",
+                purchase.invoiceId
+            )!!
+            assertTrue(revaluation.occurredAt >= purchaseInvoice.createdAt)
+            assertTrue(revaluation.occurredAt > backdatedPurchaseAt)
             val accounts = database.accountDao().getAll().associateBy { it.id }
-            val adjustmentLines = database.journalLineDao().getForEntry(adjustment.id)
-            assertEquals(2, adjustmentLines.size)
+            val revaluationLines = database.journalLineDao().getForEntry(revaluation.id)
             assertDecimal(
-                "5.71428572",
-                adjustmentLines.single { accounts[it.accountId]!!.code == "5000" }.debit
+                "80",
+                revaluationLines.single { accounts[it.accountId]!!.code == "1200" }.debit
             )
             assertDecimal(
-                "5.71428572",
-                adjustmentLines.single { accounts[it.accountId]!!.code == "1200" }.credit
+                "80",
+                revaluationLines.single { accounts[it.accountId]!!.code == "4100" }.credit
             )
 
-            val effectiveCostReport = FinancialReportCalculator.calculate(
+            val report = FinancialReportCalculator.calculate(
                 fromInclusive = 0L,
                 toInclusive = Long.MAX_VALUE,
                 invoices = database.invoiceDao().getAllInvoices(),
                 lines = database.invoiceDao().getAllLines(),
-                ledgerEntries = database.ledgerDao().getAll(),
-                effectiveUnitCostsByLineId = mapOf(item.sourceId to item.newUnitCost)
+                ledgerEntries = database.ledgerDao().getAll()
             )
-            val saleSummary = effectiveCostReport.currencySummaries.single { it.currencyCode == "SYP" }
-            assertDecimal("25.71428572", saleSummary.costOfGoodsSold.toPlainString())
-            assertDecimal("4.28571428", effectiveCostReport.products.single().profit.toPlainString())
+            val saleSummary = report.currencySummaries.single { it.currencyCode == "SYP" }
+            assertDecimal("30", saleSummary.sales.toPlainString())
+            assertDecimal("20", saleSummary.costOfGoodsSold.toPlainString())
+            assertDecimal("10", saleSummary.grossProfit.toPlainString())
+            assertDecimal("10", report.products.single().profit.toPlainString())
 
-            val ledgerStatements = GeneralLedgerFinancialStatementsCalculator.calculate(
+            val statements = GeneralLedgerFinancialStatementsCalculator.calculate(
                 periodStartInclusive = 0L,
                 periodEndInclusive = Long.MAX_VALUE,
                 asOfInclusive = Long.MAX_VALUE,
@@ -610,13 +631,10 @@ class AccountingFlowIntegrationTest {
                 entries = database.journalEntryDao().getAll(),
                 lines = database.journalLineDao().getAll()
             )
-            val incomeStatement = ledgerStatements.incomeStatements.single { it.currencyCode == "SYP" }
-            val ledgerCost = incomeStatement.expenses.single { it.accountCode == "5000" }.amount
-            assertDecimal("25.71428572", ledgerCost.toPlainString())
-            assertDecimal(
-                saleSummary.costOfGoodsSold.toPlainString(),
-                ledgerCost.toPlainString()
-            )
+            val income = statements.incomeStatements.single { it.currencyCode == "SYP" }
+            assertDecimal("30", income.revenues.single { it.accountCode == "4000" }.amount.toPlainString())
+            assertDecimal("80", income.revenues.single { it.accountCode == "4100" }.amount.toPlainString())
+            assertDecimal("20", income.expenses.single { it.accountCode == "5000" }.amount.toPlainString())
         } finally {
             database.close()
         }
