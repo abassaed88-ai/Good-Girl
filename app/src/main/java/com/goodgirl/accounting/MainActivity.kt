@@ -2233,21 +2233,33 @@ private fun InvoiceManagementScreen(
                 }
             },
             confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = {
-                        showUnknownBarcodeDialog = false
-                        showLinkBarcodeDialog = true
-                    }) { Text("ربطه بمنتج موجود") }
-                    TextButton(onClick = {
-                        createBarcodeProductName = ""
-                        createBarcodeProductSku = ""
-                        createBarcodeProductUnit = "قطعة"
-                        createBarcodePurchaseCost = "0"
-                        createBarcodeSalePrice = "0"
-                        showUnknownBarcodeDialog = false
-                        showCreateBarcodeProductDialog = true
-                    }) { Text("إنشاء منتج جديد") }
-                    TextButton(onClick = { showUnknownBarcodeDialog = false }) { Text("إلغاء") }
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    TextButton(
+                        onClick = {
+                            showUnknownBarcodeDialog = false
+                            showLinkBarcodeDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("ربطه بمنتج موجود") }
+                    TextButton(
+                        onClick = {
+                            createBarcodeProductName = ""
+                            createBarcodeProductSku = ""
+                            createBarcodeProductUnit = "قطعة"
+                            createBarcodePurchaseCost = "0"
+                            createBarcodeSalePrice = "0"
+                            showUnknownBarcodeDialog = false
+                            showCreateBarcodeProductDialog = true
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("إنشاء منتج جديد") }
+                    TextButton(
+                        onClick = { showUnknownBarcodeDialog = false },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("إلغاء") }
                 }
             }
         )
