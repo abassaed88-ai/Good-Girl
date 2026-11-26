@@ -66,10 +66,27 @@ internal object InvoiceJournalPoster {
             account("SYS-7000", "7000", "مصروفات تشغيلية", "EXPENSE", "DEBIT"),
             account("SYS-7100", "7100", "خسائر إعادة تقييم المخزون", "EXPENSE", "DEBIT")
         )
+        val requiredRevaluationAccountIds = buildSet {
+            if (invoice.kind == "PURCHASE" && inventoryRevaluations.any {
+                    it.valueDelta.toBigDecimal().signum() > 0
+                }
+            ) add("SYS-4100")
+            if (invoice.kind == "PURCHASE" && inventoryRevaluations.any {
+                    it.valueDelta.toBigDecimal().signum() < 0
+                }
+            ) add("SYS-7100")
+        }
         accounts.forEach { required ->
+            // Do not block unrelated sales or zero-stock purchases because a
+            // user already owns one of the optional revaluation account codes.
+            if (
+                required.id == "SYS-4100" || required.id == "SYS-7100"
+            ) {
+                if (required.id !in requiredRevaluationAccountIds) return@forEach
+            }
             val existingByCode = database.accountDao().findByCode(required.code)
             require(existingByCode == null || existingByCode.id == required.id) {
-                "رمز الحساب ${required.code} مستخدم لحساب آخر؛ أوقف ترحيل الفاتورة لتجنب قيد غير مكتمل"
+                "رمز الحساب ${required.code} مستخدم لحساب آخر؛ لا يمكن ترحيل إعادة تقييم المخزون بأمان. راجع دليل الحسابات أولاً"
             }
             val existingById = database.accountDao().findById(required.id)
             require(existingById == null || existingById.code == required.code) {
