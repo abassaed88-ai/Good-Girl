@@ -4629,13 +4629,13 @@ private fun ProductManagementScreen(
                     purchaseCost,
                     { purchaseCost = it },
                     modifier = Modifier.fillMaxWidth(),
-                    label = { Text("متوسط كلفة الشراء") },
+                    label = { Text("كلفة الشراء الحالية") },
                     enabled = canEditPurchaseCost,
                     singleLine = true
                 )
                 if (!canEditPurchaseCost) {
                     Text(
-                        "متوسط الكلفة لا يُعدّل من بطاقة المنتج أثناء وجود مخزون. سجّل فاتورة شراء أو حركة إضافة مخزون لتحديثه مع حفظ أثر الحركة.",
+                        "تُحدّث كلفة الشراء الحالية عند ترحيل فاتورة شراء جديدة، وتُطبّق على كامل الكمية المتبقية. لا تعدّلها يدوياً من بطاقة المنتج أثناء وجود مخزون.",
                         color = MutedText,
                         fontSize = 12.sp
                     )
