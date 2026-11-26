@@ -1,0 +1,146 @@
+name: Build signed Good Girl release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: good-girl-signed-release
+  cancel-in-progress: false
+
+jobs:
+  signed-release:
+    name: Validate and build permanently signed release
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out approved main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Confirm encrypted signing key is available
+        shell: bash
+        env:
+          GG_SIGNING_MASTER_PASSWORD: ${{ secrets.GG_SIGNING_MASTER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$GG_SIGNING_MASTER_PASSWORD" ]; then
+            echo "::error::Repository secret GG_SIGNING_MASTER_PASSWORD is missing."
+            exit 1
+          fi
+          if [ "${#GG_SIGNING_MASTER_PASSWORD}" -lt 32 ]; then
+            echo "::error::The signing master password must contain at least 32 characters."
+            exit 1
+          fi
+          test -s .github/signing/goodgirl-release.keystore.gpg || {
+            echo "::error::The encrypted signing keystore is missing from main."
+            exit 1
+          }
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Run unit tests before signing
+        timeout-minutes: 15
+        run: gradle :app:testDebugUnitTest --no-daemon --console=plain --stacktrace
+
+      - name: Enable KVM for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          if [ ! -r /dev/kvm ] || [ ! -w /dev/kvm ]; then
+            echo "ANDROID_I_WANT_MY_TCG=yes" >> "$GITHUB_ENV"
+            echo "::warning::KVM is unavailable; using Android Emulator software CPU emulation."
+          fi
+
+      - name: Run Android instrumentation tests before signing
+        timeout-minutes: 25
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-boot-timeout: 900
+          script: gradle :app:connectedDebugAndroidTest --no-daemon --console=plain --stacktrace
+
+      - name: Decrypt persistent keystore for the release build
+        shell: bash
+        env:
+          GG_SIGNING_MASTER_PASSWORD: ${{ secrets.GG_SIGNING_MASTER_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYSTORE="$RUNNER_TEMP/goodgirl-release.keystore"
+          gpg --batch --yes --quiet --pinentry-mode loopback \
+            --passphrase "$GG_SIGNING_MASTER_PASSWORD" \
+            --decrypt --output "$KEYSTORE" .github/signing/goodgirl-release.keystore.gpg
+          chmod 600 "$KEYSTORE"
+          keytool -list -keystore "$KEYSTORE" -storetype JKS \
+            -storepass "$GG_SIGNING_MASTER_PASSWORD" -alias goodgirl-release >/dev/null
+
+          {
+            echo "GG_SIGNING_STORE_FILE=$KEYSTORE"
+            echo "GG_SIGNING_STORE_PASSWORD=$GG_SIGNING_MASTER_PASSWORD"
+            echo "GG_SIGNING_KEY_ALIAS=goodgirl-release"
+            echo "GG_SIGNING_KEY_PASSWORD=$GG_SIGNING_MASTER_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build signed release APK
+        timeout-minutes: 12
+        run: gradle :app:assembleRelease --no-daemon --console=plain --stacktrace
+
+      - name: Verify APK signature and match the stored certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::error::Android apksigner was not found."
+            exit 1
+          fi
+
+          "$APKSIGNER" verify --verbose --print-certs "$APK" | tee "$RUNNER_TEMP/apk-signature.txt"
+          keytool -exportcert -rfc \
+            -keystore "$GG_SIGNING_STORE_FILE" -storetype JKS \
+            -storepass "$GG_SIGNING_STORE_PASSWORD" \
+            -alias "$GG_SIGNING_KEY_ALIAS" \
+            -file "$RUNNER_TEMP/goodgirl-signing-cert.pem"
+
+          EXPECTED="$(openssl x509 -in "$RUNNER_TEMP/goodgirl-signing-cert.pem" -outform DER | sha256sum | awk '{print tolower($1)}')"
+          ACTUAL="$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/ { gsub(":", "", $2); print tolower($2); exit }' "$RUNNER_TEMP/apk-signature.txt")"
+          if [ -z "$ACTUAL" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
+            echo "::error::APK signer certificate does not match the persistent keystore."
+            exit 1
+          fi
+          echo "Persistent signing certificate verified: $ACTUAL"
+
+      - name: Upload signed release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: good-girl-signed-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove decrypted signing material
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/goodgirl-release.keystore" \
+                "$RUNNER_TEMP/goodgirl-signing-cert.pem" \
+                "$RUNNER_TEMP/apk-signature.txt"
