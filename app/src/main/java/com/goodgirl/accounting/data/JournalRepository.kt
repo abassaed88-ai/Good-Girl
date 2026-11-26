@@ -42,6 +42,16 @@ class JournalRepository(private val database: AccountingDatabase) {
             systemAccount("SYS-7100", "7100", "خسائر إعادة تقييم المخزون", "EXPENSE", "DEBIT", now)
         )
         database.withTransaction {
+            defaults.forEach { required ->
+                val existingByCode = database.accountDao().findByCode(required.code)
+                require(existingByCode == null || existingByCode.id == required.id) {
+                    "رمز الحساب ${required.code} محجوز لحساب آخر؛ لا يمكن تجهيز الحسابات النظامية بأمان"
+                }
+                val existingById = database.accountDao().findById(required.id)
+                require(existingById == null || existingById.code == required.code) {
+                    "معرّف الحساب النظامي ${required.id} مرتبط برمز مختلف"
+                }
+            }
             database.accountDao().insertIgnore(defaults)
         }
     }
