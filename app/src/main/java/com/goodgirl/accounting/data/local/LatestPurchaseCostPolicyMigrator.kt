@@ -54,6 +54,16 @@ internal object LatestPurchaseCostPolicyMigrator {
         }
 
         products.forEach { product ->
+            // The migration journal is the durable idempotency marker. This
+            // also makes repeated legacy-backup normalization safe if a caller
+            // retries the conversion inside a restore transaction.
+            val alreadyConverted = database.query(
+                "SELECT 1 FROM journal_entries " +
+                    "WHERE sourceType = 'MIGRATION_LATEST_PURCHASE_COST' AND sourceId = ? LIMIT 1",
+                arrayOf(product.id)
+            ).use { it.moveToFirst() }
+            if (alreadyConverted) return@forEach
+
             val latestPurchase = findLatestPurchase(database, product.id, product.currencyCode)
                 ?: return@forEach
             val latestCost = latestPurchase.unitCost
