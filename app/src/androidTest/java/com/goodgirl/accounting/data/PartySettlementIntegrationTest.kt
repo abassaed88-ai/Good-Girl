@@ -360,9 +360,11 @@ class PartySettlementIntegrationTest {
             )
 
             val journals = database.journalEntryDao().getAll()
-            assertEquals(5, journals.size)
+            assertEquals(6, journals.size)
             assertEquals(1, journals.count { it.sourceType == "PRODUCT_OPENING_STOCK" })
             assertEquals(1, journals.count { it.sourceType == "SUPPLIER_OPENING_BALANCE" })
+            assertEquals(1, journals.count { it.sourceType == "PURCHASE_INVOICE" })
+            assertEquals(1, journals.count { it.sourceType == "PURCHASE_INVENTORY_REVALUATION" })
             assertEquals(1, journals.count { it.sourceType == "SUPPLIER_PAYMENT" })
             assertEquals(1, journals.count { it.sourceType == "PURCHASE_PAYMENT" })
             journals.forEach { journal ->
