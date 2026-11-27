@@ -6315,7 +6315,7 @@ private fun DailySalesScreen(
                                     "المبلغ المقبوض لا يمكن أن يتجاوز إجمالي السطر"
                                 }
                                 require(
-                                    netAmount.subtract(cleanPaid.toBigDecimal()).compareTo(BigDecimal.ZERO) == 0 ||
+                                    netAmount.toBigDecimal().subtract(cleanPaid.toBigDecimal()).compareTo(BigDecimal.ZERO) == 0 ||
                                         selectedPartyId != null
                                 ) {
                                     "اختر حساب العميل عند وجود مبلغ آجل"
