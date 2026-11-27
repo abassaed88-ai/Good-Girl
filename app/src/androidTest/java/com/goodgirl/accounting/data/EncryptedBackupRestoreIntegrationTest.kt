@@ -410,7 +410,10 @@ class EncryptedBackupRestoreIntegrationTest {
             assertEquals("RESTORE-001", restored.sku)
             assertEquals("مادة مستعادة", restored.name)
             assertEquals("11", restored.stockQuantity)
-            assertEquals("3.50", restored.purchaseCost)
+            assertEquals(
+                0,
+                java.math.BigDecimal("3.50").compareTo(java.math.BigDecimal(restored.purchaseCost))
+            )
             assertEquals(
                 "2.50",
                 database.invoiceDao().getLines("restored-invoice-001").single().unitCostSnapshot
