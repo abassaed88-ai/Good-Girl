@@ -1,6 +1,7 @@
 package com.goodgirl.accounting.data.local
 
 import android.content.Context
+import android.database.sqlite.SQLiteDatabase
 import androidx.room.Room
 import androidx.room.withTransaction
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -18,6 +19,143 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class LatestPurchaseCostPolicyMigrationIntegrationTest {
+
+    @Test
+    fun roomVersionTenUpgradeAppliesLatestPurchaseCostMigrationAtomically() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val databaseName = "latest-purchase-cost-v10-${System.nanoTime()}.db"
+        val databaseFile = context.getDatabasePath(databaseName)
+        var setupDatabase: AccountingDatabase? = null
+        try {
+            setupDatabase = Room.databaseBuilder(
+                context,
+                AccountingDatabase::class.java,
+                databaseName
+            ).allowMainThreadQueries().build()
+
+            val products = ProductRepository(setupDatabase)
+            val invoices = InvoiceRepository(setupDatabase)
+            products.addProduct(
+                sku = "ROOM-V10-COST-001",
+                name = "ترقية قاعدة قديمة",
+                unit = "مل",
+                purchaseCost = "10",
+                salePrice = "15",
+                openingStock = "10",
+                note = "تجهيز بيانات إصدار 10 للاختبار"
+            )
+            val product = setupDatabase.productDao().getAll().single()
+            val baselineAt = setupDatabase.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
+
+            val sale = invoices.postInvoice(
+                invoiceNumber = "ROOM-V10-SALE",
+                kind = "SALE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "2", "15")),
+                paidAmount = "30",
+                issuedAt = baselineAt + 1_000L
+            )
+            val saleLineBefore = setupDatabase.invoiceDao().getLines(sale.invoiceId).single()
+            val saleJournal = setupDatabase.journalEntryDao().findBySource("SALE_INVOICE", sale.invoiceId)!!
+            val saleJournalLinesBefore = setupDatabase.journalLineDao().getForEntry(saleJournal.id)
+
+            val purchase = invoices.postInvoice(
+                invoiceNumber = "ROOM-V10-PURCHASE",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "8", "20")),
+                paidAmount = "160",
+                issuedAt = baselineAt + 2_000L
+            )
+            assertDecimal("16", setupDatabase.productDao().findById(product.id)!!.stockQuantity)
+
+            // Recreate the v10 persisted state: a weighted-average current
+            // product cost, with no v11 stock-revaluation journal or report row.
+            setupDatabase.openHelper.writableDatabase.execSQL(
+                "DELETE FROM journal_lines WHERE journalEntryId IN " +
+                    "(SELECT id FROM journal_entries WHERE sourceType = 'PURCHASE_INVENTORY_REVALUATION' AND sourceId = ?)",
+                arrayOf(purchase.invoiceId)
+            )
+            setupDatabase.openHelper.writableDatabase.execSQL(
+                "DELETE FROM journal_entries WHERE sourceType = 'PURCHASE_INVENTORY_REVALUATION' AND sourceId = ?",
+                arrayOf(purchase.invoiceId)
+            )
+            setupDatabase.ledgerDao().getAll()
+                .filter { it.sourceId == purchase.invoiceId && it.sourceType.startsWith("PURCHASE_INVENTORY_REVALUATION_") }
+                .forEach { setupDatabase.ledgerDao().deleteById(it.id) }
+            val legacyProduct = setupDatabase.productDao().findById(product.id)!!
+            setupDatabase.productDao().update(legacyProduct.copy(purchaseCost = "15"))
+            setupDatabase.close()
+            setupDatabase = null
+
+            // The v11 schema is unchanged from v10; downgrade only the
+            // SQLite user_version so Room executes the registered 10 -> 11 data migration.
+            SQLiteDatabase.openDatabase(
+                databaseFile.absolutePath,
+                null,
+                SQLiteDatabase.OPEN_READWRITE
+            ).use { it.version = 10 }
+
+            val upgraded = Room.databaseBuilder(
+                context,
+                AccountingDatabase::class.java,
+                databaseName
+            ).addMigrations(AccountingDatabase.MIGRATION_10_11)
+                .allowMainThreadQueries()
+                .build()
+            try {
+                val updatedProduct = upgraded.productDao().findById(product.id)!!
+                assertDecimal("20", updatedProduct.purchaseCost)
+                assertDecimal("16", updatedProduct.stockQuantity)
+                assertDecimal("10", upgraded.invoiceDao().getLines(sale.invoiceId).single().unitCostSnapshot)
+                assertEquals(saleLineBefore, upgraded.invoiceDao().getLines(sale.invoiceId).single())
+                assertEquals(saleJournalLinesBefore, upgraded.journalLineDao().getForEntry(saleJournal.id))
+
+                val migrationJournal = upgraded.journalEntryDao()
+                    .findBySource("MIGRATION_LATEST_PURCHASE_COST", product.id)!!
+                val accounts = upgraded.accountDao().getAll().associate { it.id to it.code }
+                val migrationLines = upgraded.journalLineDao().getForEntry(migrationJournal.id)
+                assertDecimal("80", migrationLines.single { accounts[it.accountId] == "1200" }.debit)
+                assertDecimal("80", migrationLines.single { accounts[it.accountId] == "4100" }.credit)
+                val migrationLedger = upgraded.ledgerDao().getAll().single {
+                    it.sourceType == "MIGRATION_STOCK_REVALUATION_GAIN" && it.sourceId == product.id
+                }
+                assertEquals("INCOME", migrationLedger.entryType)
+                assertDecimal("80", migrationLedger.amount)
+
+                upgraded.close()
+                val reopened = Room.databaseBuilder(
+                    context,
+                    AccountingDatabase::class.java,
+                    databaseName
+                ).addMigrations(AccountingDatabase.MIGRATION_10_11)
+                    .allowMainThreadQueries()
+                    .build()
+                try {
+                    reopened.openHelper.writableDatabase
+                    assertEquals(
+                        1,
+                        reopened.journalEntryDao().getAll().count {
+                            it.sourceType == "MIGRATION_LATEST_PURCHASE_COST" && it.sourceId == product.id
+                        }
+                    )
+                    assertDecimal("20", reopened.productDao().findById(product.id)!!.purchaseCost)
+                } finally {
+                    reopened.close()
+                }
+            } catch (error: Throwable) {
+                runCatching { upgraded.close() }
+                throw error
+            }
+        } finally {
+            setupDatabase?.close()
+            context.deleteDatabase(databaseName)
+        }
+    }
 
     @Test
     fun migratesLegacyWeightedAverageToLatestPurchaseCostWithoutRewritingHistoricalSales() = runBlocking {
