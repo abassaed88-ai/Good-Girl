@@ -219,18 +219,31 @@ internal object InvoiceJournalPoster {
 
         val inventory = database.accountDao().findById(INVENTORY)
             ?: throw IllegalStateException("حساب المخزون غير موجود")
-        val gain = database.accountDao().findById("SYS-4100")
-            ?: throw IllegalStateException("حساب أرباح إعادة تقييم المخزون غير موجود")
-        val loss = database.accountDao().findById("SYS-7100")
-            ?: throw IllegalStateException("حساب خسائر إعادة تقييم المخزون غير موجود")
+        val requiresGainAccount = adjustments.any { it.valueDelta.toBigDecimal().signum() > 0 }
+        val requiresLossAccount = adjustments.any { it.valueDelta.toBigDecimal().signum() < 0 }
+        // A gain-only revaluation must not depend on the optional loss account,
+        // and vice versa. This also supports databases upgraded from v10 where
+        // only the account needed for the migration adjustment was created.
+        val gain = if (requiresGainAccount) {
+            database.accountDao().findById("SYS-4100")
+                ?: throw IllegalStateException("حساب أرباح إعادة تقييم المخزون غير موجود")
+        } else null
+        val loss = if (requiresLossAccount) {
+            database.accountDao().findById("SYS-7100")
+                ?: throw IllegalStateException("حساب خسائر إعادة تقييم المخزون غير موجود")
+        } else null
         require(inventory.isActive && inventory.accountType == "ASSET" && inventory.normalSide == "DEBIT") {
             "حساب المخزون غير صالح لإعادة التقييم"
         }
-        require(gain.isActive && gain.accountType == "REVENUE" && gain.normalSide == "CREDIT") {
-            "حساب أرباح إعادة تقييم المخزون غير صالح"
+        gain?.let {
+            require(it.isActive && it.accountType == "REVENUE" && it.normalSide == "CREDIT") {
+                "حساب أرباح إعادة تقييم المخزون غير صالح"
+            }
         }
-        require(loss.isActive && loss.accountType == "EXPENSE" && loss.normalSide == "DEBIT") {
-            "حساب خسائر إعادة تقييم المخزون غير صالح"
+        loss?.let {
+            require(it.isActive && it.accountType == "EXPENSE" && it.normalSide == "DEBIT") {
+                "حساب خسائر إعادة تقييم المخزون غير صالح"
+            }
         }
 
         val drafts = mutableListOf<JournalLineDraft>()
@@ -252,13 +265,13 @@ internal object InvoiceJournalPoster {
                         memo = memo
                     )
                     drafts += JournalLineDraft(
-                        accountId = gain.id,
+                        accountId = requireNotNull(gain).id,
                         credit = amount,
                         memo = memo
                     )
                 } else {
                     drafts += JournalLineDraft(
-                        accountId = loss.id,
+                        accountId = requireNotNull(loss).id,
                         debit = amount,
                         memo = memo
                     )
