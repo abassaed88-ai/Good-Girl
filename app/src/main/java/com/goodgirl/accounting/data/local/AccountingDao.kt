@@ -21,6 +21,9 @@ interface ProductDao {
     @Query("SELECT * FROM products WHERE isActive = 1 ORDER BY name COLLATE NOCASE")
     fun observeActiveProducts(): Flow<List<ProductEntity>>
 
+    @Query("SELECT * FROM products WHERE isActive = 0 ORDER BY name COLLATE NOCASE")
+    fun observeArchivedProducts(): Flow<List<ProductEntity>>
+
     @Query("SELECT * FROM products WHERE id = :id LIMIT 1")
     suspend fun findById(id: String): ProductEntity?
 
@@ -35,6 +38,12 @@ interface ProductDao {
 
     @Query("UPDATE products SET isActive = 0, updatedAt = :updatedAt WHERE id = :id")
     suspend fun archive(id: String, updatedAt: Long)
+
+    @Query("UPDATE products SET isActive = 1, updatedAt = :updatedAt WHERE id = :id")
+    suspend fun restore(id: String, updatedAt: Long)
+
+    @Query("DELETE FROM products WHERE id = :id")
+    suspend fun deleteById(id: String)
 
     @Query("UPDATE products SET stockQuantity = :quantity, updatedAt = :updatedAt WHERE id = :id")
     suspend fun updateStock(id: String, quantity: String, updatedAt: Long)
@@ -59,6 +68,9 @@ interface ProductUnitDao {
 
     @Query("SELECT * FROM product_units WHERE productId = :productId AND unitName = :unitName LIMIT 1")
     suspend fun findByName(productId: String, unitName: String): ProductUnitEntity?
+
+    @Query("DELETE FROM product_units WHERE productId = :productId")
+    suspend fun deleteForProduct(productId: String)
 
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(unit: ProductUnitEntity)
@@ -141,6 +153,9 @@ interface InvoiceDao {
     @Query("SELECT * FROM invoice_lines WHERE invoiceId = :invoiceId ORDER BY id")
     suspend fun getLines(invoiceId: String): List<InvoiceLineEntity>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM invoice_lines WHERE productId = :productId)")
+    suspend fun hasProductHistory(productId: String): Boolean
+
     @Query("SELECT * FROM invoice_lines ORDER BY id")
     fun observeAllLines(): Flow<List<InvoiceLineEntity>>
 
@@ -184,6 +199,9 @@ interface StockMovementDao {
     @Query("SELECT MAX(recordedAt) FROM stock_movements WHERE productId = :productId")
     suspend fun getLatestRecordedAt(productId: String): Long?
 
+    @Query("SELECT EXISTS(SELECT 1 FROM stock_movements WHERE productId = :productId)")
+    suspend fun hasProductHistory(productId: String): Boolean
+
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insert(movement: StockMovementEntity)
 }
@@ -204,6 +222,9 @@ interface StockCostBaselineDao {
 
     @Query("DELETE FROM stock_cost_baselines")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM stock_cost_baselines WHERE productId = :productId")
+    suspend fun deleteForProduct(productId: String)
 }
 
 @Dao
@@ -401,6 +422,9 @@ interface ProductBarcodeDao {
 
     @Query("DELETE FROM product_barcodes")
     suspend fun deleteAll()
+
+    @Query("DELETE FROM product_barcodes WHERE productId = :productId")
+    suspend fun deleteForProduct(productId: String)
 }
 
 
@@ -412,6 +436,9 @@ interface StockCostRecalculationAuditDao {
     suspend fun getAll(): List<StockCostRecalculationAuditEntity>
     @Query("SELECT * FROM stock_cost_recalculation_audits WHERE productId = :productId ORDER BY createdAt DESC")
     suspend fun getForProduct(productId: String): List<StockCostRecalculationAuditEntity>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM stock_cost_recalculation_audits WHERE productId = :productId)")
+    suspend fun hasProductHistory(productId: String)
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(audits: List<StockCostRecalculationAuditEntity>)
     @Query("DELETE FROM stock_cost_recalculation_audits")
