@@ -107,6 +107,7 @@ import com.goodgirl.accounting.data.PartyRepository
 import com.goodgirl.accounting.data.PartyPaymentRepository
 import com.goodgirl.accounting.data.PartyStatementPdfExporter
 import com.goodgirl.accounting.data.ProductBarcodeLabelPdfExporter
+import com.goodgirl.accounting.data.ProductBarcodeLabelBatchItem
 import com.goodgirl.accounting.data.ProductBarcodeRepository
 import com.goodgirl.accounting.data.ProductRepository
 import com.goodgirl.accounting.data.ProductUnitRepository
@@ -4543,6 +4544,9 @@ private fun ProductManagementScreen(
     var barcodeLabelLayoutExpanded by remember { mutableStateOf(false) }
     var includeBarcodePrice by remember { mutableStateOf(true) }
     var pendingBarcodeLabelProductId by remember { mutableStateOf<String?>(null) }
+    var isBulkBarcodeSelectionMode by remember { mutableStateOf(false) }
+    var bulkBarcodeSelection by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var pendingBulkBarcodeLabelProductIds by remember { mutableStateOf<List<String>>(emptyList()) }
     var isExportingBarcodeLabels by remember { mutableStateOf(false) }
     val barcodeLabelPdfLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/pdf")
@@ -4585,6 +4589,55 @@ private fun ProductManagementScreen(
             }
         } else {
             pendingBarcodeLabelProductId = null
+        }
+    }
+
+    val bulkBarcodeLabelPdfLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        val targetIds = pendingBulkBarcodeLabelProductIds
+        if (uri != null && targetIds.isNotEmpty()) {
+            scope.launch {
+                isExportingBarcodeLabels = true
+                barcodeMessage = null
+                try {
+                    val layout = when (barcodeLabelLayout) {
+                        "LARGE" -> 2 to 6
+                        "SMALL" -> 4 to 10
+                        else -> 3 to 8
+                    }
+                    val batchItems = targetIds.map { productId ->
+                        val targetProduct = database.productDao().findById(productId)
+                            ?: throw IllegalArgumentException("إحدى المواد المحددة لم تعد موجودة")
+                        val targetBarcodes = database.productBarcodeDao().getForProduct(productId)
+                        val copies = bulkBarcodeSelection[productId]?.toIntOrNull()
+                            ?: throw IllegalArgumentException("عدد النسخ غير صالح للمادة: ${targetProduct.name}")
+                        ProductBarcodeLabelBatchItem(
+                            product = targetProduct,
+                            barcodes = targetBarcodes,
+                            copiesPerBarcode = copies
+                        )
+                    }
+                    val count = ProductBarcodeLabelPdfExporter.writeBatch(
+                        context = context,
+                        destination = uri,
+                        items = batchItems,
+                        includePrice = includeBarcodePrice,
+                        columns = layout.first,
+                        rows = layout.second
+                    )
+                    barcodeMessage = "تم تجهيز $count ملصقاً لـ${targetIds.size} مواد في ملف PDF واحد."
+                    isBulkBarcodeSelectionMode = false
+                    bulkBarcodeSelection = emptyMap()
+                } catch (error: Exception) {
+                    barcodeMessage = error.message ?: "تعذر تجهيز ملف الباركود الجماعي"
+                } finally {
+                    isExportingBarcodeLabels = false
+                    pendingBulkBarcodeLabelProductIds = emptyList()
+                }
+            }
+        } else {
+            pendingBulkBarcodeLabelProductIds = emptyList()
         }
     }
 
@@ -5289,6 +5342,16 @@ private fun ProductManagementScreen(
             TextButton(onClick = { showLowStockOnly = !showLowStockOnly }) {
                 Text(if (showLowStockOnly) "عرض جميع المنتجات" else "عرض المواد منخفضة المخزون فقط")
             }
+            TextButton(
+                onClick = {
+                    isBulkBarcodeSelectionMode = !isBulkBarcodeSelectionMode
+                    bulkBarcodeSelection = emptyMap()
+                    barcodeMessage = null
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isBulkBarcodeSelectionMode) "إلغاء تحديد الطباعة الجماعية" else "تحديد مواد لطباعة الباركود جماعياً")
+            }
         }
         val normalizedSearch = searchQuery.trim().lowercase()
         val visibleProducts = products.filter { product ->
@@ -5377,6 +5440,99 @@ private fun ProductManagementScreen(
                 colors = CardDefaults.cardColors(containerColor = CardSurface)
             ) {
                 Text("لا توجد منتجات مطابقة لمعايير البحث أو التصفية.", modifier = Modifier.padding(18.dp), color = MutedText)
+            }
+        } else if (isBulkBarcodeSelectionMode) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("الطباعة الجماعية للباركود", color = Ink, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(
+                        "حدد المواد المطلوبة، ثم اكتب عدد النسخ لكل مادة. ستُجمع جميع الملصقات في ملف PDF واحد.",
+                        color = MutedText,
+                        fontSize = 12.sp
+                    )
+                    Text("المواد المحددة: ${bulkBarcodeSelection.size}", color = Ink, fontWeight = FontWeight.SemiBold)
+                    visibleProducts.forEach { product ->
+                        val selectedCopies = bulkBarcodeSelection[product.id]
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = activePalette.background)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = selectedCopies != null,
+                                    onCheckedChange = { checked ->
+                                        bulkBarcodeSelection = if (checked) {
+                                            bulkBarcodeSelection + (product.id to "1")
+                                        } else {
+                                            bulkBarcodeSelection - product.id
+                                        }
+                                    }
+                                )
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Text(product.name, color = Ink, fontWeight = FontWeight.Bold)
+                                    if (product.sku.isNotBlank()) {
+                                        Text("الرمز: ${product.sku}", color = MutedText, fontSize = 11.sp)
+                                    }
+                                    if (selectedCopies != null) {
+                                        OutlinedTextField(
+                                            value = selectedCopies,
+                                            onValueChange = { value ->
+                                                bulkBarcodeSelection = bulkBarcodeSelection +
+                                                    (product.id to value.filter { it in '0'..'9' }.take(3))
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            label = { Text("عدد النسخ لكل باركود") },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            pendingBulkBarcodeLabelProductIds = bulkBarcodeSelection.keys.toList()
+                            barcodeMessage = null
+                            bulkBarcodeLabelPdfLauncher.launch("GoodGirl_Bulk_Labels.pdf")
+                        },
+                        enabled = !isExportingBarcodeLabels &&
+                            bulkBarcodeSelection.isNotEmpty() &&
+                            bulkBarcodeSelection.values.all { (it.toIntOrNull() ?: 0) in 1..200 },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isExportingBarcodeLabels) "جارٍ تجهيز PDF..." else "حفظ جميع الملصقات في PDF واحد")
+                    }
+                    barcodeMessage?.let {
+                        Text(
+                            it,
+                            color = if (it.startsWith("تم")) SoftGreen else SoftRed,
+                            fontSize = 12.sp
+                        )
+                    }
+                    TextButton(
+                        onClick = {
+                            isBulkBarcodeSelectionMode = false
+                            bulkBarcodeSelection = emptyMap()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("إلغاء") }
+                }
             }
         } else {
             visibleProducts.forEach { product ->

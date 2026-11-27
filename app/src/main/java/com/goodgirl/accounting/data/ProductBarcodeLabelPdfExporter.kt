@@ -24,7 +24,14 @@ import kotlinx.coroutines.withContext
  * Produces printable A4 sheets of labels in three sizes. PDF rendering runs
  * off the UI thread and works without a network connection.
  */
+data class ProductBarcodeLabelBatchItem(
+    val product: ProductEntity,
+    val barcodes: List<ProductBarcodeEntity>,
+    val copiesPerBarcode: Int = 1
+)
+
 object ProductBarcodeLabelPdfExporter {
+    private const val MAX_LABELS_PER_PDF = 5000
     private const val PAGE_WIDTH = 595
     private const val PAGE_HEIGHT = 842
     private const val PAGE_MARGIN = 18f
@@ -38,12 +45,50 @@ object ProductBarcodeLabelPdfExporter {
         includePrice: Boolean = true,
         columns: Int = 3,
         rows: Int = 8
+    ): Int = writeBatch(
+        context = context,
+        destination = destination,
+        items = listOf(ProductBarcodeLabelBatchItem(product, barcodes, copiesPerBarcode)),
+        includePrice = includePrice,
+        columns = columns,
+        rows = rows
+    )
+
+    /**
+     * Writes one PDF containing labels for multiple products. Each product may
+     * request a different number of copies per registered barcode.
+     */
+    suspend fun writeBatch(
+        context: Context,
+        destination: Uri,
+        items: List<ProductBarcodeLabelBatchItem>,
+        includePrice: Boolean = true,
+        columns: Int = 3,
+        rows: Int = 8
     ): Int = withContext(Dispatchers.IO) {
-        require(barcodes.isNotEmpty()) { "لا يوجد باركود مسجل لهذه المادة" }
-        require(copiesPerBarcode in 1..200) { "عدد النسخ يجب أن يكون بين 1 و200" }
+        require(items.isNotEmpty()) { "حدد مادة واحدة على الأقل للطباعة" }
         require(columns in 2..4 && rows in 6..10) { "حجم الملصق غير مدعوم" }
 
-        val labels = barcodes.flatMap { barcode -> List(copiesPerBarcode) { barcode } }
+        val labels = ArrayList<Pair<ProductEntity, ProductBarcodeEntity>>()
+        items.forEach { item ->
+            require(item.copiesPerBarcode in 1..200) { "عدد النسخ يجب أن يكون بين 1 و200" }
+            require(item.barcodes.isNotEmpty()) {
+                "لا يوجد باركود مسجل للمادة: ${item.product.name}"
+            }
+            require(item.barcodes.all { it.productId == item.product.id }) {
+                "يوجد باركود غير مرتبط بالمادة: ${item.product.name}"
+            }
+            val requestedCount = item.barcodes.size.toLong() * item.copiesPerBarcode.toLong()
+            require(labels.size.toLong() + requestedCount <= MAX_LABELS_PER_PDF) {
+                "عدد الملصقات يتجاوز الحد الآمن البالغ $MAX_LABELS_PER_PDF ملصق"
+            }
+            item.barcodes.forEach { barcode ->
+                repeat(item.copiesPerBarcode) {
+                    labels += item.product to barcode
+                }
+            }
+        }
+
         val labelsPerPage = columns * rows
         val cellWidth = (PAGE_WIDTH - PAGE_MARGIN * 2) / columns
         val cellHeight = (PAGE_HEIGHT - PAGE_MARGIN * 2) / rows
@@ -59,15 +104,15 @@ object ProductBarcodeLabelPdfExporter {
                 val page = document.startPage(pageInfo)
                 page.canvas.drawColor(android.graphics.Color.WHITE)
 
-                pageLabels.forEachIndexed { index, barcode ->
+                pageLabels.forEachIndexed { index, label ->
                     val column = index % columns
                     val row = index / columns
                     val left = PAGE_MARGIN + column * cellWidth
                     val top = PAGE_MARGIN + row * cellHeight
                     drawLabel(
                         canvas = page.canvas,
-                        product = product,
-                        barcode = barcode,
+                        product = label.first,
+                        barcode = label.second,
                         bounds = RectF(left, top, left + cellWidth, top + cellHeight),
                         includePrice = includePrice
                     )

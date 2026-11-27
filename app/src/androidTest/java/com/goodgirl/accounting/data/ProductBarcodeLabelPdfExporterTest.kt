@@ -60,4 +60,53 @@ class ProductBarcodeLabelPdfExporterTest {
             output.delete()
         }
     }
+
+    @Test
+    fun writesOnePdfForMultipleProductsWithIndependentCopyCounts() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val output = File(context.cacheDir, "barcode-batch-test-${System.nanoTime()}.pdf")
+        try {
+            val firstProduct = ProductEntity(
+                id = "BATCH-1",
+                name = "المادة الأولى",
+                createdAt = 1L,
+                updatedAt = 1L
+            )
+            val secondProduct = ProductEntity(
+                id = "BATCH-2",
+                name = "المادة الثانية",
+                createdAt = 1L,
+                updatedAt = 1L
+            )
+            val firstBarcode = ProductBarcodeEntity(
+                "BATCH-CODE-1", firstProduct.id, "GG-BATCH-001", "CODE_128", "INTERNAL", 1L
+            )
+            val secondBarcode = ProductBarcodeEntity(
+                "BATCH-CODE-2", secondProduct.id, "GG-BATCH-002", "CODE_128", "INTERNAL", 1L
+            )
+
+            val labelCount = ProductBarcodeLabelPdfExporter.writeBatch(
+                context = context,
+                destination = Uri.fromFile(output),
+                items = listOf(
+                    ProductBarcodeLabelBatchItem(firstProduct, listOf(firstBarcode), copiesPerBarcode = 2),
+                    ProductBarcodeLabelBatchItem(secondProduct, listOf(secondBarcode), copiesPerBarcode = 3)
+                ),
+                includePrice = true,
+                columns = 3,
+                rows = 8
+            )
+
+            assertEquals(5, labelCount)
+            assertTrue(output.exists())
+            assertTrue(output.length() > 500L)
+            val header = output.inputStream().use {
+                ByteArray(5).also { bytes -> it.read(bytes) }
+            }
+            assertEquals("%PDF-", String(header, Charsets.US_ASCII))
+        } finally {
+            output.delete()
+        }
+    }
+
 }
