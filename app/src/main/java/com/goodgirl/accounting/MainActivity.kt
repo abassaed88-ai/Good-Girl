@@ -599,7 +599,10 @@ private fun GoodGirlApp() {
                         activePage = "sales"
                     },
                     onOpenPurchases = { activePage = "purchases" },
-                    onOpenProducts = { activePage = "products" },
+                    onOpenProducts = {
+                        productsReturnPage = "dashboard"
+                        activePage = "products"
+                    },
                     onOpenParties = {
                         partiesReturnPage = "dashboard"
                         activePage = "parties"
