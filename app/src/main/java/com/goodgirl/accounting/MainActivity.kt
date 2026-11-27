@@ -4497,9 +4497,13 @@ private fun ProductManagementScreen(
     val barcodeRepository = remember(database) { ProductBarcodeRepository(database) }
     val stockRepository = remember(database) { StockRepository(database) }
     val products by repository.observeProducts().collectAsState(initial = emptyList())
+    val archivedProducts by repository.observeArchivedProducts().collectAsState(initial = emptyList())
     val categories by database.categoryDao().observeAll().collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
 
+    var showArchivedProducts by remember { mutableStateOf(false) }
+    var pendingProductRemovalId by remember { mutableStateOf<String?>(null) }
+    var isChangingProductLifecycle by remember { mutableStateOf(false) }
     var selectedCategoryId by remember { mutableStateOf<String?>(null) }
     var categoryMenuExpanded by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf("") }
@@ -5243,8 +5247,26 @@ private fun ProductManagementScreen(
         val lowStockProducts = products.filter {
             ProductInputRules.isLowStock(it.stockQuantity, it.lowStockThreshold)
         }
-        Text("قائمة المنتجات (${products.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Ink)
-        if (lowStockProducts.isNotEmpty()) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                if (showArchivedProducts) "المنتجات المؤرشفة (${archivedProducts.size})" else "قائمة المنتجات (${products.size})",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                color = Ink
+            )
+            TextButton(onClick = {
+                showArchivedProducts = !showArchivedProducts
+                searchQuery = ""
+                showLowStockOnly = false
+            }) {
+                Text(if (showArchivedProducts) "عرض النشطة" else "عرض المؤرشفة")
+            }
+        }
+        if (!showArchivedProducts && lowStockProducts.isNotEmpty()) {
             Text(
                 "مواد منخفضة المخزون: " + lowStockProducts.size,
                 color = SoftRed,
@@ -5259,12 +5281,14 @@ private fun ProductManagementScreen(
             label = { Text("بحث باسم المنتج أو الرمز أو التصنيف") },
             singleLine = true
         )
-        TextButton(
-            onClick = { showInventoryLookupScanner = true },
-            modifier = Modifier.fillMaxWidth()
-        ) { Text("مسح الباركود للعثور على المادة وفتح الجرد") }
-        TextButton(onClick = { showLowStockOnly = !showLowStockOnly }) {
-            Text(if (showLowStockOnly) "عرض جميع المنتجات" else "عرض المواد منخفضة المخزون فقط")
+        if (!showArchivedProducts) {
+            TextButton(
+                onClick = { showInventoryLookupScanner = true },
+                modifier = Modifier.fillMaxWidth()
+            ) { Text("مسح الباركود للعثور على المادة وفتح الجرد") }
+            TextButton(onClick = { showLowStockOnly = !showLowStockOnly }) {
+                Text(if (showLowStockOnly) "عرض جميع المنتجات" else "عرض المواد منخفضة المخزون فقط")
+            }
         }
         val normalizedSearch = searchQuery.trim().lowercase()
         val visibleProducts = products.filter { product ->
@@ -5277,7 +5301,68 @@ private fun ProductManagementScreen(
                 ProductInputRules.isLowStock(product.stockQuantity, product.lowStockThreshold)
             matchesSearch && matchesStock
         }
-        if (products.isEmpty()) {
+        if (showArchivedProducts) {
+            val filteredArchivedProducts = archivedProducts.filter { product ->
+                normalizedSearch.isBlank() ||
+                    product.name.contains(normalizedSearch, ignoreCase = true) ||
+                    product.sku.contains(normalizedSearch, ignoreCase = true)
+            }
+            if (filteredArchivedProducts.isEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = CardSurface)
+                ) {
+                    Text(
+                        if (archivedProducts.isEmpty()) "لا توجد منتجات مؤرشفة." else "لا توجد مواد مؤرشفة مطابقة للبحث.",
+                        modifier = Modifier.padding(18.dp),
+                        color = MutedText
+                    )
+                }
+            } else {
+                filteredArchivedProducts.forEach { product ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = CardSurface)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(product.name, color = Ink, fontWeight = FontWeight.Bold)
+                                Text(
+                                    "مؤرشف · الرصيد المحفوظ: ${product.stockQuantity} ${product.baseUnit}",
+                                    color = MutedText,
+                                    fontSize = 12.sp
+                                )
+                                if (product.sku.isNotBlank()) {
+                                    Text("الرمز: ${product.sku}", color = MutedText, fontSize = 11.sp)
+                                }
+                            }
+                            TextButton(
+                                enabled = !isChangingProductLifecycle,
+                                onClick = {
+                                    scope.launch {
+                                        isChangingProductLifecycle = true
+                                        try {
+                                            val restored = repository.restoreProduct(product.id)
+                                            message = if (restored) "تمت استعادة المنتج وإعادته إلى قائمة المنتجات النشطة." else "تعذرت استعادة المنتج."
+                                        } catch (error: Exception) {
+                                            message = error.message ?: "تعذرت استعادة المنتج."
+                                        } finally {
+                                            isChangingProductLifecycle = false
+                                        }
+                                    }
+                                }
+                            ) { Text("استعادة") }
+                        }
+                    }
+                }
+            }
+        } else if (products.isEmpty()) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(14.dp),
@@ -5303,7 +5388,14 @@ private fun ProductManagementScreen(
                     onStockAdjustment = { startStockAdjustment(product) },
                     onManageUnits = { onManageUnits(product.id) },
                     onManageBarcodes = { barcodeProductId = product.id },
-                    onViewHistory = { onViewHistory(product.id) }
+                    onViewHistory = { onViewHistory(product.id) },
+                    onArchiveOrDelete = {
+                        if (hasUnsavedProductChanges) {
+                            message = "احفظ أو ألغِ التعديل الحالي قبل حذف المنتج أو أرشفته."
+                        } else {
+                            pendingProductRemovalId = product.id
+                        }
+                    }
                 )
             }
         }
@@ -5340,6 +5432,54 @@ private fun ProductManagementScreen(
                 )
             }
         }
+    }
+
+    if (pendingProductRemovalId != null) {
+        val target = products.firstOrNull { it.id == pendingProductRemovalId }
+        AlertDialog(
+            onDismissRequest = {
+                if (!isChangingProductLifecycle) pendingProductRemovalId = null
+            },
+            title = { Text("حذف المنتج أو أرشفته") },
+            text = {
+                Text(
+                    "سيتم حذف ${target?.name ?: "المنتج"} نهائياً فقط إذا لم تكن له أي فواتير أو حركات مخزون أو رصيد تاريخي. إذا كان له سجل محاسبي، فسيتم أرشفته مع الاحتفاظ بتاريخه ويمكن استعادته لاحقاً."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isChangingProductLifecycle,
+                    onClick = {
+                        val id = pendingProductRemovalId ?: return@TextButton
+                        scope.launch {
+                            isChangingProductLifecycle = true
+                            try {
+                                when (repository.removeOrArchiveProduct(id)) {
+                                    com.goodgirl.accounting.data.ProductRemovalResult.DELETED -> {
+                                        message = "تم حذف المنتج لعدم وجود سجل محاسبي أو حركات مرتبطة به."
+                                        if (editingId == id) resetForm()
+                                    }
+                                    com.goodgirl.accounting.data.ProductRemovalResult.ARCHIVED -> {
+                                        message = "تمت أرشفة المنتج مع الاحتفاظ بالفواتير وحركات المخزون وسجله."
+                                    }
+                                }
+                                pendingProductRemovalId = null
+                            } catch (error: Exception) {
+                                message = error.message ?: "تعذر حذف المنتج أو أرشفته."
+                            } finally {
+                                isChangingProductLifecycle = false
+                            }
+                        }
+                    }
+                ) { Text(if (isChangingProductLifecycle) "جارٍ التنفيذ..." else "تأكيد") }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isChangingProductLifecycle,
+                    onClick = { pendingProductRemovalId = null }
+                ) { Text("إلغاء") }
+            }
+        )
     }
 
     if (showBarcodeScanner && barcodeProductId != null) {
@@ -5380,7 +5520,8 @@ private fun ProductListItem(
     onStockAdjustment: () -> Unit,
     onManageUnits: () -> Unit,
     onManageBarcodes: () -> Unit,
-    onViewHistory: () -> Unit
+    onViewHistory: () -> Unit,
+    onArchiveOrDelete: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -5462,6 +5603,12 @@ private fun ProductListItem(
                 color = MutedText,
                 fontSize = 12.sp
             )
+            TextButton(
+                onClick = onArchiveOrDelete,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("حذف / أرشفة المنتج", color = MaterialTheme.colorScheme.error)
+            }
         }
     }
 }
