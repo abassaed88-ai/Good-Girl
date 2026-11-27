@@ -769,6 +769,7 @@ private fun DashboardScreen(
         totals
     }
     val postedInvoiceCount = remember(invoices) { invoices.count { it.status == "POSTED" } }
+    var dashboardMenuExpanded by remember { mutableStateOf(false) }
 
     val dashboardTiles = listOf(
         Triple("daily_sales", homeShortcutLabels["daily_sales"].orEmpty().ifBlank { "المبيعات اليومية" }, Icons.Filled.BarChart) to onOpenDailySales,
@@ -808,7 +809,41 @@ private fun DashboardScreen(
                     Text("Good Girl", color = BrandOnPrimary, fontSize = 24.sp, fontWeight = FontWeight.Bold)
                     Text("نظام إدارة ومحاسبة متكامل", color = BrandOnPrimary, fontSize = 14.sp)
                 }
-                Icon(Icons.Filled.Menu, contentDescription = "القائمة", tint = BrandOnPrimary, modifier = Modifier.size(28.dp))
+                Box {
+                    Icon(
+                        Icons.Filled.Menu,
+                        contentDescription = "القائمة",
+                        tint = BrandOnPrimary,
+                        modifier = Modifier.size(28.dp).clickable { dashboardMenuExpanded = true }
+                    )
+                    DropdownMenu(
+                        expanded = dashboardMenuExpanded,
+                        onDismissRequest = { dashboardMenuExpanded = false }
+                    ) {
+                        listOf(
+                            "المبيعات اليومية" to onOpenDailySales,
+                            "نقطة البيع" to onOpenPos,
+                            "إضافة مبيع" to onOpenSales,
+                            "المشتريات" to onOpenPurchases,
+                            "المنتجات والمخزون" to onOpenProducts,
+                            "العملاء والموردون" to onOpenParties,
+                            "الحسابات والديون" to onOpenAccounts,
+                            "الصندوق والمصروفات" to onOpenCash,
+                            "المحاسبة العامة" to onOpenGeneralAccounting,
+                            "التقارير" to onOpenReports,
+                            "النسخ الاحتياطي" to onOpenBackup,
+                            "الإعدادات" to onOpenSettings
+                        ).forEach { (label, action) ->
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    dashboardMenuExpanded = false
+                                    action()
+                                }
+                            )
+                        }
+                    }
+                }
             }
         }
 
