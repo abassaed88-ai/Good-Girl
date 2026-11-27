@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import java.math.BigDecimal
 
-internal enum class ProductRemovalResult {
+enum class ProductRemovalResult {
     DELETED,
     ARCHIVED
 }
