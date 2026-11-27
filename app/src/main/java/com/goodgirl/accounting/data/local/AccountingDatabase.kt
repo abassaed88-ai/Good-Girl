@@ -713,7 +713,7 @@ abstract class AccountingDatabase : RoomDatabase() {
          * snapshots and COGS journals are never changed; only stock still on
          * hand receives a separate migration-dated valuation journal.
          */
-        private val MIGRATION_10_11 = object : Migration(10, 11) {
+        internal val MIGRATION_10_11 = object : Migration(10, 11) {
             override fun migrate(database: SupportSQLiteDatabase) {
                 LatestPurchaseCostPolicyMigrator.migrate(database, System.currentTimeMillis())
             }
