@@ -109,7 +109,14 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
 
         // If the process stops before this delete, a retry recognizes the
         // already-posted invoice and removes the draft row without reposting.
-        database.withTransaction { dao.deleteLine(line.id) }
+        database.withTransaction {
+            dao.deleteLine(line.id)
+            val remainingLines = dao.getLines(ACTIVE_DRAFT_ID)
+            if (remainingLines.isNotEmpty()) {
+                dao.deleteLines(ACTIVE_DRAFT_ID)
+                dao.saveLines(remainingLines.mapIndexed { index, row -> row.copy(lineOrder = index) })
+            }
+        }
         return result
     }
 
