@@ -49,7 +49,14 @@ internal fun OutlinedTextField(
     shape: Shape = OutlinedTextFieldDefaults.shape,
     interactionSource: MutableInteractionSource? = null
 ) {
-    var textFieldValue by remember { mutableStateOf(TextFieldValue(text = value)) }
+    var textFieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = value,
+                selection = TextRange(value.length)
+            )
+        )
+    }
 
     // Parent state is plain String for compatibility. Do not recreate the
     // TextFieldValue while the text matches: doing so would discard IME
