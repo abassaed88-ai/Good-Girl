@@ -1,6 +1,6 @@
 # Current purchase-cost policy (Good Girl)
 
-Status: implemented on the development branch; Android integration validation is pending.
+Status: implemented and validated on the development branch. Room v10→v11 migration, legacy backup restore, unit tests, Android instrumentation tests, and debug APK build all passed in CI.
 
 ## User-approved behavior
 - A newly posted purchase invoice establishes the product's **current purchase cost** from the invoice's incoming unit cost (per base unit, after applicable line/invoice discount allocation).
@@ -23,7 +23,13 @@ Status: implemented on the development branch; Android integration validation is
 - Manual stock additions and positive stocktake differences use the same latest current purchase cost for their movement and journal valuation. They do not accept a separate incoming cost and never change the product's current purchase-cost reference. Stock removals use that same current cost as well.
 - SYP and USD remain separate. Reject a purchase currency incompatible with the current stock unless a supported, explicit currency correction flow is used.
 - Backdated purchase invoices, legacy historical-cost audit records, stock-loss costing, currency corrections, closed periods and the general-ledger/inventory reconciliation require validation. New invoice posting and manual/stocktake stock movements no longer invoke the old weighted-average replay model.
-- Tests cover a prior sale at old cost, remaining stock revaluation on new purchase, a new sale at the latest cost, unchanged prior invoice/report cost and profit, manual and stocktake gains at the latest purchase cost without changing it, journal balancing, repeated purchase changes, zero stock, multi-line invoice, rounded unit-cost handling, direct Room v10→v11 migration and latest-purchase ordering when invoice creation times are unreliable. CI and legacy-backup restore validation remain pending for this implementation head.
+- Tests cover a prior sale at old cost, remaining stock revaluation on new purchase, a new sale at the latest cost, unchanged prior invoice/report cost and profit, manual and stocktake gains at the latest purchase cost without changing it, journal balancing, repeated purchase changes, zero stock, multi-line invoice, rounded unit-cost handling, direct Room v10→v11 migration and latest-purchase ordering when invoice creation times are unreliable. A legacy version-10 encrypted backup is also restored and normalized inside the same transaction. Validated successfully: 233 unit tests and 64 Android instrumentation tests, with zero failures or skips; debug APK creation and Room schema 11 export/persistence also succeeded.
+
+## Verified CI checkpoints
+
+- Code validation on `833e16f43e8d15d23fb6a833547f902457372516`: Android build workflow [#45953439902](https://github.com/abassaed88-ai/Good-Girl/actions/runs/45953439902) completed successfully, including 233 unit tests, 64 Android instrumentation tests, Room v10→v11 migration tests (3/3), encrypted legacy-backup restore (1/1), report/journal reconciliation (2/2), stock-adjustment accounting (4/4), and debug APK assembly.
+- Schema-persistence validation on `055f7ef2ca535d898163bfe43f0885596af53937`: workflow [#46026683571](https://github.com/abassaed88-ai/Good-Girl/actions/runs/46026683571) completed successfully. Room schema `11.json` was committed to the development branch as `bb90a83e44ed54fce8cbc3640c878e466f0d1488`.
+- Permanent-signature development APK build is the remaining release step; verify the resulting APK certificate matches the encrypted Good Girl release keystore before distribution.
 
 ## Example
 Existing 30 ml at $1/ml, previously sold 20 ml from an initial 50 ml. A new purchase of 20 ml at $1.50/ml is posted:
