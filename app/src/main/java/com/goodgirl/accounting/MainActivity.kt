@@ -55,7 +55,7 @@ import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Slider
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextField as Material3OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
