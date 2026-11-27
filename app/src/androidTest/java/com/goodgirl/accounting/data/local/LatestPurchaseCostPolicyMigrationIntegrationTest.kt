@@ -25,13 +25,12 @@ class LatestPurchaseCostPolicyMigrationIntegrationTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "latest-purchase-cost-v10-${System.nanoTime()}.db"
         val databaseFile = context.getDatabasePath(databaseName)
-        var setupDatabase: AccountingDatabase? = null
+        val setupDatabase = Room.databaseBuilder(
+            context,
+            AccountingDatabase::class.java,
+            databaseName
+        ).allowMainThreadQueries().build()
         try {
-            setupDatabase = Room.databaseBuilder(
-                context,
-                AccountingDatabase::class.java,
-                databaseName
-            ).allowMainThreadQueries().build()
 
             val products = ProductRepository(setupDatabase)
             val invoices = InvoiceRepository(setupDatabase)
@@ -90,7 +89,6 @@ class LatestPurchaseCostPolicyMigrationIntegrationTest {
             val legacyProduct = setupDatabase.productDao().findById(product.id)!!
             setupDatabase.productDao().update(legacyProduct.copy(purchaseCost = "15"))
             setupDatabase.close()
-            setupDatabase = null
 
             // The v11 schema is unchanged from v10; downgrade only the
             // SQLite user_version so Room executes the registered 10 -> 11 data migration.
@@ -152,7 +150,7 @@ class LatestPurchaseCostPolicyMigrationIntegrationTest {
                 throw error
             }
         } finally {
-            setupDatabase?.close()
+            runCatching { setupDatabase.close() }
             context.deleteDatabase(databaseName)
         }
     }
