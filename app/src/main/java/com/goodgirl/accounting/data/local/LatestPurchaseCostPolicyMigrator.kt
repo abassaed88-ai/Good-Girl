@@ -182,9 +182,12 @@ internal object LatestPurchaseCostPolicyMigrator {
             "SELECT lines.unitCostSnapshot, invoices.exchangeRateSnapshot " +
                 "FROM invoice_lines AS lines " +
                 "INNER JOIN invoices ON invoices.id = lines.invoiceId " +
+                "LEFT JOIN stock_movements AS movements ON movements.sourceId = lines.id " +
+                "AND movements.sourceType = 'PURCHASE_INVOICE' " +
                 "WHERE lines.productId = ? AND invoices.kind = 'PURCHASE' " +
                 "AND invoices.status = 'POSTED' AND invoices.currencyCode = ? " +
-                "ORDER BY invoices.createdAt DESC, invoices.id DESC, lines.rowid DESC LIMIT 1",
+                "ORDER BY COALESCE(movements.recordedAt, invoices.createdAt) DESC, " +
+                "invoices.createdAt DESC, invoices.id DESC, lines.rowid DESC LIMIT 1",
             arrayOf(productId, currencyCode)
         ).use { cursor ->
             if (!cursor.moveToFirst()) {
