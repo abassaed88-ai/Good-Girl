@@ -324,7 +324,7 @@ fun PointOfSaleScreen(
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().testTag("pos-product-search"),
                     label = { Text("اسم المادة أو رمزها") },
                     singleLine = true
                 )
