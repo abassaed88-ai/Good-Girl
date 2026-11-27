@@ -5462,6 +5462,11 @@ private fun ProductManagementScreen(
                                     com.goodgirl.accounting.data.ProductRemovalResult.ARCHIVED -> {
                                         message = "تمت أرشفة المنتج مع الاحتفاظ بالفواتير وحركات المخزون وسجله."
                                         if (editingId == id) resetForm()
+                                        if (adjustingProductId == id) {
+                                            adjustingProductId = null
+                                            stocktakeMode = false
+                                            stockMessage = null
+                                        }
                                     }
                                 }
                                 pendingProductRemovalId = null
