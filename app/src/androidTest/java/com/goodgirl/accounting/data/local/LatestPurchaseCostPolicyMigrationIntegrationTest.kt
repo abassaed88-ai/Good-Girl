@@ -92,7 +92,12 @@ class LatestPurchaseCostPolicyMigrationIntegrationTest {
                     it.sourceId in purchaseIds &&
                         it.sourceType.startsWith("PURCHASE_INVENTORY_REVALUATION_")
                 }
-                .forEach { database.ledgerDao().deleteById(it.id) }
+                .forEach {
+                    database.openHelper.writableDatabase.execSQL(
+                        "DELETE FROM ledger_entries WHERE id = ?",
+                        arrayOf(it.id)
+                    )
+                }
 
             // Simulated v10 weighted average: (2×10 + 1×12 + 1×20) / 4 = 13.
             val legacyProduct = database.productDao().findById(product.id)!!
@@ -185,7 +190,12 @@ class LatestPurchaseCostPolicyMigrationIntegrationTest {
             )
             setupDatabase.ledgerDao().getAll()
                 .filter { it.sourceId == purchase.invoiceId && it.sourceType.startsWith("PURCHASE_INVENTORY_REVALUATION_") }
-                .forEach { setupDatabase.ledgerDao().deleteById(it.id) }
+                .forEach {
+                    setupDatabase.openHelper.writableDatabase.execSQL(
+                        "DELETE FROM ledger_entries WHERE id = ?",
+                        arrayOf(it.id)
+                    )
+                }
             val legacyProduct = setupDatabase.productDao().findById(product.id)!!
             setupDatabase.productDao().update(legacyProduct.copy(purchaseCost = "15"))
             setupDatabase.close()
