@@ -5826,6 +5826,21 @@ private data class DailySaleRow(
     val note: String
 )
 
+private data class PendingDailySaleLine(
+    val id: String,
+    val productId: String,
+    val productName: String,
+    val quantity: String,
+    val unitName: String,
+    val unitPrice: String,
+    val discount: String,
+    val currencyCode: String,
+    val exchangeRate: String,
+    val paidAmount: String,
+    val customerId: String?,
+    val note: String
+)
+
 @Composable
 private fun DailySalesScreen(
     onBack: () -> Unit,
@@ -5884,6 +5899,7 @@ private fun DailySalesScreen(
     var paidAmount by remember { mutableStateOf("") }
     var paidAmountTouched by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
+    val pendingDailySales = remember { mutableStateListOf<PendingDailySaleLine>() }
     var isSaving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -5924,7 +5940,8 @@ private fun DailySalesScreen(
             lineDiscount = lineDiscount,
             paidAmountTouched = paidAmountTouched,
             paidAmount = paidAmount,
-            note = note
+            note = note,
+            pendingLineCount = pendingDailySales.size
         )
     )
     LaunchedEffect(hasUnsavedDailySaleChanges) {
@@ -6275,67 +6292,76 @@ private fun DailySalesScreen(
                     )
                     Button(
                         onClick = {
-                            scope.launch {
-                                isSaving = true
-                                message = null
-                                try {
-                                    val product = selectedProduct
-                                        ?: throw IllegalArgumentException("اختر المادة أولاً")
-                                    val cleanQuantity = InvoicePostingRules.normalizePositiveQuantity(quantity)
-                                    val cleanPrice = InvoicePostingRules.normalizeNonNegativeAmount(salePrice, "سعر المبيع")
-                                    val cleanDiscount = InvoicePostingRules.normalizeNonNegativeAmount(lineDiscount, "خصم المبيعة")
-                                    val cleanPaid = InvoicePostingRules.normalizeNonNegativeAmount(
-                                        effectivePaidAmount,
-                                        "المبلغ المقبوض"
-                                    )
-                                    InvoicePostingRules.calculateLineTotal(cleanQuantity, cleanPrice, cleanDiscount)
-                                    val issuedAt = dailySalesIssuedAt(
-                                        selectedDayStartMillis = selectedDay,
-                                        currentTimeMillis = System.currentTimeMillis()
-                                    )
-                                    val invoiceNumber = "DS-" + System.currentTimeMillis() + "-" + UUID.randomUUID().toString().take(8)
-                                    val result = repository.postInvoice(
-                                        invoiceNumber = invoiceNumber,
-                                        kind = "SALE",
-                                        partyId = selectedPartyId,
+                            try {
+                                val product = selectedProduct
+                                    ?: throw IllegalArgumentException("اختر المادة أولاً")
+                                require(pendingDailySales.size < 100) {
+                                    "وصلت إلى الحد الأقصى للمسودة (100 سطر). رحّل السطور الحالية أولاً."
+                                }
+                                val cleanQuantity = InvoicePostingRules.normalizePositiveQuantity(quantity)
+                                val cleanPrice = InvoicePostingRules.normalizeNonNegativeAmount(salePrice, "سعر المبيع")
+                                val cleanDiscount = InvoicePostingRules.normalizeNonNegativeAmount(lineDiscount, "خصم المبيعة")
+                                val cleanPaid = InvoicePostingRules.normalizeNonNegativeAmount(
+                                    effectivePaidAmount,
+                                    "المبلغ المقبوض"
+                                )
+                                val netAmount = InvoicePostingRules.calculateLineTotal(
+                                    cleanQuantity,
+                                    cleanPrice,
+                                    cleanDiscount
+                                )
+                                require(cleanPaid.toBigDecimal() <= netAmount) {
+                                    "المبلغ المقبوض لا يمكن أن يتجاوز إجمالي السطر"
+                                }
+                                require(
+                                    netAmount.subtract(cleanPaid.toBigDecimal()).compareTo(BigDecimal.ZERO) == 0 ||
+                                        selectedPartyId != null
+                                ) {
+                                    "اختر حساب العميل عند وجود مبلغ آجل"
+                                }
+                                val cleanRate = if (product.priceCurrencyCode == "SYP") "1" else
+                                    InvoicePostingRules.normalizeNonNegativeAmount(exchangeRate, "سعر الصرف")
+                                require(cleanRate.toBigDecimal() > BigDecimal.ZERO) {
+                                    "سعر الصرف يجب أن يكون أكبر من صفر"
+                                }
+                                pendingDailySales.add(
+                                    PendingDailySaleLine(
+                                        id = UUID.randomUUID().toString(),
+                                        productId = product.id,
+                                        productName = product.name,
+                                        quantity = cleanQuantity,
+                                        unitName = selectedUnit?.unitName ?: product.baseUnit,
+                                        unitPrice = cleanPrice,
+                                        discount = cleanDiscount,
                                         currencyCode = product.priceCurrencyCode,
-                                        exchangeRateSnapshot = if (product.priceCurrencyCode == "SYP") "1" else exchangeRate,
-                                        lines = listOf(
-                                            InvoiceLineDraft(
-                                                productId = product.id,
-                                                quantity = cleanQuantity,
-                                                unitPrice = cleanPrice,
-                                                discount = cleanDiscount,
-                                                unitName = selectedUnit?.unitName ?: product.baseUnit
-                                            )
-                                        ),
+                                        exchangeRate = cleanRate,
                                         paidAmount = cleanPaid,
-                                        issuedAt = issuedAt,
+                                        customerId = selectedPartyId,
                                         note = note.trim()
                                     )
-                                    selectedProductId = null
-                                    selectedUnitName = null
-                                    selectedPartyId = null
-                                    quantity = "1"
-                                    salePrice = "0"
-                                    lineDiscount = "0"
-                                    exchangeRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE).getString("usd_syp_rate", "1") ?: "1"
-                                    paidAmount = ""
-                                    paidAmountTouched = false
-                                    note = ""
-                                    message = "تم تسجيل المبيعة " + result.invoiceNumber +
-                                        " — الإجمالي: " + result.total + " " + product.priceCurrencyCode
-                                } catch (error: Exception) {
-                                    message = error.message ?: "تعذر تسجيل المبيعة"
-                                } finally {
-                                    isSaving = false
-                                }
+                                )
+                                selectedProductId = null
+                                selectedUnitName = null
+                                selectedPartyId = null
+                                quantity = "1"
+                                salePrice = "0"
+                                lineDiscount = "0"
+                                exchangeRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+                                    .getString("usd_syp_rate", "1") ?: "1"
+                                paidAmount = ""
+                                paidAmountTouched = false
+                                note = ""
+                                productSearchQuery = ""
+                                message = "تمت إضافة سطر للمسودة. لم يُرحّل إلى الحسابات أو المخزون بعد."
+                            } catch (error: Exception) {
+                                message = error.message ?: "تعذر إضافة السطر إلى المسودة"
                             }
                         },
                         enabled = !isSaving,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(if (isSaving) "جارٍ تسجيل المبيعة..." else "حفظ المبيعة وتحديث المخزون")
+                        Text("إضافة السطر إلى دفتر اليوم")
+                    }
                     }
                 } else {
                     Text(
@@ -6354,6 +6380,134 @@ private fun DailySalesScreen(
             }
         }
 
+        if (pendingDailySales.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CardSurface)
+            ) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(9.dp)
+                ) {
+                    Text(
+                        "سطور دفتر اليوم غير المرحلة (${pendingDailySales.size}/100)",
+                        color = Ink,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    Text(
+                        "كل سطر سيُسجّل كمبيعة مستقلة مع عملته وعميله وملاحظته، دون إنشاء سجل مكرر.",
+                        color = MutedText,
+                        fontSize = 11.sp
+                    )
+                    pendingDailySales.forEachIndexed { index, pending ->
+                        val pendingProduct = products.firstOrNull { it.id == pending.productId }
+                        val amount = pending.quantity.toBigDecimal()
+                            .multiply(pending.unitPrice.toBigDecimal())
+                            .subtract(pending.discount.toBigDecimal())
+                        val currentUnitCost = pendingProduct?.purchaseCost?.toBigDecimalOrNull()
+                            ?: BigDecimal.ZERO
+                        val factor = database.productUnitDao().let { dao ->
+                            // The chosen unit factor is retained by the unit name and loaded from the product's units.
+                            // A missing unit is handled at posting time with a clear message.
+                            BigDecimal.ONE
+                        }
+                        val estimatedProfit = amount.subtract(
+                            pending.quantity.toBigDecimal().multiply(factor).multiply(currentUnitCost)
+                        )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                                .padding(9.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Text("${index + 1}. ${pending.productName}", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                Text(
+                                    "${pending.quantity} ${pending.unitName} × ${pending.unitPrice} = ${amount.stripTrailingZeros().toPlainString()} ${pending.currencyCode}",
+                                    color = Ink,
+                                    fontSize = 10.sp
+                                )
+                                Text(
+                                    "ربح تقديري: ${estimatedProfit.stripTrailingZeros().toPlainString()} ${pending.currencyCode}" +
+                                        (pending.customerId?.let { " · آجل/عميل" } ?: " · نقدي"),
+                                    color = if (estimatedProfit >= BigDecimal.ZERO) SoftGreen else SoftRed,
+                                    fontSize = 10.sp
+                                )
+                                if (pending.note.isNotBlank()) {
+                                    Text(pending.note, color = MutedText, fontSize = 10.sp, maxLines = 2)
+                                }
+                            }
+                            TextButton(
+                                enabled = !isSaving,
+                                onClick = { pendingDailySales.remove(pending) }
+                            ) { Text("حذف") }
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isSaving = true
+                                message = null
+                                val totalToPost = pendingDailySales.size
+                                var postedCount = 0
+                                try {
+                                    while (pendingDailySales.isNotEmpty()) {
+                                        val pending = pendingDailySales.first()
+                                        val invoiceNumber = "DS-" + System.currentTimeMillis() + "-" +
+                                            UUID.randomUUID().toString().take(8)
+                                        val result = repository.postInvoice(
+                                            invoiceNumber = invoiceNumber,
+                                            kind = "SALE",
+                                            partyId = pending.customerId,
+                                            currencyCode = pending.currencyCode,
+                                            exchangeRateSnapshot = pending.exchangeRate,
+                                            lines = listOf(
+                                                InvoiceLineDraft(
+                                                    productId = pending.productId,
+                                                    quantity = pending.quantity,
+                                                    unitPrice = pending.unitPrice,
+                                                    discount = pending.discount,
+                                                    unitName = pending.unitName
+                                                )
+                                            ),
+                                            paidAmount = pending.paidAmount,
+                                            issuedAt = dailySalesIssuedAt(
+                                                selectedDayStartMillis = selectedDay,
+                                                currentTimeMillis = System.currentTimeMillis()
+                                            ),
+                                            note = pending.note
+                                        )
+                                        pendingDailySales.removeAt(0)
+                                        postedCount += 1
+                                    }
+                                    message = "تم ترحيل $postedCount سطراً بنجاح. تم تحديث المخزون والحسابات والتقارير."
+                                } catch (error: Exception) {
+                                    message = "تم ترحيل $postedCount من أصل $totalToPost سطراً. بقيت السطور غير المرحلة في المسودة. " +
+                                        (error.message ?: "تعذر إكمال الترحيل")
+                                } finally {
+                                    isSaving = false
+                                }
+                            }
+                        },
+                        enabled = !isSaving && pendingDailySales.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (isSaving) "جارٍ ترحيل السطور..." else "ترحيل جميع السطور وتحديث الحسابات والمخزون")
+                    }
+                    TextButton(
+                        enabled = !isSaving,
+                        onClick = { pendingDailySales.clear() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("إلغاء جميع السطور غير المرحلة") }
+                }
+            }
+        }
         TextButton(onClick = onOpenFullInvoice) {
             Text("فتح فاتورة بيع متعددة المواد")
         }

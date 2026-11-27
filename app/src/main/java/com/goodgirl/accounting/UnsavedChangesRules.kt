@@ -92,11 +92,13 @@ internal data class DailySaleDraftState(
     val lineDiscount: String = "0",
     val paidAmountTouched: Boolean = false,
     val paidAmount: String = "",
-    val note: String = ""
+    val note: String = "",
+    val pendingLineCount: Int = 0
 )
 
 internal fun hasUnsavedDailySaleDraft(state: DailySaleDraftState): Boolean =
-    state.hasSelectedProduct ||
+    state.pendingLineCount > 0 ||
+        state.hasSelectedProduct ||
         state.hasSelectedParty ||
         state.quantity != "1" ||
         state.salePrice != "0" ||

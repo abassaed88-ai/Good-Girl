@@ -107,6 +107,7 @@ class UnsavedChangesRulesTest {
         assertTrue(hasUnsavedDailySaleDraft(DailySaleDraftState(hasSelectedProduct = true)))
         assertTrue(hasUnsavedDailySaleDraft(DailySaleDraftState(note = "مبيعة نقدية")))
         assertTrue(hasUnsavedDailySaleDraft(DailySaleDraftState(paidAmountTouched = true)))
+        assertTrue(hasUnsavedDailySaleDraft(DailySaleDraftState(pendingLineCount = 1)))
     }
 
     @Test
