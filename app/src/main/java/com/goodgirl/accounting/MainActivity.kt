@@ -336,6 +336,8 @@ private fun GoodGirlApp() {
     var journalReturnPage by remember { mutableStateOf("journal_book") }
     var salesReturnPage by remember { mutableStateOf("dashboard") }
     var partiesReturnPage by remember { mutableStateOf("dashboard") }
+    var productsReturnPage by remember { mutableStateOf("dashboard") }
+    var categoriesReturnPage by remember { mutableStateOf("products") }
     var unitsProductId by remember { mutableStateOf<String?>(null) }
     var historyProductId by remember { mutableStateOf<String?>(null) }
     var journalEntryDetailId by remember { mutableStateOf<String?>(null) }
@@ -360,7 +362,9 @@ private fun GoodGirlApp() {
         statementReturnPage = statementReturnPage,
         journalReturnPage = journalReturnPage,
         salesReturnPage = salesReturnPage,
-        partiesReturnPage = partiesReturnPage
+        partiesReturnPage = partiesReturnPage,
+        productsReturnPage = productsReturnPage,
+        categoriesReturnPage = categoriesReturnPage
     )
     BackHandler(enabled = activePage != "dashboard") {
         requestNavigation(backTargetPage)
@@ -410,6 +414,21 @@ private fun GoodGirlApp() {
                 "cash" -> CashManagementScreen(
                     onBack = { requestNavigation("dashboard") },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
+                )
+                "master_data" -> BasicDataManagementScreen(
+                    onBack = { requestNavigation("dashboard") },
+                    onOpenProducts = {
+                        productsReturnPage = "master_data"
+                        requestNavigation("products")
+                    },
+                    onOpenCategories = {
+                        categoriesReturnPage = "master_data"
+                        requestNavigation("categories")
+                    },
+                    onOpenParties = {
+                        partiesReturnPage = "master_data"
+                        requestNavigation("parties")
+                    }
                 )
                 "general_accounting" -> GeneralAccountingHubScreen(
                     onBack = { activePage = "dashboard" },
@@ -513,12 +532,15 @@ private fun GoodGirlApp() {
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "products" -> ProductManagementScreen(
-                    onBack = { requestNavigation("dashboard") },
+                    onBack = { requestNavigation(productsReturnPage) },
                     onManageUnits = { productId ->
                         unitsProductId = productId
                         requestNavigation("product_units")
                     },
-                    onManageCategories = { requestNavigation("categories") },
+                    onManageCategories = {
+                        categoriesReturnPage = "products"
+                        requestNavigation("categories")
+                    },
                     onViewHistory = { productId ->
                         historyProductId = productId
                         requestNavigation("stock_history")
@@ -526,7 +548,7 @@ private fun GoodGirlApp() {
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "categories" -> ProductCategoriesScreen(
-                    onBack = { requestNavigation("products") },
+                    onBack = { requestNavigation(categoriesReturnPage) },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
                 "product_units" -> ProductUnitsScreen(
@@ -568,6 +590,7 @@ private fun GoodGirlApp() {
                 else -> DashboardScreen(
                     visibleShortcutIds = visibleShortcutIds,
                     homeShortcutLabels = homeShortcutLabels,
+                    onOpenMasterData = { requestNavigation("master_data") },
                     onOpenDailySales = { activePage = "daily_sales" },
                     onOpenPos = { activePage = "pos" },
                     onOpenPriceSettings = { activePage = "price_settings" },
@@ -682,12 +705,16 @@ internal fun previousAppPage(
     statementReturnPage: String = "parties",
     journalReturnPage: String = "journal_book",
     salesReturnPage: String = "dashboard",
-    partiesReturnPage: String = "dashboard"
+    partiesReturnPage: String = "dashboard",
+    productsReturnPage: String = "dashboard",
+    categoriesReturnPage: String = "products"
 ): String = when (currentPage) {
     "chart_of_accounts", "journal_book", "period_close" -> "general_accounting"
     "account_ledger" -> "chart_of_accounts"
     "journal_detail" -> journalReturnPage
-    "categories", "product_units", "stock_history" -> "products"
+    "categories" -> categoriesReturnPage
+    "products" -> productsReturnPage
+    "product_units", "stock_history" -> "products"
     "statement" -> statementReturnPage
     "sales" -> salesReturnPage
     "parties" -> partiesReturnPage
@@ -697,6 +724,7 @@ internal fun previousAppPage(
 
 @Composable
 private fun DashboardScreen(
+    onOpenMasterData: () -> Unit,
     onOpenDailySales: () -> Unit,
     onOpenPos: () -> Unit,
     onOpenPriceSettings: () -> Unit,
@@ -825,6 +853,7 @@ private fun DashboardScreen(
                             "نقطة البيع" to onOpenPos,
                             "إضافة مبيع" to onOpenSales,
                             "المشتريات" to onOpenPurchases,
+                            "إدارة البيانات الأساسية" to onOpenMasterData,
                             "المنتجات والمخزون" to onOpenProducts,
                             "العملاء والموردون" to onOpenParties,
                             "الحسابات والديون" to onOpenAccounts,
@@ -848,7 +877,10 @@ private fun DashboardScreen(
         }
 
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("dashboard-master-data")
+                .clickable(onClick = onOpenMasterData),
             shape = RoundedCornerShape(18.dp),
             colors = CardDefaults.cardColors(containerColor = CardSurface),
             elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
@@ -860,9 +892,9 @@ private fun DashboardScreen(
             ) {
                 Icon(Icons.Filled.Storage, contentDescription = "قاعدة البيانات", tint = BrandBlue, modifier = Modifier.size(36.dp))
                 Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("قاعدة البيانات الأساسية", color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text("إدارة البيانات الأساسية", color = Ink, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Text(
-                        "تُحفظ بياناتك على هذا الجهاز، ويمكنك إدارة النسخ الاحتياطية من هنا",
+                        "إدارة المنتجات والتصنيفات ووحدات القياس والعملاء والموردين من مكان واحد",
                         color = MutedText,
                         fontSize = 12.sp
                     )
@@ -936,6 +968,53 @@ private fun DashboardScreen(
             color = MutedText,
             fontSize = 12.sp,
             modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+        )
+    }
+}
+
+@Composable
+private fun BasicDataManagementScreen(
+    onBack: () -> Unit,
+    onOpenProducts: () -> Unit,
+    onOpenCategories: () -> Unit,
+    onOpenParties: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        TextButton(onClick = onBack) { Text("العودة إلى لوحة التحكم") }
+        Text(
+            "إدارة البيانات الأساسية",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            color = Ink
+        )
+        Text(
+            "من هنا يمكنك تنظيم البيانات التي تعتمد عليها عمليات البيع والشراء والمخزون والحسابات.",
+            color = MutedText,
+            fontSize = 13.sp
+        )
+        SectionRow(
+            number = 1,
+            title = "المنتجات والمخزون",
+            icon = "📦",
+            onClick = onOpenProducts
+        )
+        SectionRow(
+            number = 2,
+            title = "تصنيفات المنتجات",
+            icon = "🏷️",
+            onClick = onOpenCategories
+        )
+        SectionRow(
+            number = 3,
+            title = "العملاء والموردون",
+            icon = "👥",
+            onClick = onOpenParties
         )
     }
 }
