@@ -103,6 +103,9 @@ import com.goodgirl.accounting.data.CategoryRepository
 import com.goodgirl.accounting.data.InvoiceLineDraft
 import com.goodgirl.accounting.data.InvoicePdfExporter
 import com.goodgirl.accounting.data.InvoiceRepository
+import com.goodgirl.accounting.data.DailySalesDraftRepository
+import com.goodgirl.accounting.data.local.DailySalesDraftEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftLineEntity
 import com.goodgirl.accounting.data.FinancialReportPdfExporter
 import com.goodgirl.accounting.data.GeneralLedgerStatementsPdfExporter
 import com.goodgirl.accounting.data.PartyRepository
@@ -136,6 +139,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -5839,7 +5843,44 @@ private data class PendingDailySaleLine(
     val exchangeRate: String,
     val paidAmount: String,
     val customerId: String?,
-    val note: String
+    val note: String,
+    val issuedAt: Long
+)
+
+private fun PendingDailySaleLine.toDraftEntity(lineOrder: Int) = DailySalesDraftLineEntity(
+    id = id,
+    draftId = DailySalesDraftRepository.ACTIVE_DRAFT_ID,
+    lineOrder = lineOrder,
+    productId = productId,
+    productNameSnapshot = productName,
+    quantity = quantity,
+    unitName = unitName,
+    unitFactor = unitFactor,
+    unitPrice = unitPrice,
+    discount = discount,
+    currencyCode = currencyCode,
+    exchangeRate = exchangeRate,
+    paidAmount = paidAmount,
+    customerId = customerId,
+    note = note,
+    issuedAt = issuedAt
+)
+
+private fun DailySalesDraftLineEntity.toPendingLine() = PendingDailySaleLine(
+    id = id,
+    productId = productId,
+    productName = productNameSnapshot,
+    quantity = quantity,
+    unitName = unitName,
+    unitFactor = unitFactor,
+    unitPrice = unitPrice,
+    discount = discount,
+    currencyCode = currencyCode,
+    exchangeRate = exchangeRate,
+    paidAmount = paidAmount,
+    customerId = customerId,
+    note = note,
+    issuedAt = issuedAt
 )
 
 @Composable
@@ -5850,7 +5891,7 @@ private fun DailySalesScreen(
 ) {
     val context = LocalContext.current
     val database = remember(context) { AccountingDatabase.getInstance(context) }
-    val repository = remember(database) { InvoiceRepository(database) }
+    val dailySalesDraftRepository = remember(database) { DailySalesDraftRepository(database) }
     val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
     val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
     val stockCostAudits by database.stockCostRecalculationAuditDao().observeAll().collectAsState(initial = emptyList())
@@ -5883,6 +5924,8 @@ private fun DailySalesScreen(
         )
     }
     var selectedProductId by remember { mutableStateOf<String?>(null) }
+    var selectedProductNameSnapshot by remember { mutableStateOf("") }
+    var currentCurrencyCode by remember { mutableStateOf("SYP") }
     var selectedUnitName by remember { mutableStateOf<String?>(null) }
     var selectedPartyId by remember { mutableStateOf<String?>(null) }
     var productMenuExpanded by remember { mutableStateOf(false) }
@@ -5901,8 +5944,42 @@ private fun DailySalesScreen(
     var paidAmountTouched by remember { mutableStateOf(false) }
     var note by remember { mutableStateOf("") }
     val pendingDailySales = remember { mutableStateListOf<PendingDailySaleLine>() }
+    var isDraftLoaded by remember { mutableStateOf(false) }
+    var canPersistDraft by remember { mutableStateOf(false) }
+    var isDraftPersisted by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(database) {
+        try {
+            val snapshot = dailySalesDraftRepository.loadSnapshot()
+            snapshot.header?.let { saved ->
+                selectedDay = saved.selectedDay
+                selectedProductId = saved.selectedProductId
+                selectedProductNameSnapshot = saved.selectedProductNameSnapshot
+                selectedUnitName = saved.selectedUnitName
+                productSearchQuery = saved.productSearchQuery
+                selectedProductCategoryId = saved.selectedProductCategoryId
+                quantity = saved.quantity
+                salePrice = saved.salePrice
+                lineDiscount = saved.lineDiscount
+                currentCurrencyCode = saved.currencyCode
+                exchangeRate = saved.exchangeRate
+                paidAmount = saved.paidAmount
+                paidAmountTouched = saved.paidAmountTouched
+                selectedPartyId = saved.selectedPartyId
+                note = saved.note
+            }
+            pendingDailySales.clear()
+            pendingDailySales.addAll(snapshot.lines.map { it.toPendingLine() })
+            canPersistDraft = true
+            isDraftPersisted = true
+        } catch (error: Exception) {
+            message = "تعذر استعادة مسودة المبيعات: " + (error.message ?: "خطأ غير معروف")
+        } finally {
+            isDraftLoaded = true
+        }
+    }
 
     val productUnits by database.productUnitDao()
         .observeForProduct(selectedProductId ?: "")
@@ -5918,9 +5995,52 @@ private fun DailySalesScreen(
             )
         }
     }
-    val selectedProduct = products.firstOrNull { it.id == selectedProductId }
+    val selectedProductFromDatabase by database.productDao()
+        .observeProduct(selectedProductId ?: "")
+        .collectAsState(initial = null)
+    val selectedProduct = products.firstOrNull { it.id == selectedProductId } ?: selectedProductFromDatabase
     val selectedUnit = productUnits.firstOrNull { it.unitName == selectedUnitName }
         ?: productUnits.firstOrNull { it.isBaseUnit }
+
+    LaunchedEffect(
+        isDraftLoaded, canPersistDraft, isSaving, selectedDay, selectedProductId,
+        selectedProductNameSnapshot, currentCurrencyCode, selectedUnitName,
+        productSearchQuery, selectedProductCategoryId, quantity, salePrice,
+        lineDiscount, exchangeRate, paidAmount, paidAmountTouched,
+        selectedPartyId, note, pendingDailySales.toList()
+    ) {
+        if (!isDraftLoaded || !canPersistDraft || isSaving) return@LaunchedEffect
+        isDraftPersisted = false
+        delay(300)
+        val header = DailySalesDraftEntity(
+            selectedDay = selectedDay,
+            selectedProductId = selectedProductId,
+            selectedProductNameSnapshot = selectedProductNameSnapshot,
+            selectedUnitName = selectedUnitName,
+            productSearchQuery = productSearchQuery,
+            selectedProductCategoryId = selectedProductCategoryId,
+            quantity = quantity,
+            salePrice = salePrice,
+            lineDiscount = lineDiscount,
+            currencyCode = currentCurrencyCode,
+            exchangeRate = exchangeRate,
+            paidAmount = paidAmount,
+            paidAmountTouched = paidAmountTouched,
+            selectedPartyId = selectedPartyId,
+            note = note,
+            updatedAt = System.currentTimeMillis()
+        )
+        try {
+            dailySalesDraftRepository.saveSnapshot(
+                header,
+                pendingDailySales.mapIndexed { index, line -> line.toDraftEntity(index) }
+            )
+            isDraftPersisted = true
+        } catch (error: Exception) {
+            message = "تعذر حفظ مسودة المبيعات: " + (error.message ?: "خطأ غير معروف")
+            isDraftPersisted = false
+        }
+    }
 
     val enteredQuantity = runCatching { BigDecimal(quantity.trim()) }.getOrDefault(BigDecimal.ZERO)
     val enteredPrice = runCatching { BigDecimal(salePrice.trim()) }.getOrDefault(BigDecimal.ZERO)
@@ -5945,8 +6065,9 @@ private fun DailySalesScreen(
             pendingLineCount = pendingDailySales.size
         )
     )
-    LaunchedEffect(hasUnsavedDailySaleChanges) {
-        onUnsavedChangesChanged(hasUnsavedDailySaleChanges)
+    LaunchedEffect(isDraftLoaded, canPersistDraft, isDraftPersisted) {
+        // Do not leave the screen while an editor snapshot is waiting to be committed.
+        onUnsavedChangesChanged(isDraftLoaded && canPersistDraft && !isDraftPersisted)
     }
 
     val todayStart = Calendar.getInstance().apply {
@@ -6131,7 +6252,7 @@ private fun DailySalesScreen(
                         onClick = { productMenuExpanded = true },
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(selectedProduct?.name ?: "اختيار المادة")
+                        Text(selectedProduct?.name ?: selectedProductNameSnapshot.takeIf { it.isNotBlank() } ?: "اختيار المادة")
                     }
                     DropdownMenu(
                         expanded = productMenuExpanded,
@@ -6142,6 +6263,8 @@ private fun DailySalesScreen(
                                 text = { Text(product.name + " — المتوفر: " + product.stockQuantity + " " + product.baseUnit) },
                                 onClick = {
                                     selectedProductId = product.id
+                                    selectedProductNameSnapshot = product.name
+                                    currentCurrencyCode = product.priceCurrencyCode
                                     selectedUnitName = product.baseUnit
                                     salePrice = product.salePrice
                                     lineDiscount = "0"
@@ -6160,6 +6283,20 @@ private fun DailySalesScreen(
                         if (products.isEmpty()) "لا توجد مواد مسجلة." else "لا توجد مواد تطابق البحث أو التصنيف.",
                         color = MutedText,
                         fontSize = 12.sp
+                    )
+                }
+
+                if (selectedProductId != null && selectedProduct == null) {
+                    Text(
+                        "المادة المحفوظة غير موجودة حالياً. أبقينا بيانات المسودة كما هي؛ اختر مادة متاحة لتسجيل سطر جديد.",
+                        color = SoftRed,
+                        fontSize = 11.sp
+                    )
+                } else if (selectedProduct != null && !selectedProduct.isActive) {
+                    Text(
+                        "هذه المادة مؤرشفة. سيبقى السطر المحفوظ كما هو، لكن لا يمكن تسجيل مبيعة جديدة بها.",
+                        color = SoftRed,
+                        fontSize = 11.sp
                     )
                 }
 
@@ -6327,7 +6464,7 @@ private fun DailySalesScreen(
                                 }
                                 pendingDailySales.add(
                                     PendingDailySaleLine(
-                                        id = UUID.randomUUID().toString(),
+                                        id = DailySalesDraftRepository.newLineId(),
                                         productId = product.id,
                                         productName = product.name,
                                         quantity = cleanQuantity,
@@ -6339,10 +6476,16 @@ private fun DailySalesScreen(
                                         exchangeRate = cleanRate,
                                         paidAmount = cleanPaid,
                                         customerId = selectedPartyId,
-                                        note = note.trim()
+                                        note = note.trim(),
+                                        issuedAt = dailySalesIssuedAt(
+                                            selectedDayStartMillis = selectedDay,
+                                            currentTimeMillis = System.currentTimeMillis()
+                                        )
                                     )
                                 )
                                 selectedProductId = null
+                                selectedProductNameSnapshot = ""
+                                currentCurrencyCode = "SYP"
                                 selectedUnitName = null
                                 selectedPartyId = null
                                 quantity = "1"
@@ -6359,7 +6502,7 @@ private fun DailySalesScreen(
                                 message = error.message ?: "تعذر إضافة السطر إلى المسودة"
                             }
                         },
-                        enabled = !isSaving,
+                        enabled = isDraftLoaded && canPersistDraft && !isSaving && selectedProduct?.isActive == true && selectedUnit != null,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("إضافة السطر إلى دفتر اليوم")
@@ -6442,7 +6585,16 @@ private fun DailySalesScreen(
                             }
                             TextButton(
                                 enabled = !isSaving,
-                                onClick = { pendingDailySales.remove(pending) }
+                                onClick = {
+                                    scope.launch {
+                                        try {
+                                            dailySalesDraftRepository.removePendingLine(pending.id)
+                                            pendingDailySales.remove(pending)
+                                        } catch (error: Exception) {
+                                            message = error.message ?: "تعذر حذف السطر من المسودة"
+                                        }
+                                    }
+                                }
                             ) { Text("حذف") }
                         }
                     }
@@ -6454,32 +6606,32 @@ private fun DailySalesScreen(
                                 val totalToPost = pendingDailySales.size
                                 var postedCount = 0
                                 try {
+                                    // Force the latest in-memory rows to Room before posting;
+                                    // the debounce timer may not have fired yet.
+                                    dailySalesDraftRepository.saveSnapshot(
+                                        DailySalesDraftEntity(
+                                            selectedDay = selectedDay,
+                                            selectedProductId = selectedProductId,
+                                            selectedProductNameSnapshot = selectedProductNameSnapshot,
+                                            selectedUnitName = selectedUnitName,
+                                            productSearchQuery = productSearchQuery,
+                                            selectedProductCategoryId = selectedProductCategoryId,
+                                            quantity = quantity,
+                                            salePrice = salePrice,
+                                            lineDiscount = lineDiscount,
+                                            currencyCode = currentCurrencyCode,
+                                            exchangeRate = exchangeRate,
+                                            paidAmount = paidAmount,
+                                            paidAmountTouched = paidAmountTouched,
+                                            selectedPartyId = selectedPartyId,
+                                            note = note,
+                                            updatedAt = System.currentTimeMillis()
+                                        ),
+                                        pendingDailySales.mapIndexed { index, line -> line.toDraftEntity(index) }
+                                    )
                                     while (pendingDailySales.isNotEmpty()) {
                                         val pending = pendingDailySales.first()
-                                        val invoiceNumber = "DS-" + System.currentTimeMillis() + "-" +
-                                            UUID.randomUUID().toString().take(8)
-                                        val result = repository.postInvoice(
-                                            invoiceNumber = invoiceNumber,
-                                            kind = "SALE",
-                                            partyId = pending.customerId,
-                                            currencyCode = pending.currencyCode,
-                                            exchangeRateSnapshot = pending.exchangeRate,
-                                            lines = listOf(
-                                                InvoiceLineDraft(
-                                                    productId = pending.productId,
-                                                    quantity = pending.quantity,
-                                                    unitPrice = pending.unitPrice,
-                                                    discount = pending.discount,
-                                                    unitName = pending.unitName
-                                                )
-                                            ),
-                                            paidAmount = pending.paidAmount,
-                                            issuedAt = dailySalesIssuedAt(
-                                                selectedDayStartMillis = selectedDay,
-                                                currentTimeMillis = System.currentTimeMillis()
-                                            ),
-                                            note = pending.note
-                                        )
+                                        dailySalesDraftRepository.postPendingLine(pending.toDraftEntity(0))
                                         pendingDailySales.removeAt(0)
                                         postedCount += 1
                                     }
@@ -6499,7 +6651,16 @@ private fun DailySalesScreen(
                     }
                     TextButton(
                         enabled = !isSaving,
-                        onClick = { pendingDailySales.clear() },
+                        onClick = {
+                            scope.launch {
+                                try {
+                                    dailySalesDraftRepository.clearPendingLines()
+                                    pendingDailySales.clear()
+                                } catch (error: Exception) {
+                                    message = error.message ?: "تعذر إلغاء سطور المسودة"
+                                }
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("إلغاء جميع السطور غير المرحلة") }
                 }

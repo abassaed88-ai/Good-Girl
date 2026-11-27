@@ -340,3 +340,63 @@ data class StockCostRecalculationItemEntity(
     val oldExtendedCost: String,
     val newExtendedCost: String
 )
+
+
+/**
+ * Durable editor state for the single active daily-sales draft. Product and
+ * customer IDs are snapshots only, so archiving master data cannot erase work.
+ */
+@Entity(tableName = "daily_sales_drafts")
+data class DailySalesDraftEntity(
+    @PrimaryKey val id: String = "active",
+    val selectedDay: Long,
+    val selectedProductId: String? = null,
+    val selectedProductNameSnapshot: String = "",
+    val selectedUnitName: String? = null,
+    val productSearchQuery: String = "",
+    val selectedProductCategoryId: String? = null,
+    val quantity: String = "1",
+    val salePrice: String = "0",
+    val lineDiscount: String = "0",
+    val currencyCode: String = "SYP",
+    val exchangeRate: String = "1",
+    val paidAmount: String = "",
+    val paidAmountTouched: Boolean = false,
+    val selectedPartyId: String? = null,
+    val note: String = "",
+    val updatedAt: Long
+)
+
+@Entity(
+    tableName = "daily_sales_draft_lines",
+    foreignKeys = [
+        ForeignKey(
+            entity = DailySalesDraftEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["draftId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [
+        Index("draftId"),
+        Index(value = ["draftId", "lineOrder"], unique = true)
+    ]
+)
+data class DailySalesDraftLineEntity(
+    @PrimaryKey val id: String,
+    val draftId: String = "active",
+    val lineOrder: Int,
+    val productId: String,
+    val productNameSnapshot: String,
+    val quantity: String,
+    val unitName: String,
+    val unitFactor: String,
+    val unitPrice: String,
+    val discount: String,
+    val currencyCode: String,
+    val exchangeRate: String,
+    val paidAmount: String,
+    val customerId: String?,
+    val note: String,
+    val issuedAt: Long
+)

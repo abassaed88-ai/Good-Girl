@@ -61,6 +61,57 @@ class AccountingDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersionElevenAddsDraftTablesWithoutChangingAccountingRecords() {
+        val databaseName = "room-migration-v11-v12-daily-sales-draft.db"
+        val database = roomMigrationHelper.createDatabase(databaseName, 11)
+        try {
+            val originalProductCount = databaseCount(database, "products")
+            val originalInvoiceCount = databaseCount(database, "invoices")
+            val originalMovementCount = databaseCount(database, "stock_movements")
+
+            database.beginTransaction()
+            try {
+                AccountingDatabase.MIGRATION_11_12.migrate(database)
+                database.setTransactionSuccessful()
+            } finally {
+                database.endTransaction()
+            }
+
+            assertEquals(originalProductCount, databaseCount(database, "products"))
+            assertEquals(originalInvoiceCount, databaseCount(database, "invoices"))
+            assertEquals(originalMovementCount, databaseCount(database, "stock_movements"))
+            assertEquals(0, databaseCount(database, "daily_sales_drafts"))
+            assertEquals(0, databaseCount(database, "daily_sales_draft_lines"))
+
+            database.execSQL(
+                "INSERT INTO daily_sales_drafts (id, selectedDay, selectedProductId, " +
+                    "selectedProductNameSnapshot, selectedUnitName, productSearchQuery, " +
+                    "selectedProductCategoryId, quantity, salePrice, lineDiscount, currencyCode, " +
+                    "exchangeRate, paidAmount, paidAmountTouched, selectedPartyId, note, updatedAt) " +
+                    "VALUES ('active', 1000, NULL, '', NULL, '', NULL, '1', '0', '0', 'SYP', '1', '', 0, NULL, '', 1000)"
+            )
+            database.execSQL(
+                "INSERT INTO daily_sales_draft_lines (id, draftId, lineOrder, productId, " +
+                    "productNameSnapshot, quantity, unitName, unitFactor, unitPrice, discount, " +
+                    "currencyCode, exchangeRate, paidAmount, customerId, note, issuedAt) " +
+                    "VALUES ('draft-line', 'active', 0, 'deleted-product', 'اسم محفوظ', '2', " +
+                    "'علبة', '1', '5', '0', 'SYP', '1', '10', NULL, '', 1000)"
+            )
+            assertEquals(1, databaseCount(database, "daily_sales_drafts"))
+            assertEquals(1, databaseCount(database, "daily_sales_draft_lines"))
+
+            database.query("PRAGMA foreign_key_list(daily_sales_draft_lines)").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("daily_sales_drafts", cursor.getString(cursor.getColumnIndexOrThrow("table")))
+                assertEquals("CASCADE", cursor.getString(cursor.getColumnIndexOrThrow("on_delete")))
+            }
+        } finally {
+            database.close()
+            InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun migrationReconcilesBalancesWithoutChangingExistingMovementRows() {
         withVersionFourDatabase { database ->
             insertProduct(database, "p-match", "7.5", "4.00", "SYP")

@@ -15,7 +15,7 @@ import com.goodgirl.accounting.domain.HistoricalStockCostEvent
 import java.math.BigDecimal
 import java.util.UUID
 
-const val ACCOUNTING_DATABASE_VERSION = 11
+const val ACCOUNTING_DATABASE_VERSION = 12
 
 private data class MigrationCurrencyBalances(
     var cash: BigDecimal = BigDecimal.ZERO,
@@ -52,7 +52,9 @@ private data class MigrationOpeningLine(
         JournalLineEntity::class,
         ExchangeRateHistoryEntity::class,
         ExchangeRateAuditEntity::class,
-        ExchangeRateCorrectionItemEntity::class
+        ExchangeRateCorrectionItemEntity::class,
+        DailySalesDraftEntity::class,
+        DailySalesDraftLineEntity::class
     ],
     version = ACCOUNTING_DATABASE_VERSION,
     exportSchema = true
@@ -75,6 +77,7 @@ abstract class AccountingDatabase : RoomDatabase() {
     abstract fun exchangeRateHistoryDao(): ExchangeRateHistoryDao
     abstract fun exchangeRateAuditDao(): ExchangeRateAuditDao
     abstract fun exchangeRateCorrectionItemDao(): ExchangeRateCorrectionItemDao
+    abstract fun dailySalesDraftDao(): DailySalesDraftDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -719,6 +722,38 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_11_12 = object : Migration(11, 12) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS daily_sales_drafts (" +
+                        "id TEXT NOT NULL, selectedDay INTEGER NOT NULL, selectedProductId TEXT, " +
+                        "selectedProductNameSnapshot TEXT NOT NULL, selectedUnitName TEXT, " +
+                        "productSearchQuery TEXT NOT NULL, selectedProductCategoryId TEXT, " +
+                        "quantity TEXT NOT NULL, salePrice TEXT NOT NULL, lineDiscount TEXT NOT NULL, " +
+                        "currencyCode TEXT NOT NULL, exchangeRate TEXT NOT NULL, paidAmount TEXT NOT NULL, " +
+                        "paidAmountTouched INTEGER NOT NULL, selectedPartyId TEXT, note TEXT NOT NULL, " +
+                        "updatedAt INTEGER NOT NULL, PRIMARY KEY(id))"
+                )
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS daily_sales_draft_lines (" +
+                        "id TEXT NOT NULL, draftId TEXT NOT NULL, lineOrder INTEGER NOT NULL, " +
+                        "productId TEXT NOT NULL, productNameSnapshot TEXT NOT NULL, quantity TEXT NOT NULL, " +
+                        "unitName TEXT NOT NULL, unitFactor TEXT NOT NULL, unitPrice TEXT NOT NULL, " +
+                        "discount TEXT NOT NULL, currencyCode TEXT NOT NULL, exchangeRate TEXT NOT NULL, " +
+                        "paidAmount TEXT NOT NULL, customerId TEXT, note TEXT NOT NULL, issuedAt INTEGER NOT NULL, " +
+                        "PRIMARY KEY(id), FOREIGN KEY(draftId) REFERENCES daily_sales_drafts(id) ON UPDATE NO ACTION ON DELETE CASCADE)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_daily_sales_draft_lines_draftId " +
+                        "ON daily_sales_draft_lines(draftId)"
+                )
+                database.execSQL(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS index_daily_sales_draft_lines_draftId_lineOrder " +
+                        "ON daily_sales_draft_lines(draftId, lineOrder)"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AccountingDatabase? = null
 
@@ -728,7 +763,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12).build().also { INSTANCE = it }
             }
     }
 }

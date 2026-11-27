@@ -15,6 +15,8 @@ import com.goodgirl.accounting.data.local.StockMovementEntity
 import com.goodgirl.accounting.data.local.StockCostBaselineEntity
 import com.goodgirl.accounting.data.local.StockCostRecalculationAuditEntity
 import com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftLineEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
 import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
@@ -50,7 +52,9 @@ object BackupIntegrityValidator {
         exchangeRateCorrectionItems: List<ExchangeRateCorrectionItemEntity> = emptyList(),
         stockCostBaselines: List<StockCostBaselineEntity> = emptyList(),
         stockCostRecalculationAudits: List<StockCostRecalculationAuditEntity> = emptyList(),
-        stockCostRecalculationItems: List<StockCostRecalculationItemEntity> = emptyList()
+        stockCostRecalculationItems: List<StockCostRecalculationItemEntity> = emptyList(),
+        dailySalesDraft: DailySalesDraftEntity? = null,
+        dailySalesDraftLines: List<DailySalesDraftLineEntity> = emptyList()
     ) {
         ensureUnique(categories.map { it.id }, "معرّفات التصنيفات")
         ensureUnique(products.map { it.id }, "معرّفات المنتجات")
@@ -77,6 +81,37 @@ object BackupIntegrityValidator {
         ensureUnique(exchangeRateAudits.map { it.id }, "معرّفات سجل تدقيق أسعار الصرف")
         ensureUnique(exchangeRateCorrectionItems.map { it.id }, "معرّفات تفاصيل تصحيحات أسعار الصرف")
         ensureUnique(exchangeRateCorrectionItems.map { it.auditId + "|" + it.recordType + "|" + it.recordId }, "سجلات العمليات المصححة")
+        ensureUnique(dailySalesDraftLines.map { it.id }, "معرّفات سطور مسودة المبيعات")
+        ensureUnique(dailySalesDraftLines.map { it.draftId + "|" + it.lineOrder }, "ترتيب سطور مسودة المبيعات")
+        require(dailySalesDraft == null || dailySalesDraft.id == "active") {
+            "معرّف مسودة المبيعات غير صالح في النسخة الاحتياطية"
+        }
+        require(dailySalesDraftLines.isEmpty() || dailySalesDraft != null) {
+            "تحتوي النسخة الاحتياطية على سطور مسودة دون رأس للمسودة"
+        }
+        require(dailySalesDraftLines.size <= 100) {
+            "تجاوزت مسودة المبيعات الحد الأقصى لعدد السطور"
+        }
+        dailySalesDraftLines.forEachIndexed { index, line ->
+            require(line.draftId == dailySalesDraft?.id && line.lineOrder == index) {
+                "ترتيب أو ارتباط سطور مسودة المبيعات غير صالح"
+            }
+            require(line.productNameSnapshot.isNotBlank() && line.unitName.isNotBlank()) {
+                "يوجد سطر مسودة دون اسم مادة أو وحدة قياس"
+            }
+            requireCurrency(line.currencyCode, "عملة سطر مسودة المبيعات")
+            positive(line.quantity, "كمية سطر مسودة المبيعات")
+            positive(line.unitFactor, "عامل وحدة سطر مسودة المبيعات")
+            nonNegative(line.unitPrice, "سعر سطر مسودة المبيعات")
+            nonNegative(line.discount, "خصم سطر مسودة المبيعات")
+            nonNegative(line.paidAmount, "المبلغ المقبوض في سطر المسودة")
+            requireRate(line.exchangeRate, line.currencyCode, "سعر الصرف في سطر المسودة")
+            val gross = BigDecimal(line.quantity).multiply(BigDecimal(line.unitPrice))
+            require(BigDecimal(line.discount) <= gross) { "خصم سطر مسودة المبيعات أكبر من إجماليه" }
+            require(BigDecimal(line.paidAmount) <= gross.subtract(BigDecimal(line.discount))) {
+                "المبلغ المقبوض في سطر المسودة أكبر من قيمته"
+            }
+        }
         ensureUnique(journalLines.map { it.journalEntryId + "|" + it.lineNumber }, "ترتيب أسطر قيود اليومية")
         ensureUnique(categories.map { it.name }, "أسماء التصنيفات")
 
