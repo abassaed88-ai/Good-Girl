@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -6377,7 +6379,7 @@ private fun DailySalesScreen(
         }
 
         Text(
-            "تفاصيل المواد المباعة (" + rows.size + ")",
+            "دفتر المبيعات اليومي (" + rows.size + " سطر)",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold,
             color = Ink
@@ -6399,100 +6401,139 @@ private fun DailySalesScreen(
                 shape = RoundedCornerShape(14.dp),
                 colors = CardDefaults.cardColors(containerColor = CardSurface)
             ) {
-                Column {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(horizontal = 8.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("المادة", modifier = Modifier.weight(1.35f), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                        Text("الكمية", modifier = Modifier.weight(0.75f), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                        Text("المبيع", modifier = Modifier.weight(1.0f), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                        Text("الربح", modifier = Modifier.weight(0.9f), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                    }
-                    rows.forEachIndexed { index, row ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(bottom = 4.dp)
+                ) {
+                    Column(modifier = Modifier.width(700.dp)) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 10.dp),
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Column(
-                                modifier = Modifier.weight(1.35f),
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
+                            Text("المادة / العملية", modifier = Modifier.width(170.dp).padding(horizontal = 8.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text("الكمية", modifier = Modifier.width(78.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text("سعر الوحدة", modifier = Modifier.width(100.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text("إجمالي المبيع", modifier = Modifier.width(105.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text("الربح", modifier = Modifier.width(95.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text("الملاحظات", modifier = Modifier.width(152.dp).padding(horizontal = 6.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Start)
+                        }
+                        rows.forEachIndexed { index, row ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (index % 2 == 0) MaterialTheme.colorScheme.surface
+                                        else CardSurface
+                                    )
+                                    .padding(vertical = 9.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    row.productName,
-                                    color = Ink,
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 12.sp,
-                                    maxLines = 2
-                                )
-                                Text(
-                                    row.invoiceNumber + " · " +
-                                        SimpleDateFormat("HH:mm", Locale.US).format(Date(row.issuedAt)),
-                                    color = MutedText,
-                                    fontSize = 9.sp,
-                                    maxLines = 1
-                                )
-                                if (row.note.isNotBlank()) {
+                                Column(
+                                    modifier = Modifier.width(170.dp).padding(horizontal = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(3.dp)
+                                ) {
                                     Text(
-                                        row.note,
+                                        row.productName,
+                                        color = Ink,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        maxLines = 2
+                                    )
+                                    Text(
+                                        row.invoiceNumber + " · " +
+                                            SimpleDateFormat("HH:mm", Locale.US).format(Date(row.issuedAt)),
                                         color = MutedText,
                                         fontSize = 9.sp,
                                         maxLines = 1
                                     )
                                 }
-                            }
-                            Text(
-                                row.quantity + " " + row.unitName,
-                                modifier = Modifier.weight(0.75f),
-                                color = Ink,
-                                fontSize = 10.sp,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2
-                            )
-                            Column(
-                                modifier = Modifier.weight(1.0f),
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
                                 Text(
-                                    row.netSales.stripTrailingZeros().toPlainString(),
+                                    row.quantity + " " + row.unitName,
+                                    modifier = Modifier.width(78.dp).padding(horizontal = 4.dp),
                                     color = Ink,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
+                                Column(
+                                    modifier = Modifier.width(100.dp).padding(horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        row.unitPrice,
+                                        color = Ink,
+                                        fontSize = 11.sp,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2
+                                    )
+                                    Text(row.currencyCode, color = MutedText, fontSize = 9.sp)
+                                }
+                                Column(
+                                    modifier = Modifier.width(105.dp).padding(horizontal = 4.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                                ) {
+                                    Text(
+                                        row.netSales.stripTrailingZeros().toPlainString(),
+                                        color = Ink,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 2
+                                    )
+                                    Text(row.currencyCode, color = MutedText, fontSize = 9.sp)
+                                }
+                                Text(
+                                    row.profit.stripTrailingZeros().toPlainString(),
+                                    modifier = Modifier.width(95.dp).padding(horizontal = 4.dp),
+                                    color = if (row.profit >= BigDecimal.ZERO) SoftGreen else SoftRed,
                                     fontSize = 11.sp,
-                                    fontWeight = FontWeight.SemiBold,
+                                    fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center,
                                     maxLines = 2
                                 )
                                 Text(
-                                    row.currencyCode + " · " + row.unitPrice,
+                                    row.note.ifBlank { "—" },
+                                    modifier = Modifier.width(152.dp).padding(horizontal = 6.dp),
                                     color = MutedText,
-                                    fontSize = 9.sp,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 1
+                                    fontSize = 10.sp,
+                                    maxLines = 3
                                 )
                             }
-                            Text(
-                                row.profit.stripTrailingZeros().toPlainString(),
-                                modifier = Modifier.weight(0.9f),
-                                color = if (row.profit >= BigDecimal.ZERO) SoftGreen else SoftRed,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2
-                            )
+                            if (index < rows.lastIndex) {
+                                androidx.compose.material3.HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant
+                                )
+                            }
                         }
-                        if (index < rows.lastIndex) {
-                            androidx.compose.material3.HorizontalDivider(
-                                color = MaterialTheme.colorScheme.outlineVariant
-                            )
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("إجمالي اليوم", modifier = Modifier.width(170.dp).padding(horizontal = 8.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(rows.size.toString(), modifier = Modifier.width(78.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text("—", modifier = Modifier.width(100.dp), color = MutedText, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text(formatCurrencyTotals(salesTotals), modifier = Modifier.width(105.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text(formatCurrencyTotals(profitTotals), modifier = Modifier.width(95.dp).padding(horizontal = 4.dp), color = SoftGreen, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text("عدد السطور: " + rows.size, modifier = Modifier.width(152.dp).padding(horizontal = 6.dp), color = MutedText, fontSize = 10.sp)
                         }
                     }
                 }
             }
+            Text(
+                "اسحب الجدول أفقياً لرؤية جميع الأعمدة. كل سطر مرتبط بفاتورة بيع فعلية واحدة ويحدّث المخزون والحسابات والتقارير دون إدخال مكرر.",
+                color = MutedText,
+                fontSize = 11.sp
+            )
         }
         Text(
             "كل مبيعة تُحفظ كفاتورة بيع عادية من سطر واحد؛ لذلك تُحدّث المخزون وكشف الحساب والصندوق والتقارير من مصدر واحد دون تكرار.",
