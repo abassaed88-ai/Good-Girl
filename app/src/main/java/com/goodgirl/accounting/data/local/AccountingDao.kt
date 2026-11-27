@@ -438,7 +438,7 @@ interface StockCostRecalculationAuditDao {
     suspend fun getForProduct(productId: String): List<StockCostRecalculationAuditEntity>
 
     @Query("SELECT EXISTS(SELECT 1 FROM stock_cost_recalculation_audits WHERE productId = :productId)")
-    suspend fun hasProductHistory(productId: String)
+    suspend fun hasProductHistory(productId: String): Boolean
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertAll(audits: List<StockCostRecalculationAuditEntity>)
     @Query("DELETE FROM stock_cost_recalculation_audits")
