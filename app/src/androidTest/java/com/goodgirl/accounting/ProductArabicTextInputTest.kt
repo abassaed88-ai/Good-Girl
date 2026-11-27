@@ -43,6 +43,20 @@ class ProductArabicTextInputTest {
         )
     }
 
+
+    @Test
+    fun arabicLettersRenderImmediatelyInPointOfSaleSearch() {
+        composeRule.onNodeWithTag("dashboard-pos")
+            .performScrollTo()
+            .performClick()
+        composeRule.waitForIdle()
+
+        assertArabicCharactersAppearOneByOne(
+            composeRule.onNodeWithTag("pos-product-search").performScrollTo(),
+            "عطر الياسمين"
+        )
+    }
+
     private fun assertArabicCharactersAppearOneByOne(
         field: SemanticsNodeInteraction,
         expected: String
