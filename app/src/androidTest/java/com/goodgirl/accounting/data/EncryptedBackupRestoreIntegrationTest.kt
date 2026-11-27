@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.goodgirl.accounting.data.local.ACCOUNTING_DATABASE_VERSION
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -46,7 +45,7 @@ class EncryptedBackupRestoreIntegrationTest {
                 .put("format", "good-girl-accounting-backup")
                 .put("formatVersion", 6)
                 .put("applicationId", "com.goodgirl.accounting")
-                .put("databaseVersion", ACCOUNTING_DATABASE_VERSION - 1)
+                .put("databaseVersion", 10)
                 .put("exportedAt", 1_700_000_000_000L)
                 .put("settings", JSONObject()
                     .put("usdSypRate", "15000")
