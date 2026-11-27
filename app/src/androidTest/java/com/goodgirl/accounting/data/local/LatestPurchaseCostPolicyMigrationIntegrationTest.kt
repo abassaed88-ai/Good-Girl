@@ -21,6 +21,106 @@ import org.junit.runner.RunWith
 class LatestPurchaseCostPolicyMigrationIntegrationTest {
 
     @Test
+    fun migrationChoosesLatestRecordedPurchaseWhenInvoiceCreationTimesAreOutOfOrder() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            val products = ProductRepository(database)
+            val invoices = InvoiceRepository(database)
+            products.addProduct(
+                sku = "LATEST-RECORDED-001",
+                name = "مادة فاتورتاها متقاربتان",
+                unit = "مل",
+                purchaseCost = "10",
+                salePrice = "30",
+                openingStock = "2",
+                note = "اختبار ترتيب أحدث شراء"
+            )
+            val product = database.productDao().getAll().single()
+            val baselineAt = database.stockCostBaselineDao().findByProductId(product.id)!!.effectiveAt
+
+            val first = invoices.postInvoice(
+                invoiceNumber = "LATEST-RECORDED-FIRST",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "1", "12")),
+                paidAmount = "12",
+                issuedAt = baselineAt + 1_000L
+            )
+            val second = invoices.postInvoice(
+                invoiceNumber = "LATEST-RECORDED-SECOND",
+                kind = "PURCHASE",
+                partyId = null,
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                lines = listOf(InvoiceLineDraft(product.id, "1", "20")),
+                paidAmount = "20",
+                issuedAt = baselineAt + 2_000L
+            )
+
+            val firstLine = database.invoiceDao().getLines(first.invoiceId).single()
+            val secondLine = database.invoiceDao().getLines(second.invoiceId).single()
+            val movements = database.stockMovementDao().getAll().associateBy { it.sourceId }
+            val firstMovement = movements.getValue(firstLine.id)
+            val secondMovement = movements.getValue(secondLine.id)
+            assertTrue(secondMovement.recordedAt > firstMovement.recordedAt)
+
+            // Simulate a migrated/restored legacy database whose invoice
+            // creation timestamps are not a reliable ordering source.
+            database.openHelper.writableDatabase.execSQL(
+                "UPDATE invoices SET createdAt = 900000 WHERE id = ?",
+                arrayOf(first.invoiceId)
+            )
+            database.openHelper.writableDatabase.execSQL(
+                "UPDATE invoices SET createdAt = 800000 WHERE id = ?",
+                arrayOf(second.invoiceId)
+            )
+
+            val purchaseIds = arrayOf(first.invoiceId, second.invoiceId)
+            database.openHelper.writableDatabase.execSQL(
+                "DELETE FROM journal_lines WHERE journalEntryId IN " +
+                    "(SELECT id FROM journal_entries WHERE sourceType = 'PURCHASE_INVENTORY_REVALUATION' AND sourceId IN (?, ?))",
+                purchaseIds
+            )
+            database.openHelper.writableDatabase.execSQL(
+                "DELETE FROM journal_entries WHERE sourceType = 'PURCHASE_INVENTORY_REVALUATION' AND sourceId IN (?, ?)",
+                purchaseIds
+            )
+            database.ledgerDao().getAll()
+                .filter {
+                    it.sourceId in purchaseIds &&
+                        it.sourceType.startsWith("PURCHASE_INVENTORY_REVALUATION_")
+                }
+                .forEach { database.ledgerDao().deleteById(it.id) }
+
+            // Simulated v10 weighted average: (2×10 + 1×12 + 1×20) / 4 = 13.
+            val legacyProduct = database.productDao().findById(product.id)!!
+            database.productDao().update(legacyProduct.copy(purchaseCost = "13"))
+            LatestPurchaseCostPolicyMigrator.migrate(
+                database.openHelper.writableDatabase,
+                System.currentTimeMillis() + 60_000L
+            )
+
+            val updated = database.productDao().findById(product.id)!!
+            assertDecimal("20", updated.purchaseCost)
+            assertDecimal("4", updated.stockQuantity)
+            val migrationJournal = database.journalEntryDao()
+                .findBySource("MIGRATION_LATEST_PURCHASE_COST", product.id)!!
+            val accounts = database.accountDao().getAll().associate { it.id to it.code }
+            val lines = database.journalLineDao().getForEntry(migrationJournal.id)
+            assertDecimal("28", lines.single { accounts[it.accountId] == "1200" }.debit)
+            assertDecimal("28", lines.single { accounts[it.accountId] == "4100" }.credit)
+            val reportLedger = database.ledgerDao().getAll().single {
+                it.sourceType == "MIGRATION_STOCK_REVALUATION_GAIN" && it.sourceId == product.id
+            }
+            assertDecimal("28", reportLedger.amount)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
     fun roomVersionTenUpgradeAppliesLatestPurchaseCostMigrationAtomically() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val databaseName = "latest-purchase-cost-v10-${System.nanoTime()}.db"
