@@ -6311,7 +6311,7 @@ private fun DailySalesScreen(
                                     cleanPrice,
                                     cleanDiscount
                                 )
-                                require(cleanPaid.toBigDecimal() <= netAmount) {
+                                require(cleanPaid.toBigDecimal() <= netAmount.toBigDecimal()) {
                                     "المبلغ المقبوض لا يمكن أن يتجاوز إجمالي السطر"
                                 }
                                 require(
