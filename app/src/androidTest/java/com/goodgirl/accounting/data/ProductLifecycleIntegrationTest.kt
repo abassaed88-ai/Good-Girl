@@ -6,6 +6,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -79,9 +80,13 @@ class ProductLifecycleIntegrationTest {
             assertEquals(originalProduct.stockQuantity, archived.stockQuantity)
             assertEquals(originalMovement, database.stockMovementDao().getAll().single())
             assertEquals(originalJournal, database.journalEntryDao().getAll().single())
+            assertTrue(database.productDao().observeActiveProducts().first().none { it.id == productId })
+            assertTrue(database.productDao().observeArchivedProducts().first().any { it.id == productId })
 
             assertTrue(repository.restoreProduct(productId))
             assertTrue(database.productDao().findById(productId)!!.isActive)
+            assertTrue(database.productDao().observeActiveProducts().first().any { it.id == productId })
+            assertTrue(database.productDao().observeArchivedProducts().first().none { it.id == productId })
             assertFalse(repository.restoreProduct("missing-product"))
         } finally {
             database.close()
