@@ -27,7 +27,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextField as Material3OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
