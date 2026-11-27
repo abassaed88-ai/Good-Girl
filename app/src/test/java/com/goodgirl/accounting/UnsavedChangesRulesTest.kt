@@ -368,4 +368,30 @@ class UnsavedChangesRulesTest {
         assertEquals(1.0f, normalizeAppFontScale(1.0f))
         assertEquals(1.2f, normalizeAppFontScale(1.8f))
     }
+
+    @Test
+    fun basicDataManagementBackNavigationReturnsToItsEntryPoint() {
+        assertEquals(
+            "master_data",
+            previousAppPage(
+                currentPage = "products",
+                productsReturnPage = "master_data"
+            )
+        )
+        assertEquals(
+            "dashboard",
+            previousAppPage(currentPage = "products")
+        )
+        assertEquals(
+            "master_data",
+            previousAppPage(
+                currentPage = "categories",
+                categoriesReturnPage = "master_data"
+            )
+        )
+        assertEquals(
+            "products",
+            previousAppPage(currentPage = "categories")
+        )
+    }
 }
