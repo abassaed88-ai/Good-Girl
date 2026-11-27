@@ -29,7 +29,7 @@ Status: implemented and validated on the development branch. Room v10→v11 migr
 
 - Code validation on `833e16f43e8d15d23fb6a833547f902457372516`: Android build workflow [#45953439902](https://github.com/abassaed88-ai/Good-Girl/actions/runs/45953439902) completed successfully, including 233 unit tests, 64 Android instrumentation tests, Room v10→v11 migration tests (3/3), encrypted legacy-backup restore (1/1), report/journal reconciliation (2/2), stock-adjustment accounting (4/4), and debug APK assembly.
 - Schema-persistence validation on `055f7ef2ca535d898163bfe43f0885596af53937`: workflow [#46026683571](https://github.com/abassaed88-ai/Good-Girl/actions/runs/46026683571) completed successfully. Room schema `11.json` was committed to the development branch as `bb90a83e44ed54fce8cbc3640c878e466f0d1488`.
-- Permanent-signature development APK build is the remaining release step; verify the resulting APK certificate matches the encrypted Good Girl release keystore before distribution.
+- Permanent-signature development APK build completed successfully in CI workflow [#46027840927](https://github.com/abassaed88-ai/Good-Girl/actions/runs/46027840927). The release workflow verified that the APK certificate SHA-256 matches the certificate exported from the encrypted Good Girl release keystore, uploaded the signed APK, and removed the decrypted keystore from the runner.
 
 ## Example
 Existing 30 ml at $1/ml, previously sold 20 ml from an initial 50 ml. A new purchase of 20 ml at $1.50/ml is posted:
