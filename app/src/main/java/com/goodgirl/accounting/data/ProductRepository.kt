@@ -18,9 +18,56 @@ import kotlinx.coroutines.flow.Flow
 import java.util.UUID
 import java.math.BigDecimal
 
+internal enum class ProductRemovalResult {
+    DELETED,
+    ARCHIVED
+}
+
 class ProductRepository(private val database: AccountingDatabase) {
     fun observeProducts(): Flow<List<ProductEntity>> =
         database.productDao().observeActiveProducts()
+
+    fun observeArchivedProducts(): Flow<List<ProductEntity>> =
+        database.productDao().observeArchivedProducts()
+
+    /**
+     * Removes a product only when it has no accounting or stock history.
+     * Any linked invoice, stock movement, non-default baseline, cost audit,
+     * or remaining quantity causes archival instead of physical deletion.
+     */
+    suspend fun removeOrArchiveProduct(id: String): ProductRemovalResult =
+        database.withTransaction {
+            val product = database.productDao().findById(id)
+                ?: throw IllegalArgumentException("المنتج غير موجود")
+
+            val baseline = database.stockCostBaselineDao().findByProductId(id)
+            val hasHistory =
+                database.invoiceDao().hasProductHistory(id) ||
+                    database.stockMovementDao().hasProductHistory(id) ||
+                    database.stockCostRecalculationAuditDao().hasProductHistory(id) ||
+                    (baseline != null && baseline.source != "PRODUCT_ZERO_OPENING") ||
+                    product.stockQuantity.toBigDecimalOrNull()?.compareTo(BigDecimal.ZERO) != 0
+
+            if (hasHistory) {
+                database.productDao().archive(id, System.currentTimeMillis())
+                ProductRemovalResult.ARCHIVED
+            } else {
+                // These are setup records, not accounting history. Remove them
+                // only inside the same transaction as the product itself.
+                database.productBarcodeDao().deleteForProduct(id)
+                database.productUnitDao().deleteForProduct(id)
+                database.stockCostBaselineDao().deleteForProduct(id)
+                database.productDao().deleteById(id)
+                ProductRemovalResult.DELETED
+            }
+        }
+
+    suspend fun restoreProduct(id: String): Boolean = database.withTransaction {
+        val product = database.productDao().findById(id) ?: return@withTransaction false
+        if (product.isActive) return@withTransaction false
+        database.productDao().restore(id, System.currentTimeMillis())
+        true
+    }
 
     suspend fun addProduct(
         sku: String,
