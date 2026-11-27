@@ -5832,6 +5832,7 @@ private data class PendingDailySaleLine(
     val productName: String,
     val quantity: String,
     val unitName: String,
+    val unitFactor: String,
     val unitPrice: String,
     val discount: String,
     val currencyCode: String,
@@ -6331,6 +6332,7 @@ private fun DailySalesScreen(
                                         productName = product.name,
                                         quantity = cleanQuantity,
                                         unitName = selectedUnit?.unitName ?: product.baseUnit,
+                                        unitFactor = selectedUnit?.baseFactor ?: "1",
                                         unitPrice = cleanPrice,
                                         discount = cleanDiscount,
                                         currencyCode = product.priceCurrencyCode,
@@ -6361,7 +6363,6 @@ private fun DailySalesScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text("إضافة السطر إلى دفتر اليوم")
-                    }
                     }
                 } else {
                     Text(
@@ -6408,11 +6409,7 @@ private fun DailySalesScreen(
                             .subtract(pending.discount.toBigDecimal())
                         val currentUnitCost = pendingProduct?.purchaseCost?.toBigDecimalOrNull()
                             ?: BigDecimal.ZERO
-                        val factor = database.productUnitDao().let { dao ->
-                            // The chosen unit factor is retained by the unit name and loaded from the product's units.
-                            // A missing unit is handled at posting time with a clear message.
-                            BigDecimal.ONE
-                        }
+                        val factor = pending.unitFactor.toBigDecimalOrNull() ?: BigDecimal.ONE
                         val estimatedProfit = amount.subtract(
                             pending.quantity.toBigDecimal().multiply(factor).multiply(currentUnitCost)
                         )
