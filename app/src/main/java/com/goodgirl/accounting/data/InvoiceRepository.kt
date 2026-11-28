@@ -14,6 +14,7 @@ import com.goodgirl.accounting.domain.ProductInputRules
 import com.goodgirl.accounting.domain.ProductUnitInputRules
 import com.goodgirl.accounting.domain.JournalEntryRules
 import com.goodgirl.accounting.domain.JournalLineDraft
+import com.goodgirl.accounting.domain.CashTransactionRules
 import kotlinx.coroutines.flow.Flow
 import java.math.BigDecimal
 import java.util.UUID
