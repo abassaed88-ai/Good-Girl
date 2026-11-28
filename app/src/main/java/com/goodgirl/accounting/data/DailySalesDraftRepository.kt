@@ -91,7 +91,8 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
                             quantity = line.quantity,
                             unitPrice = line.unitPrice,
                             discount = line.discount,
-                            unitName = line.unitName
+                            unitName = line.unitName,
+                            saleUnitCostSnapshot = line.purchaseCostSnapshot
                         )
                     ),
                     paidAmount = line.paidAmount,
@@ -190,6 +191,7 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
             sameDecimal(unitFactorSnapshot, draftLine.unitFactor) &&
             sameDecimal(baseQuantity, expectedBaseQuantity.toPlainString()) &&
             sameDecimal(unitPriceSnapshot, draftLine.unitPrice) &&
+            (draftLine.purchaseCostSnapshot == null || sameDecimal(unitCostSnapshot, draftLine.purchaseCostSnapshot)) &&
             sameDecimal(discount, draftLine.discount) &&
             sameDecimal(lineTotal, expectedTotal.toPlainString())
 
