@@ -9,6 +9,20 @@ data class PointOfSaleCartLineInput(
 )
 
 object PointOfSaleCartRules {
+    fun estimateGrossProfit(
+        quantity: String,
+        unitPrice: String,
+        unitCost: String?
+    ): BigDecimal? {
+        val cleanQuantity = quantity.trim().toBigDecimalOrNull()
+            ?.takeIf { it > BigDecimal.ZERO } ?: return null
+        val cleanPrice = unitPrice.trim().toBigDecimalOrNull()
+            ?.takeIf { it >= BigDecimal.ZERO } ?: return null
+        val cleanCost = unitCost?.trim()?.toBigDecimalOrNull()
+            ?.takeIf { it > BigDecimal.ZERO } ?: return null
+        return cleanPrice.subtract(cleanCost).multiply(cleanQuantity).stripTrailingZeros()
+    }
+
     fun validateCart(lines: List<PointOfSaleCartLineInput>) {
         require(lines.isNotEmpty()) { "أضف مادة واحدة على الأقل إلى دفتر البيع" }
         lines.forEachIndexed { index, line ->
