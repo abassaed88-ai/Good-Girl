@@ -215,6 +215,7 @@ object CashFlowStatementCalculator {
         "SUPPLIER_PAYMENT",
         "MANUAL_CASH_INCOME",
         "MANUAL_CASH_EXPENSE",
+        "DAILY_SALE_EXPENSE",
         "MANUAL_JOURNAL_OPERATING",
         "REVERSAL_OPERATING" -> OPERATING
         "MANUAL_JOURNAL_INVESTING",
