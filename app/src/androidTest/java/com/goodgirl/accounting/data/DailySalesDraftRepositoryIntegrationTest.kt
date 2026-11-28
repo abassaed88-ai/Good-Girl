@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.DailySalesDraftEntity
 import com.goodgirl.accounting.data.local.DailySalesDraftLineEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftExpenseEntity
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -172,6 +173,110 @@ class DailySalesDraftRepositoryIntegrationTest {
             assertEquals("2", invoiceLine.unitCostSnapshot)
             assertEquals("2", saleMovement.unitCostSnapshot)
             assertEquals("4", database.productDao().findById(product.id)!!.stockQuantity)
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun multipleAttachedExpensesPostWithSaleAndRetryWithoutDuplicateAccounting() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            ProductRepository(database).addProduct(
+                sku = "DRAFT-EXPENSE-001",
+                name = "مادة اختبار المصروفات المرتبطة",
+                unit = "قطعة",
+                purchaseCost = "2",
+                salePrice = "5",
+                openingStock = "5",
+                note = "اختبار ترحيل المصروفات"
+            )
+            val product = database.productDao().getAll().single()
+            val line = sampleLine(
+                id = "00000000-0000-0000-0000-000000000006",
+                lineOrder = 0,
+                productId = product.id,
+                productName = product.name,
+                unitName = product.baseUnit,
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                quantity = "1",
+                unitFactor = "1",
+                unitPrice = "5",
+                discount = "0",
+                paidAmount = "5",
+                purchaseCostSnapshot = "2"
+            )
+            val expenses = listOf(
+                DailySalesDraftExpenseEntity(
+                    id = "00000000-0000-0000-0000-000000000101",
+                    lineId = line.id,
+                    description = "توصيل الطلب",
+                    amount = "2.5",
+                    currencyCode = "USD",
+                    exchangeRateSnapshot = "15000",
+                    createdAt = line.issuedAt
+                ),
+                DailySalesDraftExpenseEntity(
+                    id = "00000000-0000-0000-0000-000000000102",
+                    lineId = line.id,
+                    description = "تغليف",
+                    amount = "3000",
+                    currencyCode = "SYP",
+                    exchangeRateSnapshot = "1",
+                    createdAt = line.issuedAt + 1
+                )
+            )
+            val repository = DailySalesDraftRepository(database)
+            repository.saveSnapshot(sampleHeader(), listOf(line), expenses)
+
+            val posted = repository.postPendingLine(line, expenses)
+
+            val invoice = database.invoiceDao().findById(posted.invoiceId)!!
+            assertEquals("SALE", invoice.kind)
+            assertEquals(1, database.invoiceDao().getAllInvoices().count { it.invoiceNumber == posted.invoiceNumber })
+            assertEquals("4", database.productDao().findById(product.id)!!.stockQuantity)
+
+            val expenseJournals = database.journalEntryDao().getAll()
+                .filter { it.sourceType == "DAILY_SALE_EXPENSE" }
+            assertEquals(2, expenseJournals.size)
+            val usdJournal = expenseJournals.single { it.sourceId == expenses[0].id }
+            val sypJournal = expenseJournals.single { it.sourceId == expenses[1].id }
+            assertEquals("USD", usdJournal.currencyCode)
+            assertEquals("15000", usdJournal.exchangeRateSnapshot)
+            assertEquals("SYP", sypJournal.currencyCode)
+            assertEquals("1", sypJournal.exchangeRateSnapshot)
+
+            val accountCodes = database.accountDao().getAll().associate { it.id to it.code }
+            listOf(usdJournal, sypJournal).forEachIndexed { index, journal ->
+                val expectedAmount = expenses[index].amount
+                val journalLines = database.journalLineDao().getForEntry(journal.id)
+                assertEquals(2, journalLines.size)
+                assertDecimal(expectedAmount, journalLines.single { accountCodes[it.accountId] == "7000" }.debit)
+                assertDecimal(expectedAmount, journalLines.single { accountCodes[it.accountId] == "1000" }.credit)
+                assertEquals(0, journalLines.sumOf { it.debit.toBigDecimal() }
+                    .compareTo(journalLines.sumOf { it.credit.toBigDecimal() }))
+            }
+
+            val linkedLedger = database.ledgerDao().getAll().filter { it.sourceId == posted.invoiceId }
+            assertEquals(4, linkedLedger.size)
+            assertEquals(2, linkedLedger.count { it.entryType == "CASH_OUT" })
+            assertEquals(2, linkedLedger.count { it.entryType == "EXPENSE" })
+            assertEquals(2, linkedLedger.count { it.sourceType == "DAILY_SALE_EXPENSE_CASH" })
+            assertEquals(2, linkedLedger.count { it.sourceType == "DAILY_SALE_EXPENSE" })
+
+            // Simulate process death after posting but before the draft line is
+            // removed. Retrying must recognize and verify the invoice and both
+            // currency-separated expenses without posting any amount twice.
+            repository.saveSnapshot(sampleHeader(), listOf(line), expenses)
+            repository.postPendingLine(line, expenses)
+
+            assertEquals(1, database.invoiceDao().getAllInvoices().count { it.invoiceNumber == posted.invoiceNumber })
+            assertEquals(2, database.journalEntryDao().getAll().count { it.sourceType == "DAILY_SALE_EXPENSE" })
+            assertEquals(4, database.ledgerDao().getAll().count { it.sourceId == posted.invoiceId })
+            assertEquals("4", database.productDao().findById(product.id)!!.stockQuantity)
+            assertTrue(repository.loadSnapshot().lines.isEmpty())
+            assertTrue(repository.loadSnapshot().expenses.isEmpty())
         } finally {
             database.close()
         }
