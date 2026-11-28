@@ -374,11 +374,24 @@ fun PointOfSaleScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(product?.name ?: "مادة غير متاحة", modifier = Modifier.weight(1.3f), fontWeight = FontWeight.SemiBold)
-                                Row(modifier = Modifier.weight(0.8f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                                    TextButton(onClick = { updateQuantity(index, -1) }) { Text("−") }
-                                    Text(line.quantity, fontWeight = FontWeight.Bold)
-                                    TextButton(onClick = { updateQuantity(index, 1) }) { Text("+") }
-                                }
+                                Material3OutlinedTextField(
+                                    value = line.quantity,
+                                    onValueChange = { value ->
+                                        val parsed = value.toBigDecimalOrNull()
+                                        val available = product?.stockQuantity?.toBigDecimalOrNull()
+                                        if (parsed != null && parsed > BigDecimal.ZERO && (available == null || parsed <= available)) {
+                                            cart[index] = line.copy(quantity = value)
+                                        } else if (value.isBlank()) {
+                                            cart[index] = line.copy(quantity = "")
+                                        } else {
+                                            message = "الكمية يجب أن تكون أكبر من صفر ولا تتجاوز المخزون"
+                                        }
+                                    },
+                                    modifier = Modifier.weight(0.8f),
+                                    label = { Text("الكمية") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                )
                                 OutlinedTextField(
                                     value = line.unitPrice,
                                     onValueChange = { value -> cart[index] = line.copy(unitPrice = value) },
