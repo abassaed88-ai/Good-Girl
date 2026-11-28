@@ -866,6 +866,11 @@ private fun DashboardScreen(
                             "الإعدادات" to onOpenSettings
                         ).forEach { (label, action) ->
                             DropdownMenuItem(
+                                modifier = if (label == "إدارة البيانات الأساسية") {
+                                    Modifier.testTag("dashboard-menu-master-data")
+                                } else {
+                                    Modifier
+                                },
                                 text = { Text(label) },
                                 onClick = {
                                     dashboardMenuExpanded = false
