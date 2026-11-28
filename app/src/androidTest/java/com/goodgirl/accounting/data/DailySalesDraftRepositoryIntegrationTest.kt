@@ -47,6 +47,7 @@ class DailySalesDraftRepositoryIntegrationTest {
                 assertEquals(2, restored.lines.size)
                 assertEquals("draft-line-1", restored.lines[0].id)
                 assertEquals("draft-line-2", restored.lines[1].id)
+                assertEquals("2", restored.lines[0].purchaseCostSnapshot)
                 assertEquals("12345", restored.header.paidAmount)
             } finally {
                 reopened.close()
@@ -117,6 +118,57 @@ class DailySalesDraftRepositoryIntegrationTest {
             assertEquals(1, database.invoiceDao().getAllInvoices().count { it.invoiceNumber == invoiceNumber })
             assertEquals(quantityAfterOriginalPost, database.productDao().findById(product.id)!!.stockQuantity)
             assertNull(DailySalesDraftRepository(database).loadSnapshot().lines.firstOrNull { it.id == line.id })
+        } finally {
+            database.close()
+        }
+    }
+
+    @Test
+    fun postingUsesThePurchaseCostCapturedWhenTheDraftRowWasAdded() = runBlocking {
+        val database = newInMemoryDatabase()
+        try {
+            ProductRepository(database).addProduct(
+                sku = "DRAFT-COST-SNAPSHOT",
+                name = "مادة اختبار تثبيت كلفة المسودة",
+                unit = "قطعة",
+                purchaseCost = "2",
+                salePrice = "5",
+                openingStock = "5",
+                note = "اختبار عدم تغير ربح المسودة"
+            )
+            val product = database.productDao().getAll().single()
+            val line = sampleLine(
+                id = "00000000-0000-0000-0000-000000000005",
+                lineOrder = 0,
+                productId = product.id,
+                productName = product.name,
+                unitName = product.baseUnit,
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                quantity = "1",
+                unitFactor = "1",
+                unitPrice = "5",
+                discount = "0",
+                paidAmount = "5",
+                purchaseCostSnapshot = "2"
+            )
+            val repository = DailySalesDraftRepository(database)
+            repository.saveSnapshot(sampleHeader(), listOf(line))
+
+            // A purchase or cost correction changes today's item master cost,
+            // but must not rewrite the already-entered draft line's gross profit.
+            database.productDao().update(
+                product.copy(purchaseCost = "4", updatedAt = System.currentTimeMillis())
+            )
+
+            val result = repository.postPendingLine(line)
+            val invoiceLine = database.invoiceDao().getLines(result.invoiceId).single()
+            val saleMovement = database.stockMovementDao().getAll()
+                .single { it.sourceType == "SALE_INVOICE" }
+
+            assertEquals("2", invoiceLine.unitCostSnapshot)
+            assertEquals("2", saleMovement.unitCostSnapshot)
+            assertEquals("1", database.productDao().findById(product.id)!!.stockQuantity)
         } finally {
             database.close()
         }
@@ -223,7 +275,8 @@ class DailySalesDraftRepositoryIntegrationTest {
         unitFactor: String = "1",
         unitPrice: String = "20",
         discount: String = "0",
-        paidAmount: String = "20"
+        paidAmount: String = "20",
+        purchaseCostSnapshot: String? = null
     ) = DailySalesDraftLineEntity(
         id = id,
         lineOrder = lineOrder,
@@ -235,6 +288,7 @@ class DailySalesDraftRepositoryIntegrationTest {
         unitPrice = unitPrice,
         discount = discount,
         currencyCode = currencyCode,
+        purchaseCostSnapshot = purchaseCostSnapshot,
         exchangeRate = exchangeRate,
         paidAmount = paidAmount,
         customerId = null,
