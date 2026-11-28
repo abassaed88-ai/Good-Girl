@@ -34,7 +34,18 @@ class DailySalesDraftRepositoryIntegrationTest {
                 sampleLine("draft-line-1", 0, purchaseCostSnapshot = "2"),
                 sampleLine("draft-line-2", 1)
             )
-            DailySalesDraftRepository(firstDatabase).saveSnapshot(header, lines)
+            val expenses = listOf(
+                DailySalesDraftExpenseEntity(
+                    id = "draft-expense-1",
+                    lineId = lines[0].id,
+                    description = "مصروف توصيل",
+                    amount = "2.5",
+                    currencyCode = "USD",
+                    exchangeRateSnapshot = "15000",
+                    createdAt = header.updatedAt
+                )
+            )
+            DailySalesDraftRepository(firstDatabase).saveSnapshot(header, lines, expenses)
             firstDatabase.close()
 
             val reopened = Room.databaseBuilder(
@@ -52,6 +63,12 @@ class DailySalesDraftRepositoryIntegrationTest {
                 assertEquals("draft-line-1", restored.lines[0].id)
                 assertEquals("draft-line-2", restored.lines[1].id)
                 assertEquals("2", restored.lines[0].purchaseCostSnapshot)
+                assertEquals(1, restored.expenses.size)
+                assertEquals(lines[0].id, restored.expenses.single().lineId)
+                assertEquals("مصروف توصيل", restored.expenses.single().description)
+                assertEquals("2.5", restored.expenses.single().amount)
+                assertEquals("USD", restored.expenses.single().currencyCode)
+                assertEquals("15000", restored.expenses.single().exchangeRateSnapshot)
                 assertEquals("12345", restored.header.paidAmount)
             } finally {
                 reopened.close()
