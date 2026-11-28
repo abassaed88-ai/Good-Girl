@@ -7,9 +7,6 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.hasClickAction
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -37,7 +34,7 @@ class DashboardNavigationSmokeTest {
         composeRule.onNodeWithContentDescription("القائمة").performClick()
         composeRule.waitForIdle()
         // Select the clickable menu item, avoiding the duplicated dashboard heading.
-        composeRule.onNode(hasText("إدارة البيانات الأساسية") and hasClickAction()).performClick()
+        composeRule.onNodeWithTag("dashboard-menu-master-data").performClick()
         composeRule.waitForIdle()
         composeRule.onNodeWithText("إدارة البيانات الأساسية").assertIsDisplayed()
         composeRule.onNodeWithText("المنتجات والمخزون").assertIsDisplayed()
