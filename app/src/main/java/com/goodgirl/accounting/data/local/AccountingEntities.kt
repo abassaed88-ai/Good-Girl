@@ -398,5 +398,6 @@ data class DailySalesDraftLineEntity(
     val paidAmount: String,
     val customerId: String?,
     val note: String,
-    val issuedAt: Long
+    val issuedAt: Long,
+    val purchaseCostSnapshot: String? = null
 )
