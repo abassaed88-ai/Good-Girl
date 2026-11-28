@@ -61,11 +61,28 @@ class DailySalesArabicTextInputTest {
             composeRule.onNodeWithText("مادة اختبار الإدخال العربي")
                 .performClick()
 
-            composeRule.onNodeWithTag("daily-sales-note-cell")
-                .performScrollTo()
-                .performClick()
+            val quantityField = composeRule.onNodeWithTag("daily-sales-quantity")
+            quantityField.performScrollTo().performClick()
+            quantityField.performTextClearance()
+            quantityField.performTextInput("2.5")
             composeRule.waitForIdle()
+            assertEquals(
+                "2.5",
+                quantityField.fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+            )
+
+            val priceField = composeRule.onNodeWithTag("daily-sales-sale-price")
+            priceField.performScrollTo().performClick()
+            priceField.performTextClearance()
+            priceField.performTextInput("7.25")
+            composeRule.waitForIdle()
+            assertEquals(
+                "7.25",
+                priceField.fetchSemanticsNode().config[SemanticsProperties.EditableText].text
+            )
+
             val noteField = composeRule.onNodeWithTag("daily-sales-note")
+            noteField.performScrollTo().performClick()
             assertArabicCharactersAppearOneByOne(noteField, "ملاحظة عربية")
         } finally {
             composeRule.waitForIdle()
