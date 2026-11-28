@@ -405,9 +405,11 @@ fun PointOfSaleScreen(
                         val quantity = line.quantity.toBigDecimalOrNull() ?: BigDecimal.ZERO
                         val unitPrice = line.unitPrice.toBigDecimalOrNull() ?: BigDecimal.ZERO
                         val lineTotal = quantity.multiply(unitPrice).stripTrailingZeros().toPlainString()
-                        val estimatedProfit = product?.purchaseCost?.toBigDecimalOrNull()
-                            ?.takeIf { it > BigDecimal.ZERO }
-                            ?.let { cost -> unitPrice.subtract(cost).multiply(quantity).stripTrailingZeros() }
+                        val estimatedProfit = PointOfSaleCartRules.estimateGrossProfit(
+                            quantity = line.quantity,
+                            unitPrice = line.unitPrice,
+                            unitCost = product?.purchaseCost
+                        )
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(product?.name ?: "مادة غير متاحة", modifier = Modifier.weight(1.3f), fontWeight = FontWeight.SemiBold)
@@ -563,9 +565,11 @@ fun PointOfSaleScreen(
                         val quantity = line.quantity.toBigDecimal()
                         val price = line.unitPrice.toBigDecimal()
                         val lineTotal = quantity.multiply(price).stripTrailingZeros().toPlainString()
-                        val estimatedProfit = product?.purchaseCost?.toBigDecimalOrNull()
-                            ?.takeIf { it > BigDecimal.ZERO }
-                            ?.let { cost -> price.subtract(cost).multiply(quantity).stripTrailingZeros() }
+                        val estimatedProfit = PointOfSaleCartRules.estimateGrossProfit(
+                            quantity = line.quantity,
+                            unitPrice = line.unitPrice,
+                            unitCost = product?.purchaseCost
+                        )
                         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(product?.name ?: "مادة غير متاحة", fontWeight = FontWeight.SemiBold)
                             Text(
