@@ -5,6 +5,9 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.goodgirl.accounting.data.local.AccountingDatabase
+import com.goodgirl.accounting.data.local.DailySalesDraftEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftLineEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftExpenseEntity
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -511,6 +514,99 @@ class EncryptedBackupRestoreIntegrationTest {
             assertEquals("invoice-1", restoredCorrectionItems.single().recordId)
         } finally {
             password.fill('\u0000')
+            backupFile.delete()
+            database.close()
+        }
+    }
+
+    @Test
+    fun encryptedBackupRoundTripPreservesDailySalesDraftExpenses() = runBlocking {
+        val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
+        val database = Room.inMemoryDatabaseBuilder(
+            context,
+            AccountingDatabase::class.java
+        ).allowMainThreadQueries().build()
+        val backupFile = File.createTempFile("good-girl-draft-expenses-", ".ggbackup", context.cacheDir)
+        try {
+            val header = DailySalesDraftEntity(
+                selectedDay = 1_800_000_000_000L,
+                selectedProductId = null,
+                selectedProductNameSnapshot = "",
+                selectedUnitName = null,
+                productSearchQuery = "",
+                selectedProductCategoryId = null,
+                quantity = "1",
+                salePrice = "0",
+                lineDiscount = "0",
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                paidAmount = "0",
+                paidAmountTouched = false,
+                selectedPartyId = null,
+                note = "",
+                updatedAt = 1_800_000_000_100L
+            )
+            val line = DailySalesDraftLineEntity(
+                id = "backup-draft-line-001",
+                draftId = DailySalesDraftRepository.ACTIVE_DRAFT_ID,
+                lineOrder = 0,
+                productId = "backup-product-not-yet-posted",
+                productNameSnapshot = "مادة مسودة النسخة الاحتياطية",
+                quantity = "2",
+                unitName = "قطعة",
+                unitFactor = "1",
+                unitPrice = "10",
+                purchaseCostSnapshot = "4",
+                discount = "0",
+                currencyCode = "SYP",
+                exchangeRate = "1",
+                paidAmount = "20",
+                customerId = null,
+                note = "سطر محفوظ",
+                issuedAt = 1_800_000_000_100L
+            )
+            val expense = DailySalesDraftExpenseEntity(
+                id = "backup-draft-expense-001",
+                draftId = DailySalesDraftRepository.ACTIVE_DRAFT_ID,
+                lineId = line.id,
+                description = "مصروف توصيل",
+                amount = "2.5",
+                currencyCode = "USD",
+                exchangeRateSnapshot = "15000",
+                createdAt = 1_800_000_000_101L
+            )
+            val drafts = DailySalesDraftRepository(database)
+            drafts.saveSnapshot(header, listOf(line), listOf(expense))
+
+            val exportPassword = "Draft-Expense-Backup-Password".toCharArray()
+            AccountingBackupManager(context, database).exportBackup(
+                android.net.Uri.fromFile(backupFile),
+                exportPassword
+            )
+            assertTrue(exportPassword.all { it == '\u0000' })
+
+            drafts.clearDraft()
+            assertTrue(drafts.loadSnapshot().lines.isEmpty())
+
+            val restorePassword = "Draft-Expense-Backup-Password".toCharArray()
+            AccountingBackupManager(context, database).restoreBackup(
+                android.net.Uri.fromFile(backupFile),
+                restorePassword
+            )
+            assertTrue(restorePassword.all { it == '\u0000' })
+
+            val restored = drafts.loadSnapshot()
+            assertEquals(1, restored.lines.size)
+            assertEquals("backup-draft-line-001", restored.lines.single().id)
+            assertEquals("4", restored.lines.single().purchaseCostSnapshot)
+            assertEquals(1, restored.expenses.size)
+            assertEquals("backup-draft-expense-001", restored.expenses.single().id)
+            assertEquals(line.id, restored.expenses.single().lineId)
+            assertEquals("مصروف توصيل", restored.expenses.single().description)
+            assertEquals("2.5", restored.expenses.single().amount)
+            assertEquals("USD", restored.expenses.single().currencyCode)
+            assertEquals("15000", restored.expenses.single().exchangeRateSnapshot)
+        } finally {
             backupFile.delete()
             database.close()
         }
