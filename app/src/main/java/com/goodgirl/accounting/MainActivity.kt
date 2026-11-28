@@ -6571,7 +6571,8 @@ private fun DailySalesScreen(
                                 try {
                                     dailySalesDraftRepository.clearPendingLines()
                                     pendingDailySales.clear()
-                                    editingDraftLineId = null
+                                    cancelEditingDailySalesDraftLine()
+                                    message = "تم إلغاء جميع سطور المسودة."
                                 } catch (error: Exception) {
                                     message = error.message ?: "تعذر إلغاء سطور المسودة"
                                 }
