@@ -5831,6 +5831,7 @@ private data class PendingDailySaleLine(
     val unitName: String,
     val unitFactor: String,
     val unitPrice: String,
+    val purchaseCostSnapshot: String?,
     val discount: String,
     val currencyCode: String,
     val exchangeRate: String,
@@ -5850,6 +5851,7 @@ private fun PendingDailySaleLine.toDraftEntity(lineOrder: Int) = DailySalesDraft
     unitName = unitName,
     unitFactor = unitFactor,
     unitPrice = unitPrice,
+    purchaseCostSnapshot = purchaseCostSnapshot,
     discount = discount,
     currencyCode = currencyCode,
     exchangeRate = exchangeRate,
@@ -5867,6 +5869,7 @@ private fun DailySalesDraftLineEntity.toPendingLine() = PendingDailySaleLine(
     unitName = unitName,
     unitFactor = unitFactor,
     unitPrice = unitPrice,
+    purchaseCostSnapshot = purchaseCostSnapshot,
     discount = discount,
     currencyCode = currencyCode,
     exchangeRate = exchangeRate,
@@ -5920,6 +5923,7 @@ private fun DailySalesScreen(
     }
     var selectedProductId by remember { mutableStateOf<String?>(null) }
     var selectedProductNameSnapshot by remember { mutableStateOf("") }
+    var selectedPurchaseCostSnapshot by remember { mutableStateOf<String?>(null) }
     var currentCurrencyCode by remember { mutableStateOf("SYP") }
     var selectedUnitName by remember { mutableStateOf<String?>(null) }
     var selectedPartyId by remember { mutableStateOf<String?>(null) }
@@ -6014,6 +6018,7 @@ private fun DailySalesScreen(
         }
         selectedProductId = product.id
         selectedProductNameSnapshot = product.name
+        selectedPurchaseCostSnapshot = product.purchaseCost
         currentCurrencyCode = product.priceCurrencyCode
         selectedUnitName = product.baseUnit
         salePrice = product.salePrice
@@ -6082,7 +6087,9 @@ private fun DailySalesScreen(
     val previewSales = previewGross.subtract(enteredDiscount).max(BigDecimal.ZERO)
     val unitFactor = runCatching { BigDecimal(selectedUnit?.baseFactor ?: "1") }.getOrDefault(BigDecimal.ONE)
     val previewCost = enteredQuantity.multiply(unitFactor)
-        .multiply(runCatching { BigDecimal(selectedProduct?.purchaseCost ?: "0") }.getOrDefault(BigDecimal.ZERO))
+        .multiply(runCatching {
+            BigDecimal(selectedPurchaseCostSnapshot ?: selectedProduct?.purchaseCost ?: "0")
+        }.getOrDefault(BigDecimal.ZERO))
     val previewProfit = previewSales.subtract(previewCost)
     val effectivePaidAmount = if (paidAmountTouched) paidAmount else previewSales.stripTrailingZeros().toPlainString()
     val hasUnsavedDailySaleChanges = hasUnsavedDailySaleDraft(
@@ -6134,6 +6141,7 @@ private fun DailySalesScreen(
                 unitName = unit.unitName,
                 unitFactor = unit.baseFactor,
                 unitPrice = cleanPrice,
+                purchaseCostSnapshot = selectedPurchaseCostSnapshot ?: product.purchaseCost,
                 discount = cleanDiscount,
                 currencyCode = product.priceCurrencyCode,
                 exchangeRate = cleanRate,
@@ -6150,6 +6158,7 @@ private fun DailySalesScreen(
             editingDraftLineId = null
             selectedProductId = null
             selectedProductNameSnapshot = ""
+            selectedPurchaseCostSnapshot = null
             currentCurrencyCode = "SYP"
             selectedUnitName = null
             selectedPartyId = null
@@ -6172,13 +6181,18 @@ private fun DailySalesScreen(
         }
     }
 
-    fun beginEditingDailySalesDraftLine(pending: PendingDailySaleLine, index: Int) {
+    fun beginEditingDailySalesDraftLine(
+        pending: PendingDailySaleLine,
+        index: Int,
+        currentProductCost: String?
+    ) {
         if (selectedProductId != null || note.isNotBlank() || paidAmountTouched) {
             message = "احفظ الإدخال الحالي أولاً قبل فتح سطر آخر للتعديل."
             return
         }
         selectedProductId = pending.productId
         selectedProductNameSnapshot = pending.productName
+        selectedPurchaseCostSnapshot = pending.purchaseCostSnapshot ?: currentProductCost
         currentCurrencyCode = pending.currencyCode
         selectedUnitName = pending.unitName
         quantity = pending.quantity
@@ -6213,6 +6227,7 @@ private fun DailySalesScreen(
         editingDraftLineId = null
         selectedProductId = null
         selectedProductNameSnapshot = ""
+        selectedPurchaseCostSnapshot = null
         currentCurrencyCode = "SYP"
         selectedUnitName = null
         selectedPartyId = null
@@ -6441,7 +6456,8 @@ private fun DailySalesScreen(
                         pendingDailySales.forEachIndexed { index, pending ->
                             val pendingProduct = products.firstOrNull { it.id == pending.productId }
                             val amount = pending.quantity.toBigDecimal().multiply(pending.unitPrice.toBigDecimal()).subtract(pending.discount.toBigDecimal())
-                            val unitCost = pendingProduct?.purchaseCost?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                            val unitCost = (pending.purchaseCostSnapshot ?: pendingProduct?.purchaseCost)
+                ?.toBigDecimalOrNull() ?: BigDecimal.ZERO
                             val factor = pending.unitFactor.toBigDecimalOrNull() ?: BigDecimal.ONE
                             val pendingProfit = amount.subtract(pending.quantity.toBigDecimal().multiply(factor).multiply(unitCost))
                             Row(
@@ -6465,7 +6481,7 @@ private fun DailySalesScreen(
                                     Text(pending.note.ifBlank { "—" }, color = MutedText, fontSize = 9.sp, maxLines = 2)
                                     TextButton(
                                         enabled = !isSaving,
-                                        onClick = { beginEditingDailySalesDraftLine(pending, index) },
+                                        onClick = { beginEditingDailySalesDraftLine(pending, index, pendingProduct?.purchaseCost) },
                                         contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                                     ) { Text("تعديل", fontSize = 10.sp, color = BrandBlue) }
                                     TextButton(
