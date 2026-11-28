@@ -212,7 +212,7 @@ class LatestPurchaseCostPolicyMigrationIntegrationTest {
                 context,
                 AccountingDatabase::class.java,
                 databaseName
-            ).addMigrations(AccountingDatabase.MIGRATION_10_11)
+            ).addMigrations(AccountingDatabase.MIGRATION_10_11, AccountingDatabase.MIGRATION_11_12)
                 .allowMainThreadQueries()
                 .build()
             try {
@@ -240,7 +240,7 @@ class LatestPurchaseCostPolicyMigrationIntegrationTest {
                     context,
                     AccountingDatabase::class.java,
                     databaseName
-                ).addMigrations(AccountingDatabase.MIGRATION_10_11)
+                ).addMigrations(AccountingDatabase.MIGRATION_10_11, AccountingDatabase.MIGRATION_11_12)
                     .allowMainThreadQueries()
                     .build()
                 try {
