@@ -6356,7 +6356,7 @@ private fun DailySalesScreen(
                             Box(Modifier.width(90.dp).clickable { showExpensesInfo = true }.padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
                                 Text("—", color = MutedText, fontSize = 11.sp, textAlign = TextAlign.Center)
                             }
-                            Box(Modifier.width(158.dp).clickable { showNoteEditor = true }.padding(horizontal = 6.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                            Box(Modifier.width(158.dp).testTag("daily-sales-note-cell").clickable { showNoteEditor = true }.padding(horizontal = 6.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
                                 Text(note.ifBlank { "إضافة ملاحظة" }, color = if (note.isBlank()) BrandBlue else Ink, fontSize = 10.sp, maxLines = 2)
                             }
                         }
