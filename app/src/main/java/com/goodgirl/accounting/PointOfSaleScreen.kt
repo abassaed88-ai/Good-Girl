@@ -61,6 +61,7 @@ import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.ProductBarcodeRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.domain.PointOfSaleCartLineInput
 import com.goodgirl.accounting.domain.PointOfSaleCartRules
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
@@ -103,6 +104,7 @@ fun PointOfSaleScreen(
     var isLookingUpBarcode by remember { mutableStateOf(false) }
     var isPosting by remember { mutableStateOf(false) }
     var showCameraScanner by remember { mutableStateOf(false) }
+    var showReviewDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(cart.toList()) {
         onUnsavedChangesChanged(cart.isNotEmpty())
@@ -205,8 +207,40 @@ fun PointOfSaleScreen(
         cart[index] = line.copy(quantity = next.stripTrailingZeros().toPlainString())
     }
 
+    fun validateSaleBeforeReview(): Boolean {
+        if (cart.isEmpty()) {
+            message = "أضف مادة واحدة على الأقل قبل مراجعة البيع"
+            return false
+        }
+        return try {
+            val lineInputs = cart.map { line ->
+                val product = products.firstOrNull { it.id == line.productId }
+                    ?: throw IllegalArgumentException("إحدى المواد لم تعد موجودة في قائمة المواد")
+                require(product.isActive) { "المادة ${product.name} غير فعالة ولا يمكن بيعها" }
+                PointOfSaleCartLineInput(
+                    quantity = line.quantity,
+                    unitPrice = line.unitPrice,
+                    stockQuantity = product.stockQuantity
+                )
+            }
+            PointOfSaleCartRules.validateCart(lineInputs)
+            val amountPaid = paidAmount.trim().ifEmpty { totalText }
+            PointOfSaleCartRules.validatePayment(
+                total = totalText,
+                paid = amountPaid,
+                hasCustomer = selectedCustomerId != null
+            )
+            val rate = exchangeRate.trim().toBigDecimalOrNull()
+            require(rate != null && rate > BigDecimal.ZERO) { "سعر الصرف يجب أن يكون رقماً أكبر من صفر" }
+            true
+        } catch (error: Exception) {
+            message = error.message ?: "راجع الكميات والأسعار والمبالغ قبل متابعة البيع"
+            false
+        }
+    }
+
     fun postSale() {
-        if (cart.isEmpty() || isPosting) return
+        if (isPosting || !validateSaleBeforeReview()) return
         val amountPaid = paidAmount.trim().ifEmpty { totalText }
         try {
             PointOfSaleCartRules.validatePayment(
@@ -466,11 +500,11 @@ fun PointOfSaleScreen(
             )
         }
         Button(
-            onClick = { postSale() },
+            onClick = { if (validateSaleBeforeReview()) showReviewDialog = true },
             enabled = cart.isNotEmpty() && !isPosting,
             modifier = Modifier.fillMaxWidth().height(52.dp)
         ) {
-            Text(if (isPosting) "جارٍ ترحيل الفاتورة..." else "تأكيد البيع وترحيل الفاتورة")
+            Text(if (isPosting) "جارٍ ترحيل الفاتورة..." else "مراجعة الفاتورة قبل الترحيل")
         }
         Text(
             "عند التأكيد تُسجّل المبيعة مرة واحدة وتُحدّث حركة المخزون والصندوق أو ذمم العميل والتقارير تلقائياً.",
@@ -478,6 +512,87 @@ fun PointOfSaleScreen(
             textAlign = TextAlign.Center,
             fontSize = 12.sp
         )
+    }
+
+    if (showReviewDialog) {
+        val amountToCollect = paidAmount.trim().ifEmpty { totalText }
+        val paidValue = amountToCollect.toBigDecimalOrNull() ?: BigDecimal.ZERO
+        val remainingValue = total.subtract(paidValue)
+        val currencyLabel = if (currencyCode == "USD") "دولار" else "ل.س"
+        Dialog(
+            onDismissRequest = { if (!isPosting) showReviewDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(18.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        "مراجعة البيع قبل الترحيل",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "تأكد من المواد والكميات والأسعار. لن تُسجّل أي حركة محاسبية قبل ضغط زر اعتماد البيع.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 13.sp
+                    )
+                    cart.forEachIndexed { index, line ->
+                        val product = products.first { it.id == line.productId }
+                        val quantity = line.quantity.toBigDecimal()
+                        val price = line.unitPrice.toBigDecimal()
+                        val lineTotal = quantity.multiply(price).stripTrailingZeros().toPlainString()
+                        Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                            Text(product.name, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${line.quantity} × ${line.unitPrice} = $lineTotal $currencyLabel",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp
+                            )
+                        }
+                        if (index < cart.lastIndex) {
+                            androidx.compose.material3.HorizontalDivider()
+                        }
+                    }
+                    androidx.compose.material3.HorizontalDivider()
+                    Text(
+                        "الإجمالي: $totalText $currencyLabel",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text("العميل: ${selectedCustomer?.name ?: "بيع نقدي بدون حساب"}")
+                    Text("المقبوض: $amountToCollect $currencyLabel")
+                    Text("المتبقي: ${remainingValue.stripTrailingZeros().toPlainString()} $currencyLabel")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = { showReviewDialog = false },
+                            enabled = !isPosting,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("عودة للتعديل") }
+                        Button(
+                            onClick = {
+                                showReviewDialog = false
+                                postSale()
+                            },
+                            enabled = !isPosting,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("اعتماد وترحيل البيع") }
+                    }
+                }
+            }
+        }
     }
 
     if (showCameraScanner) {
