@@ -332,15 +332,42 @@ class DailySalesDraftRepositoryIntegrationTest {
                 lineOrder = 1,
                 productId = "missing-product-after-first-row"
             )
+            val completedExpense = DailySalesDraftExpenseEntity(
+                id = "partial-expense-completed",
+                lineId = completedLine.id,
+                description = "تغليف السطر المكتمل",
+                amount = "1",
+                currencyCode = "SYP",
+                exchangeRateSnapshot = "1",
+                createdAt = completedLine.issuedAt
+            )
+            val failedExpense = DailySalesDraftExpenseEntity(
+                id = "partial-expense-retained",
+                lineId = failedLine.id,
+                description = "توصيل السطر غير المكتمل",
+                amount = "2.5",
+                currencyCode = "USD",
+                exchangeRateSnapshot = "15000",
+                createdAt = failedLine.issuedAt
+            )
             val repository = DailySalesDraftRepository(database)
-            repository.saveSnapshot(sampleHeader(), listOf(completedLine, failedLine))
+            repository.saveSnapshot(
+                sampleHeader(),
+                listOf(completedLine, failedLine),
+                listOf(completedExpense, failedExpense)
+            )
 
-            repository.postPendingLine(completedLine)
-            val failure = runCatching { repository.postPendingLine(failedLine) }.exceptionOrNull()
-            val remaining = repository.loadSnapshot().lines
+            repository.postPendingLine(completedLine, listOf(completedExpense))
+            val failure = runCatching {
+                repository.postPendingLine(failedLine, listOf(failedExpense))
+            }.exceptionOrNull()
+            val restored = repository.loadSnapshot()
+            val remaining = restored.lines
 
             assertNotNull(failure)
             assertEquals(listOf(failedLine.id), remaining.map { it.id })
+            assertEquals(listOf(failedExpense.id), restored.expenses.map { it.id })
+            assertEquals(failedLine.id, restored.expenses.single().lineId)
             assertEquals(1, database.invoiceDao().getAllInvoices().size)
             assertEquals(0, database.productDao().findById(product.id)!!.stockQuantity.toBigDecimal().compareTo(java.math.BigDecimal("4")))
         } finally {
