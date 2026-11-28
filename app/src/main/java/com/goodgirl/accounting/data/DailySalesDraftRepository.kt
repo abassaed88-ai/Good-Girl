@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.DailySalesDraftEntity
 import com.goodgirl.accounting.data.local.DailySalesDraftLineEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftExpenseEntity
 import com.goodgirl.accounting.data.local.InvoiceEntity
 import com.goodgirl.accounting.data.local.InvoiceLineEntity
 import java.math.BigDecimal
@@ -11,7 +12,8 @@ import java.util.UUID
 
 data class DailySalesDraftSnapshot(
     val header: DailySalesDraftEntity?,
-    val lines: List<DailySalesDraftLineEntity>
+    val lines: List<DailySalesDraftLineEntity>,
+    val expenses: List<DailySalesDraftExpenseEntity> = emptyList()
 )
 
 /**
@@ -27,35 +29,48 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
     suspend fun loadSnapshot(): DailySalesDraftSnapshot {
         val header = dao.getActiveDraft()
         val lines = if (header == null) emptyList() else dao.getLines(header.id)
-        return DailySalesDraftSnapshot(header, lines)
+        val expenses = if (header == null) emptyList() else dao.getExpenses(header.id)
+        return DailySalesDraftSnapshot(header, lines, expenses)
     }
 
     suspend fun saveSnapshot(
         header: DailySalesDraftEntity,
-        lines: List<DailySalesDraftLineEntity>
+        lines: List<DailySalesDraftLineEntity>,
+        expenses: List<DailySalesDraftExpenseEntity> = emptyList()
     ) {
         require(header.id == ACTIVE_DRAFT_ID) { "معرّف مسودة المبيعات غير صالح" }
         require(lines.size <= MAX_PENDING_LINES) { "تجاوزت المسودة الحد الأقصى لعدد السطور" }
         require(lines.map { it.id }.distinct().size == lines.size) { "يوجد سطر مكرر في المسودة" }
+        require(expenses.map { it.id }.distinct().size == expenses.size) { "يوجد مصروف مكرر في المسودة" }
+        val lineIds = lines.map { it.id }.toSet()
         val orderedLines = lines.mapIndexed { index, line ->
             require(line.draftId == ACTIVE_DRAFT_ID) { "السطر لا يتبع مسودة المبيعات الحالية" }
             line.copy(lineOrder = index)
+        }
+        expenses.forEach { expense ->
+            require(expense.draftId == ACTIVE_DRAFT_ID && expense.lineId in lineIds) {
+                "يوجد مصروف غير مرتبط بسطر محفوظ في المسودة"
+            }
         }
         database.withTransaction {
             dao.saveDraft(header)
             dao.deleteLines(ACTIVE_DRAFT_ID)
             if (orderedLines.isNotEmpty()) dao.saveLines(orderedLines)
+            if (expenses.isNotEmpty()) dao.saveExpenses(expenses)
         }
     }
 
     suspend fun removePendingLine(lineId: String) {
         database.withTransaction {
-            dao.deleteLine(lineId)
-            val remaining = dao.getLines(ACTIVE_DRAFT_ID)
+            val remaining = dao.getLines(ACTIVE_DRAFT_ID).filterNot { it.id == lineId }
+            val remainingLineIds = remaining.map { it.id }.toSet()
+            val remainingExpenses = dao.getExpenses(ACTIVE_DRAFT_ID)
+                .filter { it.lineId in remainingLineIds }
+            dao.deleteLines(ACTIVE_DRAFT_ID)
             if (remaining.isNotEmpty()) {
-                dao.deleteLines(ACTIVE_DRAFT_ID)
                 dao.saveLines(remaining.mapIndexed { index, line -> line.copy(lineOrder = index) })
             }
+            if (remainingExpenses.isNotEmpty()) dao.saveExpenses(remainingExpenses)
         }
     }
 
@@ -70,8 +85,15 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
         }
     }
 
-    suspend fun postPendingLine(line: DailySalesDraftLineEntity): PostedInvoiceResult {
+    suspend fun postPendingLine(
+        line: DailySalesDraftLineEntity,
+        expenses: List<DailySalesDraftExpenseEntity> = emptyList()
+    ): PostedInvoiceResult {
         require(line.draftId == ACTIVE_DRAFT_ID) { "السطر لا يتبع مسودة المبيعات الحالية" }
+        require(expenses.map { it.id }.distinct().size == expenses.size) { "يوجد مصروف مكرر في السطر" }
+        require(expenses.all { it.draftId == ACTIVE_DRAFT_ID && it.lineId == line.id }) {
+            "يوجد مصروف لا يتبع سطر المبيعة الحالي"
+        }
         val invoiceNumber = invoiceNumberFor(line.id)
         val existing = database.invoiceDao().findByInvoiceNumber(invoiceNumber)
         val result = if (existing != null) {
@@ -92,7 +114,8 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
                             unitPrice = line.unitPrice,
                             discount = line.discount,
                             unitName = line.unitName,
-                            saleUnitCostSnapshot = line.purchaseCostSnapshot
+                            saleUnitCostSnapshot = line.purchaseCostSnapshot,
+                            associatedExpenses = expenses.map { it.toInvoiceExpenseDraft() }
                         )
                     ),
                     paidAmount = line.paidAmount,
@@ -108,18 +131,42 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
             }
         }
 
+        // The expense and invoice posters share the same Room transaction on
+        // the normal path. On recovery from an older already-posted invoice,
+        // this idempotent call completes or verifies every attached expense.
+        expenses.forEach { expense ->
+            DailySalesExpenseJournalPoster.post(
+                database = database,
+                invoiceId = result.invoiceId,
+                invoiceNumber = invoiceNumber,
+                occurredAt = line.issuedAt,
+                expense = expense.toInvoiceExpenseDraft()
+            )
+        }
+
         // If the process stops before this delete, a retry recognizes the
-        // already-posted invoice and removes the draft row without reposting.
+        // already-posted invoice and its expenses without creating duplicates.
         database.withTransaction {
-            dao.deleteLine(line.id)
-            val remainingLines = dao.getLines(ACTIVE_DRAFT_ID)
+            val remainingLines = dao.getLines(ACTIVE_DRAFT_ID).filterNot { it.id == line.id }
+            val remainingLineIds = remainingLines.map { it.id }.toSet()
+            val remainingExpenses = dao.getExpenses(ACTIVE_DRAFT_ID)
+                .filter { it.lineId in remainingLineIds }
+            dao.deleteLines(ACTIVE_DRAFT_ID)
             if (remainingLines.isNotEmpty()) {
-                dao.deleteLines(ACTIVE_DRAFT_ID)
                 dao.saveLines(remainingLines.mapIndexed { index, row -> row.copy(lineOrder = index) })
             }
+            if (remainingExpenses.isNotEmpty()) dao.saveExpenses(remainingExpenses)
         }
         return result
     }
+
+private fun DailySalesDraftExpenseEntity.toInvoiceExpenseDraft() = DailySalesExpenseDraft(
+    id = id,
+    description = description,
+    amount = amount,
+    currencyCode = currencyCode,
+    exchangeRateSnapshot = exchangeRateSnapshot
+)
 
     private suspend fun validateCurrentReferences(line: DailySalesDraftLineEntity) {
         val product = database.productDao().findById(line.productId)
