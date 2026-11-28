@@ -35,6 +35,7 @@ class DailySalesReviewConfirmationTest {
         val repository = DailySalesDraftRepository(database)
         val productId = "review-test-" + UUID.randomUUID()
         val timestamp = System.currentTimeMillis()
+        val draftLineId = UUID.randomUUID().toString()
         val todayStart = Calendar.getInstance().apply {
             timeInMillis = timestamp
             set(Calendar.HOUR_OF_DAY, 0)
@@ -74,7 +75,7 @@ class DailySalesReviewConfirmationTest {
                 ),
                 listOf(
                     DailySalesDraftLineEntity(
-                        id = UUID.randomUUID().toString(),
+                        id = draftLineId,
                         lineOrder = 0,
                         productId = productId,
                         productNameSnapshot = "مادة اختبار مراجعة الترحيل",
@@ -122,6 +123,25 @@ class DailySalesReviewConfirmationTest {
             composeRule.onNodeWithText("عودة للتعديل").performClick()
             composeRule.waitForIdle()
             assertEquals(invoiceCountBefore, runBlocking { database.invoiceDao().getAllInvoices().size })
+
+            composeRule.onNodeWithText("مراجعة السطور قبل الترحيل")
+                .performScrollTo()
+                .performClick()
+            composeRule.onNodeWithText("تأكيد الترحيل").performClick()
+            composeRule.waitUntil(15_000) {
+                composeRule.onAllNodesWithText(
+                    "تم ترحيل 1 سطراً بنجاح. تم تحديث المخزون والحسابات والتقارير."
+                ).fetchSemanticsNodes().isNotEmpty()
+            }
+            val postedInvoice = runBlocking {
+                database.invoiceDao().findByInvoiceNumber(
+                    DailySalesDraftRepository.invoiceNumberFor(draftLineId)
+                )
+            }
+            assertEquals("POSTED", postedInvoice?.status)
+            assertEquals(invoiceCountBefore + 1, runBlocking { database.invoiceDao().getAllInvoices().size })
+            assertEquals("8", runBlocking { database.productDao().findById(productId)?.stockQuantity })
+            assertEquals(0, runBlocking { repository.loadSnapshot().lines.size })
         } finally {
             runBlocking {
                 repository.clearDraft()
