@@ -6136,6 +6136,20 @@ private fun DailySalesScreen(
         )
     )
 
+    val hasIncompleteCurrentDailySale = hasUnsavedDailySaleDraft(
+        DailySaleDraftState(
+            hasSelectedProduct = selectedProductId != null,
+            hasSelectedParty = selectedPartyId != null,
+            quantity = quantity,
+            salePrice = salePrice,
+            lineDiscount = lineDiscount,
+            paidAmountTouched = paidAmountTouched,
+            paidAmount = paidAmount,
+            note = note,
+            pendingLineCount = 0
+        )
+    )
+
     fun addDailySalesDraftLine() {
         try {
             val product = selectedProduct ?: throw IllegalArgumentException("اختر المادة أولاً")
@@ -6358,6 +6372,10 @@ private fun DailySalesScreen(
 
     fun postPendingDailySales() {
         if (isSaving || pendingDailySales.isEmpty()) return
+        if (hasIncompleteCurrentDailySale || editingDraftLineId != null || showExpenseEditor) {
+            message = "أكمل أو ألغِ إدخال السطر الحالي ومصروفاته قبل مراجعة الترحيل."
+            return
+        }
         scope.launch {
             isSaving = true
             message = null
@@ -6753,13 +6771,15 @@ private fun DailySalesScreen(
 
                     Button(
                         onClick = { showDailySalesReview = true },
-                        enabled = !isSaving && pendingDailySales.isNotEmpty() && editingDraftLineId == null && isDraftPersisted,
+                        enabled = !isSaving && pendingDailySales.isNotEmpty() &&
+                            editingDraftLineId == null && !hasIncompleteCurrentDailySale && isDraftPersisted,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             when {
                                 isSaving -> "جارٍ ترحيل السطور..."
                                 editingDraftLineId != null -> "احفظ التعديل أو ألغِه قبل الترحيل"
+                                hasIncompleteCurrentDailySale -> "أكمل أو ألغِ السطر الحالي قبل المراجعة"
                                 !isDraftPersisted -> "جارٍ حفظ المسودة..."
                                 else -> "مراجعة السطور قبل الترحيل"
                             }
