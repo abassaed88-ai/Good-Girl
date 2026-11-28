@@ -5957,11 +5957,9 @@ private fun DailySalesScreen(
     var message by remember { mutableStateOf<String?>(null) }
     var showMaterialPicker by remember { mutableStateOf(false) }
     var showDailySalesReview by remember { mutableStateOf(false) }
-    var showQuantityEditor by remember { mutableStateOf(false) }
     var showSaleEditor by remember { mutableStateOf(false) }
-    var showCustomerPicker by remember { mutableStateOf(false) }
+    var inlinePartyMenuExpanded by remember { mutableStateOf(false) }
     var showCreateCustomer by remember { mutableStateOf(false) }
-    var showNoteEditor by remember { mutableStateOf(false) }
     var showExpenseEditor by remember { mutableStateOf(false) }
     var expenseEditingLineId by remember { mutableStateOf<String?>(null) }
     var editingExpenses by remember { mutableStateOf<List<DailySalesDraftExpenseEntity>>(emptyList()) }
@@ -6515,6 +6513,37 @@ private fun DailySalesScreen(
             items.fold(BigDecimal.ZERO) { total, row -> total.add(row.profit) }
         }
     }
+
+    val draftSalesTotals = remember(pendingDailySales.toList()) {
+        pendingDailySales.groupBy { it.currencyCode }.mapValues { (_, lines) ->
+            lines.fold(BigDecimal.ZERO) { total, line ->
+                val net = BigDecimal(line.quantity).multiply(BigDecimal(line.unitPrice))
+                    .subtract(BigDecimal(line.discount))
+                total.add(net)
+            }
+        }
+    }
+    val draftProfitTotals = remember(pendingDailySales.toList()) {
+        pendingDailySales.groupBy { it.currencyCode }.mapValues { (_, lines) ->
+            lines.fold(BigDecimal.ZERO) { total, line ->
+                val sales = BigDecimal(line.quantity).multiply(BigDecimal(line.unitPrice))
+                    .subtract(BigDecimal(line.discount))
+                val cost = BigDecimal(line.quantity).multiply(BigDecimal(line.unitFactor))
+                    .multiply(BigDecimal(line.purchaseCostSnapshot ?: "0"))
+                total.add(sales.subtract(cost))
+            }
+        }
+    }
+    val draftExpenseTotals = remember(pendingDailySales.toList()) {
+        pendingDailySales.flatMap { it.expenses }
+            .groupBy { it.currencyCode }
+            .mapValues { (_, expenses) ->
+                expenses.fold(BigDecimal.ZERO) { total, expense ->
+                    total.add(BigDecimal(expense.amount))
+                }
+            }
+    }
+
     val expenseTotals = remember(ledgerEntries, invoices, dayBounds) {
         val invoiceIds = invoices.asSequence()
             .filter {
@@ -6647,21 +6676,116 @@ private fun DailySalesScreen(
                             Box(Modifier.width(190.dp).testTag("daily-sales-material-cell").clickable { showMaterialPicker = true }.padding(horizontal = 6.dp, vertical = 10.dp)) {
                                 Text(selectedProduct?.name ?: "اختيار المادة", color = if (selectedProduct == null) BrandBlue else Ink, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 2)
                             }
-                            Box(Modifier.width(110.dp).clickable {
-                                if (selectedProduct == null) message = "اختر المادة أولاً" else showQuantityEditor = true
-                            }.padding(horizontal = 3.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-                                Text(if (selectedProduct == null) "—" else "$quantity ${selectedUnit?.unitName ?: selectedProduct.baseUnit}", color = if (selectedProduct == null) MutedText else BrandBlue, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
+                            Box(Modifier.width(110.dp).padding(horizontal = 3.dp, vertical = 4.dp)) {
+                                if (selectedProduct == null) {
+                                    Text("—", modifier = Modifier.align(Alignment.Center), color = MutedText)
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Material3OutlinedTextField(
+                                            value = quantity,
+                                            onValueChange = { quantity = it },
+                                            modifier = Modifier.fillMaxWidth().height(52.dp).testTag("daily-sales-quantity"),
+                                            label = { Text("الكمية") },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                        )
+                                        Box {
+                                            TextButton(
+                                                onClick = { unitMenuExpanded = true },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp, vertical = 0.dp)
+                                            ) {
+                                                Text(selectedUnit?.unitName ?: selectedProduct.baseUnit, fontSize = 10.sp)
+                                            }
+                                            DropdownMenu(
+                                                expanded = unitMenuExpanded,
+                                                onDismissRequest = { unitMenuExpanded = false }
+                                            ) {
+                                                productUnits.forEach { unit ->
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            Text("1 ${unit.unitName} = ${unit.baseFactor} ${selectedProduct.baseUnit}")
+                                                        },
+                                                        onClick = {
+                                                            selectedUnitName = unit.unitName
+                                                            val factor = unit.baseFactor.toBigDecimalOrNull() ?: BigDecimal.ONE
+                                                            salePrice = (selectedProduct.salePrice.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+                                                                .multiply(factor).stripTrailingZeros().toPlainString()
+                                                            unitMenuExpanded = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            Box(Modifier.width(120.dp).clickable {
-                                if (selectedProduct == null) message = "اختر المادة أولاً" else showSaleEditor = true
-                            }.padding(horizontal = 3.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-                                Text(if (selectedProduct == null) "—" else "$salePrice $currentCurrencyCode", color = if (selectedProduct == null) MutedText else BrandBlue, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
+                            Box(Modifier.width(120.dp).padding(horizontal = 2.dp, vertical = 4.dp)) {
+                                if (selectedProduct == null) {
+                                    Text("—", modifier = Modifier.align(Alignment.Center), color = MutedText)
+                                } else {
+                                    Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                        Material3OutlinedTextField(
+                                            value = salePrice,
+                                            onValueChange = { salePrice = it },
+                                            modifier = Modifier.fillMaxWidth().height(52.dp).testTag("daily-sales-sale-price"),
+                                            label = { Text("السعر") },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                        )
+                                        TextButton(
+                                            onClick = { showSaleEditor = true },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp, vertical = 0.dp)
+                                        ) { Text("خصم / قبض", fontSize = 9.sp) }
+                                    }
+                                }
                             }
                             Box(Modifier.width(100.dp).padding(horizontal = 3.dp), contentAlignment = Alignment.Center) {
                                 Text(if (selectedProduct == null) "—" else previewProfit.stripTrailingZeros().toPlainString() + " " + currentCurrencyCode, color = if (selectedProduct == null) MutedText else if (previewProfit >= BigDecimal.ZERO) SoftGreen else SoftRed, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
                             }
-                            Box(Modifier.width(140.dp).clickable { showCustomerPicker = true }.padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-                                Text(customers.firstOrNull { it.id == selectedPartyId }?.name ?: "نقدي / اختيار عميل", color = BrandBlue, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
+                            Box(Modifier.width(140.dp).padding(horizontal = 4.dp, vertical = 8.dp)) {
+                                TextButton(
+                                    onClick = { inlinePartyMenuExpanded = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        customers.firstOrNull { it.id == selectedPartyId }?.name ?: "نقدي / اختيار عميل",
+                                        color = BrandBlue,
+                                        fontSize = 10.sp,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 3
+                                    )
+                                }
+                                DropdownMenu(
+                                    expanded = inlinePartyMenuExpanded,
+                                    onDismissRequest = { inlinePartyMenuExpanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("بيع نقدي دون حساب عميل") },
+                                        onClick = {
+                                            selectedPartyId = null
+                                            inlinePartyMenuExpanded = false
+                                        }
+                                    )
+                                    customers.forEach { customer ->
+                                        DropdownMenuItem(
+                                            text = { Text(customer.name) },
+                                            onClick = {
+                                                selectedPartyId = customer.id
+                                                inlinePartyMenuExpanded = false
+                                            }
+                                        )
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text("إضافة عميل جديد") },
+                                        onClick = {
+                                            inlinePartyMenuExpanded = false
+                                            showCreateCustomer = true
+                                        }
+                                    )
+                                }
                             }
                             Box(Modifier.width(90.dp).padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
                                 Text(
@@ -6671,8 +6795,16 @@ private fun DailySalesScreen(
                                     textAlign = TextAlign.Center
                                 )
                             }
-                            Box(Modifier.width(158.dp).testTag("daily-sales-note-cell").clickable { showNoteEditor = true }.padding(horizontal = 6.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-                                Text(note.ifBlank { "إضافة ملاحظة" }, color = if (note.isBlank()) BrandBlue else Ink, fontSize = 10.sp, maxLines = 2)
+                            Box(Modifier.width(158.dp).padding(horizontal = 4.dp, vertical = 4.dp)) {
+                                Material3OutlinedTextField(
+                                    value = note,
+                                    onValueChange = { note = it },
+                                    modifier = Modifier.fillMaxWidth().height(68.dp).testTag("daily-sales-note"),
+                                    label = { Text("ملاحظات") },
+                                    minLines = 2,
+                                    maxLines = 2,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
+                                )
                             }
                         }
                         androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -6763,7 +6895,26 @@ private fun DailySalesScreen(
                     ) { Text("إلغاء التعديل") }
                 }
                 if (selectedProduct != null) {
-                    Text("العملة المعتمدة للمادة: $currentCurrencyCode. يحافظ النظام على عملة المادة في الفاتورة وسجل التكلفة.", color = MutedText, fontSize = 10.sp)
+                    Text("عملة البيع: $currentCurrencyCode — مرتبطة بعملة تسعير المادة لحماية سجل التكلفة.", color = MutedText, fontSize = 10.sp)
+                }
+                if (pendingDailySales.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(5.dp)
+                        ) {
+                            Text("إجماليات المسودة غير المرحلة", color = Ink, fontWeight = FontWeight.Bold)
+                            Text("المبيعات حسب العملة: " + formatCurrencyTotals(draftSalesTotals), color = Ink, fontSize = 12.sp)
+                            Text("الأرباح التقديرية قبل المصروفات: " + formatCurrencyTotals(draftProfitTotals), color = SoftGreen, fontSize = 12.sp)
+                            Text("المصروفات حسب عملتها: " + formatCurrencyTotals(draftExpenseTotals), color = SoftRed, fontSize = 12.sp)
+                            Text("عدد السطور: " + pendingDailySales.size, color = MutedText, fontSize = 11.sp)
+                            Text("لا تُخصم مصروفات بعملة مختلفة من ربح البيع؛ تبقى العملات معروضة كلٌ على حدة.", color = MutedText, fontSize = 10.sp)
+                        }
+                    }
                 }
                 message?.let { Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 12.sp) }
 
@@ -7156,38 +7307,6 @@ private fun DailySalesScreen(
         }
     }
 
-    if (showQuantityEditor) {
-        Dialog(onDismissRequest = { showQuantityEditor = false }) {
-            Surface(shape = RoundedCornerShape(18.dp), color = CardSurface) {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("الكمية ووحدة القياس", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Material3OutlinedTextField(value = quantity, onValueChange = { quantity = it }, modifier = Modifier.fillMaxWidth(), label = { Text("الكمية") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
-                    Box {
-                        Button(onClick = { unitMenuExpanded = true }, modifier = Modifier.fillMaxWidth()) { Text("الوحدة: ${selectedUnit?.unitName ?: selectedProduct?.baseUnit ?: "—"}") }
-                        DropdownMenu(expanded = unitMenuExpanded, onDismissRequest = { unitMenuExpanded = false }) {
-                            productUnits.forEach { unit ->
-                                DropdownMenuItem(
-                                    text = { Text("1 ${unit.unitName} = ${unit.baseFactor} ${selectedProduct?.baseUnit ?: "وحدة أساس"}") },
-                                    onClick = {
-                                        selectedUnitName = unit.unitName
-                                        val factor = unit.baseFactor.toBigDecimalOrNull() ?: BigDecimal.ONE
-                                        salePrice = (selectedProduct?.salePrice?.toBigDecimalOrNull() ?: BigDecimal.ZERO).multiply(factor).stripTrailingZeros().toPlainString()
-                                        unitMenuExpanded = false
-                                    }
-                                )
-                            }
-                        }
-                    }
-                    Text("تُحوّل الكمية تلقائياً إلى وحدة المخزون الأساسية عند الترحيل.", color = MutedText, fontSize = 11.sp)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                        TextButton(onClick = { showQuantityEditor = false }, modifier = Modifier.weight(1f)) { Text("إلغاء") }
-                        Button(onClick = { showQuantityEditor = false }, modifier = Modifier.weight(1f)) { Text("حفظ") }
-                    }
-                }
-            }
-        }
-    }
-
     if (showSaleEditor) {
         Dialog(onDismissRequest = { showSaleEditor = false }) {
             Surface(shape = RoundedCornerShape(18.dp), color = CardSurface) {
@@ -7204,21 +7323,6 @@ private fun DailySalesScreen(
                         TextButton(onClick = { showSaleEditor = false }, modifier = Modifier.weight(1f)) { Text("إلغاء") }
                         Button(onClick = { showSaleEditor = false }, modifier = Modifier.weight(1f)) { Text("حفظ") }
                     }
-                }
-            }
-        }
-    }
-
-    if (showCustomerPicker) {
-        Dialog(onDismissRequest = { showCustomerPicker = false }) {
-            Surface(shape = RoundedCornerShape(18.dp), color = CardSurface) {
-                Column(Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text("حساب العميل", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    TextButton(onClick = { selectedPartyId = null; showCustomerPicker = false }, modifier = Modifier.fillMaxWidth()) { Text("بيع نقدي دون حساب عميل") }
-                    customers.forEach { customer ->
-                        TextButton(onClick = { selectedPartyId = customer.id; showCustomerPicker = false }, modifier = Modifier.fillMaxWidth()) { Text(customer.name, color = Ink) }
-                    }
-                    Button(onClick = { showCustomerPicker = false; showCreateCustomer = true }, modifier = Modifier.fillMaxWidth()) { Text("إضافة عميل جديد") }
                 }
             }
         }
@@ -7255,18 +7359,6 @@ private fun DailySalesScreen(
                             modifier = Modifier.weight(1f)
                         ) { Text("حفظ العميل") }
                     }
-                }
-            }
-        }
-    }
-
-    if (showNoteEditor) {
-        Dialog(onDismissRequest = { showNoteEditor = false }) {
-            Surface(shape = RoundedCornerShape(18.dp), color = CardSurface) {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("ملاحظات المبيعة", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Material3OutlinedTextField(value = note, onValueChange = { note = it }, modifier = Modifier.fillMaxWidth().testTag("daily-sales-note"), label = { Text("الملاحظات") }, minLines = 3)
-                    Button(onClick = { showNoteEditor = false }, modifier = Modifier.fillMaxWidth()) { Text("حفظ الملاحظات") }
                 }
             }
         }
