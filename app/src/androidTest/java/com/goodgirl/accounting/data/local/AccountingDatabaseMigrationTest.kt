@@ -112,6 +112,57 @@ class AccountingDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersionTwelveAddsNullablePurchaseCostSnapshotAndPreservesDraftRows() {
+        val databaseName = "room-migration-v12-v13-draft-cost.db"
+        val legacy = roomMigrationHelper.createDatabase(databaseName, 12)
+        try {
+            legacy.execSQL(
+                "INSERT INTO daily_sales_drafts (id, selectedDay, selectedProductId, " +
+                    "selectedProductNameSnapshot, selectedUnitName, productSearchQuery, " +
+                    "selectedProductCategoryId, quantity, salePrice, lineDiscount, currencyCode, " +
+                    "exchangeRate, paidAmount, paidAmountTouched, selectedPartyId, note, updatedAt) " +
+                    "VALUES ('active', 1000, NULL, '', NULL, '', NULL, '1', '0', '0', 'SYP', '1', '', 0, NULL, '', 1000)"
+            )
+            legacy.execSQL(
+                "INSERT INTO daily_sales_draft_lines (id, draftId, lineOrder, productId, " +
+                    "productNameSnapshot, quantity, unitName, unitFactor, unitPrice, discount, " +
+                    "currencyCode, exchangeRate, paidAmount, customerId, note, issuedAt) " +
+                    "VALUES ('legacy-draft-line', 'active', 0, 'product-removed', 'مادة محفوظة', " +
+                    "'2', 'علبة', '1', '5', '0', 'SYP', '1', '10', NULL, '', 1000)"
+            )
+        } finally {
+            legacy.close()
+        }
+
+        val migrated = roomMigrationHelper.runMigrationsAndValidate(
+            databaseName,
+            13,
+            true,
+            AccountingDatabase.MIGRATION_12_13
+        )
+        try {
+            migrated.query(
+                "SELECT purchaseCostSnapshot FROM daily_sales_draft_lines WHERE id = 'legacy-draft-line'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertNull(cursor.getString(0))
+            }
+            migrated.execSQL(
+                "UPDATE daily_sales_draft_lines SET purchaseCostSnapshot = '2' WHERE id = 'legacy-draft-line'"
+            )
+            migrated.query(
+                "SELECT purchaseCostSnapshot FROM daily_sales_draft_lines WHERE id = 'legacy-draft-line'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("2", cursor.getString(0))
+            }
+        } finally {
+            migrated.close()
+            InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun migrationReconcilesBalancesWithoutChangingExistingMovementRows() {
         withVersionFourDatabase { database ->
             insertProduct(database, "p-match", "7.5", "4.00", "SYP")
