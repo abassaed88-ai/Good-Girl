@@ -271,8 +271,13 @@ class DailySalesDraftRepositoryIntegrationTest {
                 assertEquals(2, journalLines.size)
                 assertDecimal(expectedAmount, journalLines.single { accountCodes[it.accountId] == "7000" }.debit)
                 assertDecimal(expectedAmount, journalLines.single { accountCodes[it.accountId] == "1000" }.credit)
-                assertEquals(0, journalLines.sumOf { it.debit.toBigDecimal() }
-                    .compareTo(journalLines.sumOf { it.credit.toBigDecimal() }))
+                val debitTotal = journalLines.fold(java.math.BigDecimal.ZERO) { total, journalLine ->
+                    total.add(journalLine.debit.toBigDecimal())
+                }
+                val creditTotal = journalLines.fold(java.math.BigDecimal.ZERO) { total, journalLine ->
+                    total.add(journalLine.credit.toBigDecimal())
+                }
+                assertEquals(0, debitTotal.compareTo(creditTotal))
             }
 
             val linkedLedger = database.ledgerDao().getAll().filter { it.sourceId == posted.invoiceId }
@@ -291,7 +296,7 @@ class DailySalesDraftRepositoryIntegrationTest {
 
             assertEquals(1, database.invoiceDao().getAllInvoices().count { it.invoiceNumber == posted.invoiceNumber })
             assertEquals(2, database.journalEntryDao().getAll().count { it.sourceType == "DAILY_SALE_EXPENSE" })
-            assertEquals(4, database.ledgerDao().getAll().count { it.sourceId == posted.invoiceId })
+            assertEquals(5, database.ledgerDao().getAll().count { it.sourceId == posted.invoiceId })
             assertEquals("4", database.productDao().findById(product.id)!!.stockQuantity)
             assertTrue(repository.loadSnapshot().lines.isEmpty())
             assertTrue(repository.loadSnapshot().expenses.isEmpty())
