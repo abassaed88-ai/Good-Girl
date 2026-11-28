@@ -35,6 +35,7 @@ class CashFlowStatementCalculatorTest {
         entry("supplier-payment", "SUPPLIER_PAYMENT", at = 33L),
         entry("manual-income", "MANUAL_CASH_INCOME", at = 34L),
         entry("manual-expense", "MANUAL_CASH_EXPENSE", at = 35L),
+        entry("daily-sale-expense", "DAILY_SALE_EXPENSE", at = 35L),
         entry("manual-journal", "MANUAL_JOURNAL", at = 36L),
         entry("usd-sale", "SALE_INVOICE", currency = "USD", at = 37L),
         entry("manual-operating", "MANUAL_JOURNAL_OPERATING", at = 38L),
@@ -60,6 +61,8 @@ class CashFlowStatementCalculatorTest {
         line("l14", "manual-income", "SYS-6000", "0", "20"),
         line("l15", "manual-expense", "SYS-7000", "10", "0"),
         line("l16", "manual-expense", "SYS-1000", "0", "10"),
+        line("l29", "daily-sale-expense", "SYS-7000", "12", "0"),
+        line("l30", "daily-sale-expense", "SYS-1000", "0", "12"),
         line("l17", "manual-journal", "SYS-1000", "5", "0"),
         line("l18", "manual-journal", "SYS-2000", "0", "5"),
         line("l19", "usd-sale", "SYS-1000", "25", "0"),
@@ -92,8 +95,8 @@ class CashFlowStatementCalculatorTest {
         assertEquals(BigDecimal("1000"), syp.openingCashBalance)
         val operating = syp.activities.single { it.section == CashFlowStatementCalculator.OPERATING }
         assertEquals(BigDecimal("217"), operating.cashInflows)
-        assertEquals(BigDecimal("75"), operating.cashOutflows)
-        assertEquals(BigDecimal("142"), operating.netCashFlow)
+        assertEquals(BigDecimal("87"), operating.cashOutflows)
+        assertEquals(BigDecimal("130"), operating.netCashFlow)
 
         val investing = syp.activities.single { it.section == CashFlowStatementCalculator.INVESTING }
         assertEquals(BigDecimal("30"), investing.cashInflows)
@@ -108,9 +111,9 @@ class CashFlowStatementCalculatorTest {
         val unclassified = syp.activities.single { it.section == CashFlowStatementCalculator.UNCLASSIFIED }
         assertEquals(BigDecimal("5"), unclassified.cashInflows)
         assertEquals(1, syp.unclassifiedTransactionCount)
-        assertEquals(BigDecimal("197"), syp.netCashChange)
-        assertEquals(BigDecimal("1197"), syp.closingCashBalance)
-        assertEquals(BigDecimal("1197"), syp.actualClosingCashBalance)
+        assertEquals(BigDecimal("185"), syp.netCashChange)
+        assertEquals(BigDecimal("1185"), syp.closingCashBalance)
+        assertEquals(BigDecimal("1185"), syp.actualClosingCashBalance)
         assertEquals(BigDecimal.ZERO, syp.reconciliationDifference)
 
         val usd = statement.statements.single { it.currencyCode == "USD" }
@@ -135,8 +138,8 @@ class CashFlowStatementCalculatorTest {
         assertEquals(10L, statement.effectiveStartInclusive)
         val syp = statement.statements.single { it.currencyCode == "SYP" }
         assertEquals(BigDecimal("1000"), syp.openingCashBalance)
-        assertEquals(BigDecimal("197"), syp.netCashChange)
-        assertEquals(BigDecimal("1197"), syp.closingCashBalance)
+        assertEquals(BigDecimal("185"), syp.netCashChange)
+        assertEquals(BigDecimal("1185"), syp.closingCashBalance)
     }
 
     @Test
