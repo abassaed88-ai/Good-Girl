@@ -238,7 +238,6 @@ internal fun appPaletteFor(isDark: Boolean, paletteId: String): AppPalette =
 
 private val homeShortcutOptions = listOf(
     "daily_sales" to "المبيعات اليومية",
-    "pos" to "دفتر البيع اليومي",
     "price_settings" to "تحديد سعر البيع",
     "sales" to "المبيعات والفواتير",
     "purchases" to "المشتريات",
@@ -512,16 +511,12 @@ private fun GoodGirlApp() {
                     },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
-                "pos" -> PointOfSaleScreen(
-                    onBack = { requestNavigation("dashboard") },
-                    onUnsavedChangesChanged = { hasUnsavedChanges = it }
-                )
                 "sales" -> InvoiceManagementScreen(
                     kind = "SALE",
                     onBack = { requestNavigation(salesReturnPage) },
                     onUnsavedChangesChanged = { hasUnsavedChanges = it }
                 )
-                "daily_sales" -> DailySalesScreen(
+                "pos", "daily_sales" -> DailySalesScreen(
                     onBack = { requestNavigation("dashboard") },
                     onOpenFullInvoice = {
                         salesReturnPage = "daily_sales"
@@ -599,7 +594,6 @@ private fun GoodGirlApp() {
                     homeShortcutLabels = homeShortcutLabels,
                     onOpenMasterData = { requestNavigation("master_data") },
                     onOpenDailySales = { activePage = "daily_sales" },
-                    onOpenPos = { activePage = "pos" },
                     onOpenPriceSettings = { activePage = "price_settings" },
                     onOpenSales = {
                         salesReturnPage = "dashboard"
@@ -736,7 +730,6 @@ internal fun previousAppPage(
 private fun DashboardScreen(
     onOpenMasterData: () -> Unit,
     onOpenDailySales: () -> Unit,
-    onOpenPos: () -> Unit,
     onOpenPriceSettings: () -> Unit,
     onOpenSales: () -> Unit,
     onOpenPurchases: () -> Unit,
@@ -811,7 +804,6 @@ private fun DashboardScreen(
 
     val dashboardTiles = listOf(
         Triple("daily_sales", homeShortcutLabels["daily_sales"].orEmpty().ifBlank { "المبيعات اليومية" }, Icons.Filled.BarChart) to onOpenDailySales,
-        Triple("pos", homeShortcutLabels["pos"].orEmpty().ifBlank { "دفتر البيع اليومي" }, Icons.Filled.ShoppingCart) to onOpenPos,
         Triple("sales", homeShortcutLabels["sales"].orEmpty().ifBlank { "إضافة مبيع" }, Icons.Filled.ShoppingCart) to onOpenSales,
         Triple("products", homeShortcutLabels["products"].orEmpty().ifBlank { "إدارة المخزون" }, Icons.Filled.Inventory) to onOpenProducts,
         Triple("accounts", homeShortcutLabels["accounts"].orEmpty().ifBlank { "قائمة الحسابات" }, Icons.Filled.MenuBook) to onOpenAccounts,
@@ -860,7 +852,6 @@ private fun DashboardScreen(
                     ) {
                         listOf(
                             "المبيعات اليومية" to onOpenDailySales,
-                            "دفتر البيع اليومي" to onOpenPos,
                             "إضافة مبيع" to onOpenSales,
                             "المشتريات" to onOpenPurchases,
                             "إدارة البيانات الأساسية" to onOpenMasterData,
@@ -5827,6 +5818,8 @@ private data class DailySaleRow(
     val currencyCode: String,
     val netSales: BigDecimal,
     val profit: BigDecimal,
+    val customerName: String,
+    val expenses: String,
     val note: String
 )
 
@@ -6085,7 +6078,7 @@ private fun DailySalesScreen(
     val dayLabel = remember(selectedDay) {
         SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date(selectedDay))
     }
-    val rows = remember(invoices, invoiceLines, dayBounds, effectiveCostsByLineId) {
+    val rows = remember(invoices, invoiceLines, dayBounds, effectiveCostsByLineId, customers) {
         invoices.asSequence()
             .filter {
                 it.kind == "SALE" && it.status == "POSTED" &&
@@ -6117,6 +6110,9 @@ private fun DailySalesScreen(
                         currencyCode = invoice.currencyCode,
                         netSales = netSales,
                         profit = netSales.subtract(cost),
+                        customerName = customers.firstOrNull { it.id == invoice.partyId }?.name
+                            ?: if (invoice.partyId == null) "نقدي" else "عميل غير متاح",
+                        expenses = "—",
                         note = invoice.note
                     )
                 }
@@ -6719,7 +6715,7 @@ private fun DailySalesScreen(
                         .horizontalScroll(rememberScrollState())
                         .padding(bottom = 4.dp)
                 ) {
-                    Column(modifier = Modifier.width(700.dp)) {
+                    Column(modifier = Modifier.width(960.dp)) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -6727,12 +6723,14 @@ private fun DailySalesScreen(
                                 .padding(vertical = 11.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("المادة / العملية", modifier = Modifier.width(170.dp).padding(horizontal = 8.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            Text("الكمية", modifier = Modifier.width(78.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                            Text("سعر الوحدة", modifier = Modifier.width(100.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                            Text("إجمالي المبيع", modifier = Modifier.width(105.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                            Text("الربح", modifier = Modifier.width(95.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                            Text("الملاحظات", modifier = Modifier.width(152.dp).padding(horizontal = 6.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Start)
+                            Text("تسلسل", modifier = Modifier.width(52.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text("المادة", modifier = Modifier.width(190.dp).padding(horizontal = 8.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text("الكمية أو الوحدة", modifier = Modifier.width(110.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text("المبيع", modifier = Modifier.width(120.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text("الأرباح", modifier = Modifier.width(100.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Text("العميل (دائن لأجل)", modifier = Modifier.width(140.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text("مصروفات", modifier = Modifier.width(90.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text("ملاحظات", modifier = Modifier.width(158.dp).padding(horizontal = 6.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Start)
                         }
                         rows.forEachIndexed { index, row ->
                             Row(
@@ -6745,20 +6743,20 @@ private fun DailySalesScreen(
                                     .padding(vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Text(
+                                    (index + 1).toString(),
+                                    modifier = Modifier.width(52.dp),
+                                    color = MutedText,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.Center
+                                )
                                 Column(
-                                    modifier = Modifier.width(170.dp).padding(horizontal = 8.dp),
+                                    modifier = Modifier.width(190.dp).padding(horizontal = 8.dp),
                                     verticalArrangement = Arrangement.spacedBy(3.dp)
                                 ) {
+                                    Text(row.productName, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, maxLines = 2)
                                     Text(
-                                        row.productName,
-                                        color = Ink,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp,
-                                        maxLines = 2
-                                    )
-                                    Text(
-                                        row.invoiceNumber + " · " +
-                                            SimpleDateFormat("HH:mm", Locale.US).format(Date(row.issuedAt)),
+                                        row.invoiceNumber + " · " + SimpleDateFormat("HH:mm", Locale.US).format(Date(row.issuedAt)),
                                         color = MutedText,
                                         fontSize = 9.sp,
                                         maxLines = 1
@@ -6766,62 +6764,54 @@ private fun DailySalesScreen(
                                 }
                                 Text(
                                     row.quantity + " " + row.unitName,
-                                    modifier = Modifier.width(78.dp).padding(horizontal = 4.dp),
+                                    modifier = Modifier.width(110.dp).padding(horizontal = 4.dp),
                                     color = Ink,
                                     fontSize = 10.sp,
                                     textAlign = TextAlign.Center,
                                     maxLines = 2
                                 )
                                 Column(
-                                    modifier = Modifier.width(100.dp).padding(horizontal = 4.dp),
+                                    modifier = Modifier.width(120.dp).padding(horizontal = 4.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
-                                    Text(
-                                        row.unitPrice,
-                                        color = Ink,
-                                        fontSize = 11.sp,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 2
-                                    )
-                                    Text(row.currencyCode, color = MutedText, fontSize = 9.sp)
-                                }
-                                Column(
-                                    modifier = Modifier.width(105.dp).padding(horizontal = 4.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    Text(
-                                        row.netSales.stripTrailingZeros().toPlainString(),
-                                        color = Ink,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        textAlign = TextAlign.Center,
-                                        maxLines = 2
-                                    )
+                                    Text(row.netSales.stripTrailingZeros().toPlainString(), color = Ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, maxLines = 2)
                                     Text(row.currencyCode, color = MutedText, fontSize = 9.sp)
                                 }
                                 Text(
-                                    row.profit.stripTrailingZeros().toPlainString(),
-                                    modifier = Modifier.width(95.dp).padding(horizontal = 4.dp),
+                                    row.profit.stripTrailingZeros().toPlainString() + " " + row.currencyCode,
+                                    modifier = Modifier.width(100.dp).padding(horizontal = 4.dp),
                                     color = if (row.profit >= BigDecimal.ZERO) SoftGreen else SoftRed,
-                                    fontSize = 11.sp,
+                                    fontSize = 10.sp,
                                     fontWeight = FontWeight.Bold,
                                     textAlign = TextAlign.Center,
                                     maxLines = 2
                                 )
                                 Text(
+                                    row.customerName,
+                                    modifier = Modifier.width(140.dp).padding(horizontal = 4.dp),
+                                    color = Ink,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2
+                                )
+                                Text(
+                                    row.expenses,
+                                    modifier = Modifier.width(90.dp).padding(horizontal = 4.dp),
+                                    color = MutedText,
+                                    fontSize = 10.sp,
+                                    textAlign = TextAlign.Center
+                                )
+                                Text(
                                     row.note.ifBlank { "—" },
-                                    modifier = Modifier.width(152.dp).padding(horizontal = 6.dp),
+                                    modifier = Modifier.width(158.dp).padding(horizontal = 6.dp),
                                     color = MutedText,
                                     fontSize = 10.sp,
                                     maxLines = 3
                                 )
                             }
                             if (index < rows.lastIndex) {
-                                androidx.compose.material3.HorizontalDivider(
-                                    color = MaterialTheme.colorScheme.outlineVariant
-                                )
+                                androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                             }
                         }
                         Row(
@@ -6831,18 +6821,20 @@ private fun DailySalesScreen(
                                 .padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("إجمالي اليوم", modifier = Modifier.width(170.dp).padding(horizontal = 8.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp)
-                            Text(rows.size.toString(), modifier = Modifier.width(78.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp, textAlign = TextAlign.Center)
-                            Text("—", modifier = Modifier.width(100.dp), color = MutedText, fontSize = 11.sp, textAlign = TextAlign.Center)
-                            Text(formatCurrencyTotals(salesTotals), modifier = Modifier.width(105.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
-                            Text(formatCurrencyTotals(profitTotals), modifier = Modifier.width(95.dp).padding(horizontal = 4.dp), color = SoftGreen, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
-                            Text("عدد السطور: " + rows.size, modifier = Modifier.width(152.dp).padding(horizontal = 6.dp), color = MutedText, fontSize = 10.sp)
+                            Text("—", modifier = Modifier.width(52.dp), color = MutedText, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text("إجمالي اليوم", modifier = Modifier.width(190.dp).padding(horizontal = 8.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            Text(rows.size.toString() + " سطر", modifier = Modifier.width(110.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text(formatCurrencyTotals(salesTotals), modifier = Modifier.width(120.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text(formatCurrencyTotals(profitTotals), modifier = Modifier.width(100.dp).padding(horizontal = 4.dp), color = SoftGreen, fontWeight = FontWeight.Bold, fontSize = 9.sp, textAlign = TextAlign.Center)
+                            Text("—", modifier = Modifier.width(140.dp), color = MutedText, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text("—", modifier = Modifier.width(90.dp), color = MutedText, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text("عدد السطور: " + rows.size, modifier = Modifier.width(158.dp).padding(horizontal = 6.dp), color = MutedText, fontSize = 10.sp)
                         }
                     }
                 }
             }
             Text(
-                "اسحب الجدول أفقياً لرؤية جميع الأعمدة. كل سطر مرتبط بفاتورة بيع فعلية واحدة ويحدّث المخزون والحسابات والتقارير دون إدخال مكرر.",
+                "اسحب الجدول أفقياً لرؤية الأعمدة الثمانية. بيانات العميل مأخوذة من فاتورة البيع؛ المصروفات حالياً غير مربوطة بسطر الفاتورة ولن تُعرض كقيمة وهمية.",
                 color = MutedText,
                 fontSize = 11.sp
             )
