@@ -106,6 +106,7 @@ import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.DailySalesDraftRepository
 import com.goodgirl.accounting.data.local.DailySalesDraftEntity
 import com.goodgirl.accounting.data.local.DailySalesDraftLineEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftExpenseEntity
 import com.goodgirl.accounting.data.FinancialReportPdfExporter
 import com.goodgirl.accounting.data.GeneralLedgerStatementsPdfExporter
 import com.goodgirl.accounting.data.PartyRepository
@@ -5838,7 +5839,8 @@ private data class PendingDailySaleLine(
     val paidAmount: String,
     val customerId: String?,
     val note: String,
-    val issuedAt: Long
+    val issuedAt: Long,
+    val expenses: List<DailySalesDraftExpenseEntity> = emptyList()
 )
 
 private fun PendingDailySaleLine.toDraftEntity(lineOrder: Int) = DailySalesDraftLineEntity(
@@ -5861,7 +5863,9 @@ private fun PendingDailySaleLine.toDraftEntity(lineOrder: Int) = DailySalesDraft
     issuedAt = issuedAt
 )
 
-private fun DailySalesDraftLineEntity.toPendingLine() = PendingDailySaleLine(
+private fun DailySalesDraftLineEntity.toPendingLine(
+    expenses: List<DailySalesDraftExpenseEntity> = emptyList()
+) = PendingDailySaleLine(
     id = id,
     productId = productId,
     productName = productNameSnapshot,
@@ -5876,7 +5880,8 @@ private fun DailySalesDraftLineEntity.toPendingLine() = PendingDailySaleLine(
     paidAmount = paidAmount,
     customerId = customerId,
     note = note,
-    issuedAt = issuedAt
+    issuedAt = issuedAt,
+    expenses = expenses
 )
 
 @Composable
@@ -5892,6 +5897,7 @@ private fun DailySalesScreen(
     val dailySalesPartyRepository = remember(database) { PartyRepository(database) }
     val invoices by database.invoiceDao().observeAll().collectAsState(initial = emptyList())
     val invoiceLines by database.invoiceDao().observeAllLines().collectAsState(initial = emptyList())
+    val ledgerEntries by database.ledgerDao().observeAll().collectAsState(initial = emptyList())
     val stockCostAudits by database.stockCostRecalculationAuditDao().observeAll().collectAsState(initial = emptyList())
     val stockCostAuditItems by database.stockCostRecalculationItemDao().observeAll().collectAsState(initial = emptyList())
     val effectiveCostsByLineId = remember(stockCostAudits, stockCostAuditItems) {
@@ -5955,7 +5961,14 @@ private fun DailySalesScreen(
     var showCustomerPicker by remember { mutableStateOf(false) }
     var showCreateCustomer by remember { mutableStateOf(false) }
     var showNoteEditor by remember { mutableStateOf(false) }
-    var showExpensesInfo by remember { mutableStateOf(false) }
+    var showExpenseEditor by remember { mutableStateOf(false) }
+    var expenseEditingLineId by remember { mutableStateOf<String?>(null) }
+    var editingExpenses by remember { mutableStateOf<List<DailySalesDraftExpenseEntity>>(emptyList()) }
+    var expenseDescription by remember { mutableStateOf("") }
+    var expenseAmount by remember { mutableStateOf("") }
+    var expenseCurrencyCode by remember { mutableStateOf("SYP") }
+    var expenseExchangeRate by remember { mutableStateOf("1") }
+    var expenseMessage by remember { mutableStateOf<String?>(null) }
     var showDailySalesBarcodeScanner by remember { mutableStateOf(false) }
     var newCustomerName by remember { mutableStateOf("") }
 
@@ -5980,7 +5993,12 @@ private fun DailySalesScreen(
                 note = saved.note
             }
             pendingDailySales.clear()
-            pendingDailySales.addAll(snapshot.lines.map { it.toPendingLine() })
+            val expensesByLineId = snapshot.expenses.groupBy { it.lineId }
+            pendingDailySales.addAll(
+                snapshot.lines.map { line ->
+                    line.toPendingLine(expensesByLineId[line.id].orEmpty())
+                }
+            )
             canPersistDraft = true
             isDraftPersisted = true
         } catch (error: Exception) {
@@ -6078,7 +6096,8 @@ private fun DailySalesScreen(
         try {
             dailySalesDraftRepository.saveSnapshot(
                 header,
-                pendingDailySales.mapIndexed { index, line -> line.toDraftEntity(index) }
+                pendingDailySales.mapIndexed { index, line -> line.toDraftEntity(index) },
+                pendingDailySales.flatMap { it.expenses }
             )
             isDraftPersisted = true
         } catch (error: Exception) {
@@ -6165,7 +6184,8 @@ private fun DailySalesScreen(
                 issuedAt = if (editingId != null) pendingDailySales[editingIndex].issuedAt else dailySalesIssuedAt(
                     selectedDayStartMillis = selectedDay,
                     currentTimeMillis = System.currentTimeMillis()
-                )
+                ),
+                expenses = if (editingId != null) pendingDailySales[editingIndex].expenses else emptyList()
             )
             if (editingId == null) pendingDailySales.add(updatedLine)
             else pendingDailySales[editingIndex] = updatedLine
@@ -6261,11 +6281,87 @@ private fun DailySalesScreen(
         message = "تم إلغاء التعديل؛ بقي السطر الأصلي محفوظاً."
     }
 
-    LaunchedEffect(isDraftLoaded, canPersistDraft, isDraftPersisted, editingDraftLineId) {
-        // An edit is not committed until the user saves it; guard navigation while
-        // the row's stable identity is held by this in-memory editor.
+    fun beginEditingDailySalesExpenses(pending: PendingDailySaleLine) {
+        if (!isDraftPersisted || selectedProductId != null || editingDraftLineId != null) {
+            message = "احفظ أو ألغِ إدخال السطر الحالي قبل تعديل مصروفات سطر آخر."
+            return
+        }
+        expenseEditingLineId = pending.id
+        editingExpenses = pending.expenses
+        expenseDescription = ""
+        expenseAmount = ""
+        expenseCurrencyCode = pending.currencyCode
+        expenseExchangeRate = if (pending.currencyCode == "SYP") "1" else pending.exchangeRate
+        expenseMessage = null
+        showExpenseEditor = true
+    }
+
+    fun addDailySalesExpense() {
+        try {
+            val lineId = expenseEditingLineId ?: throw IllegalArgumentException("اختر سطر مبيعة أولاً")
+            require(editingExpenses.size < 50) { "وصلت إلى الحد الأقصى للمصروفات لهذا السطر" }
+            val previousCount = pendingDailySales.firstOrNull { it.id == lineId }?.expenses?.size ?: 0
+            require(
+                pendingDailySales.sumOf { it.expenses.size } - previousCount + editingExpenses.size < 500
+            ) { "وصلت إلى الحد الأقصى لمصروفات المسودة" }
+            val cleanDescription = expenseDescription.trim()
+            require(cleanDescription.isNotEmpty()) { "بيان المصروف مطلوب" }
+            require(cleanDescription.length <= 180) { "بيان المصروف طويل جداً" }
+            val normalized = CashTransactionRules.normalize(
+                amount = expenseAmount,
+                currencyCode = expenseCurrencyCode,
+                exchangeRate = if (expenseCurrencyCode == "SYP") "1" else expenseExchangeRate
+            )
+            editingExpenses = editingExpenses + DailySalesDraftExpenseEntity(
+                id = UUID.randomUUID().toString(),
+                draftId = DailySalesDraftRepository.ACTIVE_DRAFT_ID,
+                lineId = lineId,
+                description = cleanDescription,
+                amount = normalized.amount,
+                currencyCode = normalized.currencyCode,
+                exchangeRateSnapshot = normalized.exchangeRate,
+                createdAt = System.currentTimeMillis()
+            )
+            expenseDescription = ""
+            expenseAmount = ""
+            expenseMessage = "تمت إضافة المصروف إلى السطر. احفظ التعديلات لتثبيته في المسودة."
+        } catch (error: Exception) {
+            expenseMessage = error.message ?: "تعذر إضافة المصروف"
+        }
+    }
+
+    fun saveDailySalesExpenseEditor() {
+        val lineId = expenseEditingLineId
+        val index = pendingDailySales.indexOfFirst { it.id == lineId }
+        if (index < 0) {
+            expenseMessage = "لم يعد سطر المبيعة موجوداً في المسودة."
+            return
+        }
+        pendingDailySales[index] = pendingDailySales[index].copy(expenses = editingExpenses)
+        showExpenseEditor = false
+        expenseEditingLineId = null
+        expenseMessage = null
+        isDraftPersisted = false
+        message = "تم حفظ مصروفات السطر في المسودة. لم تُرحّل بعد."
+    }
+
+    fun cancelDailySalesExpenseEditor() {
+        showExpenseEditor = false
+        expenseEditingLineId = null
+        editingExpenses = emptyList()
+        expenseDescription = ""
+        expenseAmount = ""
+        expenseMessage = null
+    }
+
+    LaunchedEffect(
+        isDraftLoaded, canPersistDraft, isDraftPersisted, editingDraftLineId,
+        expenseEditingLineId, showExpenseEditor
+    ) {
+        // Block navigation while the sale editor or its expense dialog has unsaved changes.
         onUnsavedChangesChanged(
-            isDraftLoaded && canPersistDraft && (!isDraftPersisted || editingDraftLineId != null)
+            isDraftLoaded && canPersistDraft &&
+                (!isDraftPersisted || editingDraftLineId != null || showExpenseEditor || expenseEditingLineId != null)
         )
     }
 
@@ -6284,7 +6380,7 @@ private fun DailySalesScreen(
     val dayLabel = remember(selectedDay) {
         SimpleDateFormat("yyyy/MM/dd", Locale.US).format(Date(selectedDay))
     }
-    val rows = remember(invoices, invoiceLines, dayBounds, effectiveCostsByLineId, customers) {
+    val rows = remember(invoices, invoiceLines, dayBounds, effectiveCostsByLineId, customers, ledgerEntries) {
         invoices.asSequence()
             .filter {
                 it.kind == "SALE" && it.status == "POSTED" &&
@@ -6306,6 +6402,18 @@ private fun DailySalesScreen(
                     val netSales = lineNetAmounts[index].subtract(allocatedDiscounts[index])
                     val cost = (effectiveCostsByLineId[line.id] ?: line.unitCostSnapshot).toBigDecimal()
                         .multiply(line.baseQuantity.toBigDecimal())
+                    val expensesByCurrency = ledgerEntries
+                        .filter {
+                            it.sourceType == "DAILY_SALE_EXPENSE" &&
+                                it.entryType == "EXPENSE" &&
+                                it.sourceId == invoice.id
+                        }
+                        .groupBy { it.currencyCode }
+                        .mapValues { (_, entries) ->
+                            entries.fold(BigDecimal.ZERO) { total, entry ->
+                                total.add(entry.amount.toBigDecimal())
+                            }
+                        }
                     DailySaleRow(
                         invoiceNumber = invoice.invoiceNumber,
                         issuedAt = invoice.issuedAt,
@@ -6318,7 +6426,7 @@ private fun DailySalesScreen(
                         profit = netSales.subtract(cost),
                         customerName = customers.firstOrNull { it.id == invoice.partyId }?.name
                             ?: if (invoice.partyId == null) "نقدي" else "عميل غير متاح",
-                        expenses = "—",
+                        expenses = if (expensesByCurrency.isEmpty()) "—" else formatCurrencyTotals(expensesByCurrency),
                         note = invoice.note
                     )
                 }
@@ -6463,8 +6571,13 @@ private fun DailySalesScreen(
                             Box(Modifier.width(140.dp).clickable { showCustomerPicker = true }.padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
                                 Text(customers.firstOrNull { it.id == selectedPartyId }?.name ?: "نقدي / اختيار عميل", color = BrandBlue, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
                             }
-                            Box(Modifier.width(90.dp).clickable { showExpensesInfo = true }.padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
-                                Text("—", color = MutedText, fontSize = 11.sp, textAlign = TextAlign.Center)
+                            Box(Modifier.width(90.dp).padding(horizontal = 4.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    if (selectedProduct == null) "احفظ السطر أولاً" else "بعد إضافة السطر",
+                                    color = MutedText,
+                                    fontSize = 9.sp,
+                                    textAlign = TextAlign.Center
+                                )
                             }
                             Box(Modifier.width(158.dp).testTag("daily-sales-note-cell").clickable { showNoteEditor = true }.padding(horizontal = 6.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
                                 Text(note.ifBlank { "إضافة ملاحظة" }, color = if (note.isBlank()) BrandBlue else Ink, fontSize = 10.sp, maxLines = 2)
@@ -6494,7 +6607,26 @@ private fun DailySalesScreen(
                                 }
                                 Text(pendingProfit.stripTrailingZeros().toPlainString() + " " + pending.currencyCode, Modifier.width(100.dp), color = if (pendingProfit >= BigDecimal.ZERO) SoftGreen else SoftRed, fontSize = 10.sp, textAlign = TextAlign.Center)
                                 Text(customers.firstOrNull { it.id == pending.customerId }?.name ?: "نقدي", Modifier.width(140.dp).padding(horizontal = 3.dp), color = Ink, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
-                                Text("—", Modifier.width(90.dp), color = MutedText, fontSize = 10.sp, textAlign = TextAlign.Center)
+                                Box(
+                                    Modifier.width(90.dp)
+                                        .clickable { beginEditingDailySalesExpenses(pending) }
+                                        .padding(horizontal = 3.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    val totals = pending.expenses.groupBy { it.currencyCode }
+                                        .mapValues { (_, expenses) ->
+                                            expenses.fold(BigDecimal.ZERO) { total, expense ->
+                                                total.add(expense.amount.toBigDecimal())
+                                            }
+                                        }
+                                    Text(
+                                        if (totals.isEmpty()) "إضافة مصروف" else formatCurrencyTotals(totals),
+                                        color = BrandBlue,
+                                        fontSize = 9.sp,
+                                        textAlign = TextAlign.Center,
+                                        maxLines = 3
+                                    )
+                                }
                                 Column(Modifier.width(158.dp).padding(horizontal = 4.dp)) {
                                     Text(pending.note.ifBlank { "—" }, color = MutedText, fontSize = 9.sp, maxLines = 2)
                                     TextButton(
@@ -6575,7 +6707,10 @@ private fun DailySalesScreen(
                                     )
                                     while (pendingDailySales.isNotEmpty()) {
                                         val pending = pendingDailySales.first()
-                                        dailySalesDraftRepository.postPendingLine(pending.toDraftEntity(0))
+                                        dailySalesDraftRepository.postPendingLine(
+                                            pending.toDraftEntity(0),
+                                            pending.expenses
+                                        )
                                         pendingDailySales.removeAt(0)
                                         postedCount += 1
                                     }
@@ -6959,13 +7094,105 @@ private fun DailySalesScreen(
         }
     }
 
-    if (showExpensesInfo) {
-        Dialog(onDismissRequest = { showExpensesInfo = false }) {
+    if (showExpenseEditor) {
+        Dialog(onDismissRequest = { cancelDailySalesExpenseEditor() }) {
             Surface(shape = RoundedCornerShape(18.dp), color = CardSurface) {
-                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
-                    Text("مصروفات المبيعة", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("تسجيل المصروفات متاح حالياً من شاشة الصندوق والمصروفات كحركة محاسبية مستقلة. لا نعرض رقماً في هذا العمود قبل ربط المصروف بسطر المبيعة داخل قاعدة البيانات، حتى لا نكرر قيد المصروف أو نغيّر الربح بشكل غير صحيح.", color = MutedText, fontSize = 12.sp)
-                    Button(onClick = { showExpensesInfo = false }, modifier = Modifier.fillMaxWidth()) { Text("إغلاق") }
+                Column(
+                    Modifier.fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("مصروفات سطر المبيعة", color = Ink, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(
+                        "أضف مصروفاً أو أكثر لهذا السطر. تُحفظ عملة وسعر صرف كل مصروف، وتُرحّل المصروفات مع فاتورة البيع.",
+                        color = MutedText,
+                        fontSize = 12.sp
+                    )
+                    if (editingExpenses.isEmpty()) {
+                        Text("لا توجد مصروفات لهذا السطر حتى الآن.", color = MutedText, fontSize = 12.sp)
+                    } else {
+                        editingExpenses.forEach { expense ->
+                            Row(
+                                Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp)).padding(9.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(expense.description, color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                                    Text(
+                                        "${expense.amount} ${expense.currencyCode}" +
+                                            if (expense.currencyCode == "USD") " — صرف ${expense.exchangeRateSnapshot}" else "",
+                                        color = MutedText,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    editingExpenses = editingExpenses.filterNot { it.id == expense.id }
+                                }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+                            }
+                        }
+                    }
+                    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Text("مصروف جديد", color = Ink, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Material3OutlinedTextField(
+                        value = expenseDescription,
+                        onValueChange = { expenseDescription = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("بيان المصروف") },
+                        singleLine = true
+                    )
+                    Material3OutlinedTextField(
+                        value = expenseAmount,
+                        onValueChange = { expenseAmount = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("المبلغ") },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true
+                    )
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { expenseCurrencyCode = "SYP"; expenseExchangeRate = "1" },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (expenseCurrencyCode == "SYP") BrandBlue else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (expenseCurrencyCode == "SYP") Color.White else Ink
+                            )
+                        ) { Text(if (expenseCurrencyCode == "SYP") "✓ ليرة" else "ليرة", fontSize = 12.sp) }
+                        Button(
+                            onClick = {
+                                expenseCurrencyCode = "USD"
+                                expenseExchangeRate = context.getSharedPreferences(
+                                    "good_girl_settings",
+                                    android.content.Context.MODE_PRIVATE
+                                ).getString("usd_syp_rate", "1") ?: "1"
+                            },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (expenseCurrencyCode == "USD") BrandBlue else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (expenseCurrencyCode == "USD") Color.White else Ink
+                            )
+                        ) { Text(if (expenseCurrencyCode == "USD") "✓ دولار" else "دولار", fontSize = 12.sp) }
+                    }
+                    if (expenseCurrencyCode == "USD") {
+                        Material3OutlinedTextField(
+                            value = expenseExchangeRate,
+                            onValueChange = { expenseExchangeRate = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            label = { Text("سعر صرف الدولار وقت المصروف") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            singleLine = true
+                        )
+                    }
+                    expenseMessage?.let { Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 11.sp) }
+                    Button(onClick = { addDailySalesExpense() }, modifier = Modifier.fillMaxWidth()) {
+                        Text("إضافة المصروف إلى السطر")
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(onClick = { cancelDailySalesExpenseEditor() }, modifier = Modifier.weight(1f)) {
+                            Text("إلغاء")
+                        }
+                        Button(onClick = { saveDailySalesExpenseEditor() }, modifier = Modifier.weight(1f)) {
+                            Text("حفظ المصروفات")
+                        }
+                    }
                 }
             }
         }
