@@ -15,7 +15,7 @@ import com.goodgirl.accounting.domain.HistoricalStockCostEvent
 import java.math.BigDecimal
 import java.util.UUID
 
-const val ACCOUNTING_DATABASE_VERSION = 13
+const val ACCOUNTING_DATABASE_VERSION = 14
 
 private data class MigrationCurrencyBalances(
     var cash: BigDecimal = BigDecimal.ZERO,
@@ -54,7 +54,8 @@ private data class MigrationOpeningLine(
         ExchangeRateAuditEntity::class,
         ExchangeRateCorrectionItemEntity::class,
         DailySalesDraftEntity::class,
-        DailySalesDraftLineEntity::class
+        DailySalesDraftLineEntity::class,
+        DailySalesDraftExpenseEntity::class
     ],
     version = ACCOUNTING_DATABASE_VERSION,
     exportSchema = true
@@ -78,6 +79,7 @@ abstract class AccountingDatabase : RoomDatabase() {
     abstract fun exchangeRateAuditDao(): ExchangeRateAuditDao
     abstract fun exchangeRateCorrectionItemDao(): ExchangeRateCorrectionItemDao
     abstract fun dailySalesDraftDao(): DailySalesDraftDao
+    abstract fun dailySalesDraftExpenseDao(): DailySalesDraftExpenseDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -762,6 +764,27 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_13_14 = object : Migration(13, 14) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS daily_sales_draft_expenses (" +
+                        "id TEXT NOT NULL, draftId TEXT NOT NULL, lineId TEXT NOT NULL, " +
+                        "description TEXT NOT NULL, amount TEXT NOT NULL, currencyCode TEXT NOT NULL, " +
+                        "exchangeRateSnapshot TEXT NOT NULL, createdAt INTEGER NOT NULL, " +
+                        "PRIMARY KEY(id), FOREIGN KEY(lineId) REFERENCES daily_sales_draft_lines(id) " +
+                        "ON UPDATE NO ACTION ON DELETE CASCADE)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_daily_sales_draft_expenses_draftId " +
+                        "ON daily_sales_draft_expenses(draftId)"
+                )
+                database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_daily_sales_draft_expenses_lineId " +
+                        "ON daily_sales_draft_expenses(lineId)"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AccountingDatabase? = null
 
@@ -771,7 +794,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14).build().also { INSTANCE = it }
             }
     }
 }
