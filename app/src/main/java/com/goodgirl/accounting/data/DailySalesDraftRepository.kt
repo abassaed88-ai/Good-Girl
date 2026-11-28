@@ -134,14 +134,16 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
         // The expense and invoice posters share the same Room transaction on
         // the normal path. On recovery from an older already-posted invoice,
         // this idempotent call completes or verifies every attached expense.
-        expenses.forEach { expense ->
-            DailySalesExpenseJournalPoster.post(
-                database = database,
-                invoiceId = result.invoiceId,
-                invoiceNumber = invoiceNumber,
-                occurredAt = line.issuedAt,
-                expense = expense.toInvoiceExpenseDraft()
-            )
+        database.withTransaction {
+            expenses.forEach { expense ->
+                DailySalesExpenseJournalPoster.post(
+                    database = database,
+                    invoiceId = result.invoiceId,
+                    invoiceNumber = invoiceNumber,
+                    occurredAt = line.issuedAt,
+                    expense = expense.toInvoiceExpenseDraft()
+                )
+            }
         }
 
         // If the process stops before this delete, a retry recognizes the
