@@ -11,6 +11,7 @@ import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.goodgirl.accounting.data.DailySalesDraftRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.ProductEntity
 import kotlinx.coroutines.runBlocking
@@ -52,7 +53,7 @@ class DailySalesArabicTextInputTest {
                 .performScrollTo()
                 .performClick()
 
-            composeRule.onNodeWithText("اختيار المادة").performClick()
+            composeRule.onNodeWithTag("daily-sales-material-cell").performClick()
             val searchField = composeRule.onNodeWithTag("daily-sales-product-search")
             assertArabicCharactersAppearOneByOne(searchField, "عطر ورد")
             searchField.performTextClearance()
@@ -67,8 +68,11 @@ class DailySalesArabicTextInputTest {
             val noteField = composeRule.onNodeWithTag("daily-sales-note")
             assertArabicCharactersAppearOneByOne(noteField, "ملاحظة عربية")
         } finally {
+            composeRule.waitForIdle()
+            Thread.sleep(400)
             runBlocking {
                 database.productDao().archive(productId, System.currentTimeMillis())
+                DailySalesDraftRepository(database).clearDraft()
             }
         }
     }
