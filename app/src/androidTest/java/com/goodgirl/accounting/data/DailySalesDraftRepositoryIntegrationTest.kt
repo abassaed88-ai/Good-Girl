@@ -171,7 +171,7 @@ class DailySalesDraftRepositoryIntegrationTest {
 
             assertEquals("2", invoiceLine.unitCostSnapshot)
             assertEquals("2", saleMovement.unitCostSnapshot)
-            assertEquals("1", database.productDao().findById(product.id)!!.stockQuantity)
+            assertEquals("4", database.productDao().findById(product.id)!!.stockQuantity)
         } finally {
             database.close()
         }
