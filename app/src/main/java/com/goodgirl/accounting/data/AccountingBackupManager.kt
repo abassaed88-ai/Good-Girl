@@ -24,6 +24,7 @@ import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
 import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
 import com.goodgirl.accounting.data.local.DailySalesDraftEntity
 import com.goodgirl.accounting.data.local.DailySalesDraftLineEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftExpenseEntity
 import com.goodgirl.accounting.data.local.LatestPurchaseCostPolicyMigrator
 import androidx.room.withTransaction
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +86,7 @@ class AccountingBackupManager(
             val exchangeRateCorrectionItems = database.exchangeRateCorrectionItemDao().getAll()
             val dailySalesDraft = database.dailySalesDraftDao().getActiveDraft()
             val dailySalesDraftLines = database.dailySalesDraftDao().getLines("active")
+            val dailySalesDraftExpenses = database.dailySalesDraftDao().getExpenses("active")
 
             val json = JSONObject()
                 .put("format", BACKUP_FORMAT)
@@ -118,13 +120,15 @@ class AccountingBackupManager(
                 .put("exchangeRateCorrectionItems", exchangeRateCorrectionItems.toJsonArray { it.toBackupJson() })
                 .put("dailySalesDraft", dailySalesDraft?.toBackupJson() ?: JSONObject.NULL)
                 .put("dailySalesDraftLines", dailySalesDraftLines.toJsonArray { it.toBackupJson() })
+                .put("dailySalesDraftExpenses", dailySalesDraftExpenses.toJsonArray { it.toBackupJson() })
 
             json to (
                 categories.size + products.size + productBarcodes.size + units.size + parties.size +
                     invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
                     stockCostBaselines.size + stockCostRecalculationAudits.size + stockCostRecalculationItems.size + accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
                     exchangeRateAudits.size + exchangeRateCorrectionItems.size +
-                    (if (dailySalesDraft == null) 0 else 1) + dailySalesDraftLines.size
+                    (if (dailySalesDraft == null) 0 else 1) + dailySalesDraftLines.size +
+                    dailySalesDraftExpenses.size
                 )
         }
 
@@ -259,6 +263,7 @@ class AccountingBackupManager(
         val exchangeRateCorrectionItems = root.parseOptionalArray("exchangeRateCorrectionItems") { it.toExchangeRateCorrectionItemEntity() }
         val dailySalesDraft = root.optJSONObject("dailySalesDraft")?.toDailySalesDraftEntity()
         val dailySalesDraftLines = root.parseOptionalArray("dailySalesDraftLines") { it.toDailySalesDraftLineEntity() }
+        val dailySalesDraftExpenses = root.parseOptionalArray("dailySalesDraftExpenses") { it.toDailySalesDraftExpenseEntity() }
 
         // Validate the complete snapshot before opening the destructive replacement transaction.
         BackupIntegrityValidator.validate(
@@ -281,14 +286,16 @@ class AccountingBackupManager(
             stockCostRecalculationAudits = stockCostRecalculationAudits,
             stockCostRecalculationItems = stockCostRecalculationItems,
             dailySalesDraft = dailySalesDraft,
-            dailySalesDraftLines = dailySalesDraftLines
+            dailySalesDraftLines = dailySalesDraftLines,
+            dailySalesDraftExpenses = dailySalesDraftExpenses
         )
 
         val totalRecords = categories.size + products.size + productBarcodes.size + units.size + parties.size +
             invoices.size + invoiceLines.size + movements.size + ledgerEntries.size +
             stockCostBaselines.size + stockCostRecalculationAudits.size + stockCostRecalculationItems.size + accounts.size + journalEntries.size + journalLines.size + exchangeRateHistory.size +
             exchangeRateAudits.size + exchangeRateCorrectionItems.size +
-            (if (dailySalesDraft == null) 0 else 1) + dailySalesDraftLines.size
+            (if (dailySalesDraft == null) 0 else 1) + dailySalesDraftLines.size +
+            dailySalesDraftExpenses.size
         val exportedAt = root.getLong("exportedAt")
 
         val settingsObject = if (formatVersion >= 2) root.optJSONObject("settings") else null
@@ -356,6 +363,7 @@ class AccountingBackupManager(
             database.dailySalesDraftDao().deleteDraft("active")
             if (dailySalesDraft != null) database.dailySalesDraftDao().saveDraft(dailySalesDraft)
             if (dailySalesDraftLines.isNotEmpty()) database.dailySalesDraftDao().saveLines(dailySalesDraftLines)
+            if (dailySalesDraftExpenses.isNotEmpty()) database.dailySalesDraftDao().saveExpenses(dailySalesDraftExpenses)
 
             // Legacy backups were captured before latest-purchase-cost policy.
             // Convert them inside the same atomic restore transaction so the
@@ -426,6 +434,12 @@ class AccountingBackupManager(
         .put("exchangeRate", exchangeRate).put("paidAmount", paidAmount)
         .put("customerId", customerId ?: JSONObject.NULL).put("note", note).put("issuedAt", issuedAt)
         .put("purchaseCostSnapshot", purchaseCostSnapshot ?: JSONObject.NULL)
+
+    private fun DailySalesDraftExpenseEntity.toBackupJson() = JSONObject()
+        .put("id", id).put("draftId", draftId).put("lineId", lineId)
+        .put("description", description).put("amount", amount)
+        .put("currencyCode", currencyCode).put("exchangeRateSnapshot", exchangeRateSnapshot)
+        .put("createdAt", createdAt)
 
     private fun CategoryEntity.toBackupJson() = JSONObject()
         .put("id", id).put("name", name).put("note", note).put("createdAt", createdAt)
@@ -564,6 +578,17 @@ class AccountingBackupManager(
         customerId = nullableString("customerId"),
         note = getString("note"),
         issuedAt = getLong("issuedAt")
+    )
+
+    private fun JSONObject.toDailySalesDraftExpenseEntity() = DailySalesDraftExpenseEntity(
+        id = getString("id"),
+        draftId = getString("draftId"),
+        lineId = getString("lineId"),
+        description = getString("description"),
+        amount = getString("amount"),
+        currencyCode = getString("currencyCode"),
+        exchangeRateSnapshot = getString("exchangeRateSnapshot"),
+        createdAt = getLong("createdAt")
     )
 
     private fun JSONObject.toCategoryEntity() = CategoryEntity(
