@@ -28,7 +28,9 @@ internal object ManualCashJournalPoster {
         currencyCode: String,
         exchangeRateSnapshot: String,
         occurredAt: Long,
-        description: String
+        description: String,
+        journalSourceType: String? = null,
+        journalNumberPrefix: String = "AUTO-MANUAL-CASH"
     ) {
         val isIncome = kind.trim().uppercase() == "INCOME"
         require(isIncome || kind.trim().uppercase() == "EXPENSE") {
@@ -47,7 +49,10 @@ internal object ManualCashJournalPoster {
         )
 
         val cleanAmount = value.stripTrailingZeros().toPlainString()
-        val sourceType = if (isIncome) "MANUAL_CASH_INCOME" else "MANUAL_CASH_EXPENSE"
+        val sourceType = journalSourceType?.trim()?.takeIf { it.isNotEmpty() }
+            ?: if (isIncome) "MANUAL_CASH_INCOME" else "MANUAL_CASH_EXPENSE"
+        val cleanJournalNumberPrefix = journalNumberPrefix.trim()
+        require(cleanJournalNumberPrefix.isNotEmpty()) { "بادئة رقم القيد مطلوبة" }
         val lines = if (isIncome) {
             listOf(
                 JournalLineDraft(CASH, debit = cleanAmount, memo = "إيداع إيراد نقدي: $description"),
@@ -69,7 +74,7 @@ internal object ManualCashJournalPoster {
         database.journalEntryDao().insert(
             JournalEntryEntity(
                 id = entryId,
-                journalNumber = "AUTO-MANUAL-CASH-$sourceId",
+                journalNumber = "$cleanJournalNumberPrefix-$sourceId",
                 sourceType = sourceType,
                 sourceId = sourceId,
                 currencyCode = normalized.currencyCode,
