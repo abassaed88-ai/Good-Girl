@@ -208,6 +208,14 @@ class AccountingDatabaseMigrationTest {
                 assertEquals("15000", cursor.getString(3))
             }
 
+            // MigrationTestHelper exposes a raw SQLite connection rather than
+            // Room's runtime connection, so enable foreign-key enforcement
+            // explicitly before verifying the ON DELETE CASCADE behavior.
+            migrated.execSQL("PRAGMA foreign_keys = ON")
+            migrated.query("PRAGMA foreign_keys").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+            }
             migrated.execSQL("DELETE FROM daily_sales_draft_lines WHERE id = 'expense-parent-line'")
             assertEquals(0, databaseCount(migrated, "daily_sales_draft_expenses"))
 
