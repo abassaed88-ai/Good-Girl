@@ -50,7 +50,7 @@ class ProductArabicTextInputTest {
             .performScrollTo()
             .performClick()
         composeRule.waitForIdle()
-        composeRule.onNodeWithText("اختيار المادة").performClick()
+        composeRule.onNodeWithTag("daily-sales-material-cell").performClick()
         composeRule.waitForIdle()
 
         assertArabicCharactersAppearOneByOne(
