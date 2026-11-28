@@ -90,8 +90,10 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
         expenses: List<DailySalesDraftExpenseEntity> = emptyList()
     ): PostedInvoiceResult {
         require(line.draftId == ACTIVE_DRAFT_ID) { "السطر لا يتبع مسودة المبيعات الحالية" }
-        require(expenses.map { it.id }.distinct().size == expenses.size) { "يوجد مصروف مكرر في السطر" }
-        require(expenses.all { it.draftId == ACTIVE_DRAFT_ID && it.lineId == line.id }) {
+        val storedExpenses = dao.getExpensesForLine(line.id)
+        val attachedExpenses = storedExpenses.ifEmpty { expenses }
+        require(attachedExpenses.map { it.id }.distinct().size == attachedExpenses.size) { "يوجد مصروف مكرر في السطر" }
+        require(attachedExpenses.all { it.draftId == ACTIVE_DRAFT_ID && it.lineId == line.id }) {
             "يوجد مصروف لا يتبع سطر المبيعة الحالي"
         }
         val invoiceNumber = invoiceNumberFor(line.id)
@@ -115,7 +117,7 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
                             discount = line.discount,
                             unitName = line.unitName,
                             saleUnitCostSnapshot = line.purchaseCostSnapshot,
-                            associatedExpenses = expenses.map { it.toInvoiceExpenseDraft() }
+                            associatedExpenses = attachedExpenses.map { it.toInvoiceExpenseDraft() }
                         )
                     ),
                     paidAmount = line.paidAmount,
@@ -135,7 +137,7 @@ class DailySalesDraftRepository(private val database: AccountingDatabase) {
         // the normal path. On recovery from an older already-posted invoice,
         // this idempotent call completes or verifies every attached expense.
         database.withTransaction {
-            expenses.forEach { expense ->
+            attachedExpenses.forEach { expense ->
                 DailySalesExpenseJournalPoster.post(
                     database = database,
                     invoiceId = result.invoiceId,
