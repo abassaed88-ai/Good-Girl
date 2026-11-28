@@ -103,6 +103,9 @@ object BackupIntegrityValidator {
             positive(line.quantity, "كمية سطر مسودة المبيعات")
             positive(line.unitFactor, "عامل وحدة سطر مسودة المبيعات")
             nonNegative(line.unitPrice, "سعر سطر مسودة المبيعات")
+            line.purchaseCostSnapshot?.let {
+                nonNegative(it, "كلفة الشراء المحفوظة في سطر المسودة")
+            }
             nonNegative(line.discount, "خصم سطر مسودة المبيعات")
             nonNegative(line.paidAmount, "المبلغ المقبوض في سطر المسودة")
             requireRate(line.exchangeRate, line.currencyCode, "سعر الصرف في سطر المسودة")
