@@ -238,7 +238,7 @@ internal fun appPaletteFor(isDark: Boolean, paletteId: String): AppPalette =
 
 private val homeShortcutOptions = listOf(
     "daily_sales" to "المبيعات اليومية",
-    "pos" to "نقطة البيع",
+    "pos" to "دفتر البيع اليومي",
     "price_settings" to "تحديد سعر البيع",
     "sales" to "المبيعات والفواتير",
     "purchases" to "المشتريات",
@@ -811,7 +811,7 @@ private fun DashboardScreen(
 
     val dashboardTiles = listOf(
         Triple("daily_sales", homeShortcutLabels["daily_sales"].orEmpty().ifBlank { "المبيعات اليومية" }, Icons.Filled.BarChart) to onOpenDailySales,
-        Triple("pos", homeShortcutLabels["pos"].orEmpty().ifBlank { "نقطة البيع" }, Icons.Filled.ShoppingCart) to onOpenPos,
+        Triple("pos", homeShortcutLabels["pos"].orEmpty().ifBlank { "دفتر البيع اليومي" }, Icons.Filled.ShoppingCart) to onOpenPos,
         Triple("sales", homeShortcutLabels["sales"].orEmpty().ifBlank { "إضافة مبيع" }, Icons.Filled.ShoppingCart) to onOpenSales,
         Triple("products", homeShortcutLabels["products"].orEmpty().ifBlank { "إدارة المخزون" }, Icons.Filled.Inventory) to onOpenProducts,
         Triple("accounts", homeShortcutLabels["accounts"].orEmpty().ifBlank { "قائمة الحسابات" }, Icons.Filled.MenuBook) to onOpenAccounts,
@@ -860,7 +860,7 @@ private fun DashboardScreen(
                     ) {
                         listOf(
                             "المبيعات اليومية" to onOpenDailySales,
-                            "نقطة البيع" to onOpenPos,
+                            "دفتر البيع اليومي" to onOpenPos,
                             "إضافة مبيع" to onOpenSales,
                             "المشتريات" to onOpenPurchases,
                             "إدارة البيانات الأساسية" to onOpenMasterData,
