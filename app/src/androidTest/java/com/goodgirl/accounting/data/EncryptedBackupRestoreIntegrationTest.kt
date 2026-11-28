@@ -579,20 +579,22 @@ class EncryptedBackupRestoreIntegrationTest {
             drafts.saveSnapshot(header, listOf(line), listOf(expense))
 
             val exportPassword = "Draft-Expense-Backup-Password".toCharArray()
-            AccountingBackupManager(context, database).exportBackup(
+            val exported = AccountingBackupManager(context, database).exportBackup(
                 android.net.Uri.fromFile(backupFile),
                 exportPassword
             )
+            assertTrue(exported.recordCount >= 3)
             assertTrue(exportPassword.all { it == '\u0000' })
 
             drafts.clearDraft()
             assertTrue(drafts.loadSnapshot().lines.isEmpty())
 
             val restorePassword = "Draft-Expense-Backup-Password".toCharArray()
-            AccountingBackupManager(context, database).restoreBackup(
+            val restoredBackup = AccountingBackupManager(context, database).restoreBackup(
                 android.net.Uri.fromFile(backupFile),
                 restorePassword
             )
+            assertTrue(restoredBackup.recordCount >= 3)
             assertTrue(restorePassword.all { it == '\u0000' })
 
             val restored = drafts.loadSnapshot()
