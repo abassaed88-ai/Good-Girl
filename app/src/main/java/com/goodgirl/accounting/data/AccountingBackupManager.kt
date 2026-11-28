@@ -724,7 +724,7 @@ class AccountingBackupManager(
 
     companion object {
         private const val BACKUP_FORMAT = "good-girl-accounting-backup"
-        private const val BACKUP_FORMAT_VERSION = 6
+        private const val BACKUP_FORMAT_VERSION = 7
         private const val APPLICATION_ID = "com.goodgirl.accounting"
         private const val MIN_SUPPORTED_BACKUP_DATABASE_VERSION = 4
         private const val DATABASE_VERSION = ACCOUNTING_DATABASE_VERSION
