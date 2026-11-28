@@ -425,6 +425,7 @@ class AccountingBackupManager(
         .put("unitPrice", unitPrice).put("discount", discount).put("currencyCode", currencyCode)
         .put("exchangeRate", exchangeRate).put("paidAmount", paidAmount)
         .put("customerId", customerId ?: JSONObject.NULL).put("note", note).put("issuedAt", issuedAt)
+        .put("purchaseCostSnapshot", purchaseCostSnapshot ?: JSONObject.NULL)
 
     private fun CategoryEntity.toBackupJson() = JSONObject()
         .put("id", id).put("name", name).put("note", note).put("createdAt", createdAt)
@@ -557,6 +558,7 @@ class AccountingBackupManager(
         unitPrice = getString("unitPrice"),
         discount = getString("discount"),
         currencyCode = getString("currencyCode"),
+        purchaseCostSnapshot = nullableString("purchaseCostSnapshot"),
         exchangeRate = getString("exchangeRate"),
         paidAmount = getString("paidAmount"),
         customerId = nullableString("customerId"),
