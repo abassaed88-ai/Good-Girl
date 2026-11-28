@@ -15,7 +15,7 @@ import com.goodgirl.accounting.domain.HistoricalStockCostEvent
 import java.math.BigDecimal
 import java.util.UUID
 
-const val ACCOUNTING_DATABASE_VERSION = 12
+const val ACCOUNTING_DATABASE_VERSION = 13
 
 private data class MigrationCurrencyBalances(
     var cash: BigDecimal = BigDecimal.ZERO,
@@ -754,6 +754,14 @@ abstract class AccountingDatabase : RoomDatabase() {
             }
         }
 
+        internal val MIGRATION_12_13 = object : Migration(12, 13) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE daily_sales_draft_lines ADD COLUMN purchaseCostSnapshot TEXT"
+                )
+            }
+        }
+
         @Volatile
         private var INSTANCE: AccountingDatabase? = null
 
@@ -763,7 +771,7 @@ abstract class AccountingDatabase : RoomDatabase() {
                     context.applicationContext,
                     AccountingDatabase::class.java,
                     "good_girl_accounting.db"
-                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12).build().also { INSTANCE = it }
+                ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13).build().also { INSTANCE = it }
             }
     }
 }
