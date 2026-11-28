@@ -29,7 +29,10 @@ class DailySalesDraftRepositoryIntegrationTest {
                 databaseName
             ).build()
             val header = sampleHeader()
-            val lines = listOf(sampleLine("draft-line-1", 0), sampleLine("draft-line-2", 1))
+            val lines = listOf(
+                sampleLine("draft-line-1", 0, purchaseCostSnapshot = "2"),
+                sampleLine("draft-line-2", 1)
+            )
             DailySalesDraftRepository(firstDatabase).saveSnapshot(header, lines)
             firstDatabase.close()
 
