@@ -276,7 +276,8 @@ class DailySalesDraftRepositoryIntegrationTest {
             }
 
             val linkedLedger = database.ledgerDao().getAll().filter { it.sourceId == posted.invoiceId }
-            assertEquals(4, linkedLedger.size)
+            assertEquals(5, linkedLedger.size)
+            assertEquals(1, linkedLedger.count { it.entryType == "CASH_IN" })
             assertEquals(2, linkedLedger.count { it.entryType == "CASH_OUT" })
             assertEquals(2, linkedLedger.count { it.entryType == "EXPENSE" })
             assertEquals(2, linkedLedger.count { it.sourceType == "DAILY_SALE_EXPENSE_CASH" })
