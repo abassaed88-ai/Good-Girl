@@ -30,4 +30,49 @@ class PointOfSaleCartRulesTest {
             PointOfSaleCartRules.validatePayment("20", "21", hasCustomer = true)
         }
     }
+
+    @Test
+    fun cartRejectsBlankInvalidAndNonPositiveQuantities() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PointOfSaleCartRules.validateCart(
+                listOf(PointOfSaleCartLineInput("", "5", "10"))
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PointOfSaleCartRules.validateCart(
+                listOf(PointOfSaleCartLineInput("0", "5", "10"))
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PointOfSaleCartRules.validateCart(
+                listOf(PointOfSaleCartLineInput("abc", "5", "10"))
+            )
+        }
+    }
+
+    @Test
+    fun cartRejectsQuantityAboveStockAndInvalidPrice() {
+        assertThrows(IllegalArgumentException::class.java) {
+            PointOfSaleCartRules.validateCart(
+                listOf(PointOfSaleCartLineInput("2.5", "5", "2"))
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PointOfSaleCartRules.validateCart(
+                listOf(PointOfSaleCartLineInput("1", "-1", "2"))
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            PointOfSaleCartRules.validateCart(
+                listOf(PointOfSaleCartLineInput("1", "bad", "2"))
+            )
+        }
+    }
+
+    @Test
+    fun cartAcceptsValidFractionalQuantityAndDecimalPrice() {
+        PointOfSaleCartRules.validateCart(
+            listOf(PointOfSaleCartLineInput("1.5", "2.75", "3"))
+        )
+    }
 }
