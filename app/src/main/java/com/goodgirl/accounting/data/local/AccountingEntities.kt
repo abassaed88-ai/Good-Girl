@@ -401,3 +401,26 @@ data class DailySalesDraftLineEntity(
     val issuedAt: Long,
     val purchaseCostSnapshot: String? = null
 )
+
+@Entity(
+    tableName = "daily_sales_draft_expenses",
+    foreignKeys = [
+        ForeignKey(
+            entity = DailySalesDraftLineEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["lineId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index("draftId"), Index("lineId")]
+)
+data class DailySalesDraftExpenseEntity(
+    @PrimaryKey val id: String,
+    val draftId: String = "active",
+    val lineId: String,
+    val description: String,
+    val amount: String,
+    val currencyCode: String,
+    val exchangeRateSnapshot: String,
+    val createdAt: Long
+)
