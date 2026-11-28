@@ -79,7 +79,6 @@ abstract class AccountingDatabase : RoomDatabase() {
     abstract fun exchangeRateAuditDao(): ExchangeRateAuditDao
     abstract fun exchangeRateCorrectionItemDao(): ExchangeRateCorrectionItemDao
     abstract fun dailySalesDraftDao(): DailySalesDraftDao
-    abstract fun dailySalesDraftExpenseDao(): DailySalesDraftExpenseDao
 
     companion object {
         private val MIGRATION_1_2 = object : Migration(1, 2) {
