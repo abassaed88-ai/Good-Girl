@@ -60,7 +60,9 @@ class DailySalesArabicTextInputTest {
             composeRule.onNodeWithText("مادة اختبار الإدخال العربي")
                 .performClick()
 
-            composeRule.onNodeWithTag("daily-sales-note-cell").performClick()
+            composeRule.onNodeWithTag("daily-sales-note-cell")
+                .performScrollTo()
+                .performClick()
             composeRule.waitForIdle()
             val noteField = composeRule.onNodeWithTag("daily-sales-note")
             assertArabicCharactersAppearOneByOne(noteField, "ملاحظة عربية")
