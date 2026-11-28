@@ -6282,7 +6282,7 @@ private fun DailySalesScreen(
     }
 
     fun beginEditingDailySalesExpenses(pending: PendingDailySaleLine) {
-        if (!isDraftPersisted || selectedProductId != null || editingDraftLineId != null) {
+        if (isSaving || !isDraftPersisted || selectedProductId != null || editingDraftLineId != null) {
             message = "احفظ أو ألغِ إدخال السطر الحالي قبل تعديل مصروفات سطر آخر."
             return
         }
@@ -6356,12 +6356,13 @@ private fun DailySalesScreen(
 
     LaunchedEffect(
         isDraftLoaded, canPersistDraft, isDraftPersisted, editingDraftLineId,
-        expenseEditingLineId, showExpenseEditor
+        expenseEditingLineId, showExpenseEditor, isSaving
     ) {
-        // Block navigation while the sale editor or its expense dialog has unsaved changes.
+        // Block navigation while a sale is being posted or either editor has unsaved changes.
         onUnsavedChangesChanged(
             isDraftLoaded && canPersistDraft &&
-                (!isDraftPersisted || editingDraftLineId != null || showExpenseEditor || expenseEditingLineId != null)
+                (isSaving || !isDraftPersisted || editingDraftLineId != null ||
+                    showExpenseEditor || expenseEditingLineId != null)
         )
     }
 
@@ -6630,7 +6631,7 @@ private fun DailySalesScreen(
                                 Text(customers.firstOrNull { it.id == pending.customerId }?.name ?: "نقدي", Modifier.width(140.dp).padding(horizontal = 3.dp), color = Ink, fontSize = 10.sp, textAlign = TextAlign.Center, maxLines = 2)
                                 Box(
                                     Modifier.width(90.dp)
-                                        .clickable { beginEditingDailySalesExpenses(pending) }
+                                        .clickable(enabled = !isSaving) { beginEditingDailySalesExpenses(pending) }
                                         .padding(horizontal = 3.dp, vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
