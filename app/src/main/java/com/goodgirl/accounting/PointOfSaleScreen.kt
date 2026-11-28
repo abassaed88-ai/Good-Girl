@@ -405,6 +405,9 @@ fun PointOfSaleScreen(
                         val quantity = line.quantity.toBigDecimalOrNull() ?: BigDecimal.ZERO
                         val unitPrice = line.unitPrice.toBigDecimalOrNull() ?: BigDecimal.ZERO
                         val lineTotal = quantity.multiply(unitPrice).stripTrailingZeros().toPlainString()
+                        val estimatedProfit = product?.purchaseCost?.toBigDecimalOrNull()
+                            ?.takeIf { it > BigDecimal.ZERO }
+                            ?.let { cost -> unitPrice.subtract(cost).multiply(quantity).stripTrailingZeros() }
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Text(product?.name ?: "مادة غير متاحة", modifier = Modifier.weight(1.3f), fontWeight = FontWeight.SemiBold)
@@ -439,6 +442,17 @@ fun PointOfSaleScreen(
                                 Text("إجمالي السطر: ${lineTotal} ${if (currencyCode == "USD") "دولار" else "ل.س"}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                                 TextButton(onClick = { cart.removeAt(index) }) { Text("حذف السطر", color = MaterialTheme.colorScheme.error) }
                             }
+                            Text(
+                                estimatedProfit?.let {
+                                    "الربح التقديري: ${it.toPlainString()} ${if (currencyCode == "USD") "دولار" else "ل.س"}"
+                                } ?: "كلفة الشراء غير محددة — لا يمكن احتساب الربح",
+                                color = if (estimatedProfit != null && estimatedProfit.signum() < 0) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                fontSize = 12.sp
+                            )
                             Text("المخزون المتاح: ${product?.stockQuantity ?: "0"} ${product?.baseUnit.orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         }
                         if (index < cart.lastIndex) androidx.compose.material3.HorizontalDivider()
@@ -549,12 +563,25 @@ fun PointOfSaleScreen(
                         val quantity = line.quantity.toBigDecimal()
                         val price = line.unitPrice.toBigDecimal()
                         val lineTotal = quantity.multiply(price).stripTrailingZeros().toPlainString()
+                        val estimatedProfit = product?.purchaseCost?.toBigDecimalOrNull()
+                            ?.takeIf { it > BigDecimal.ZERO }
+                            ?.let { cost -> price.subtract(cost).multiply(quantity).stripTrailingZeros() }
                         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(product?.name ?: "مادة غير متاحة", fontWeight = FontWeight.SemiBold)
                             Text(
                                 "${line.quantity} × ${line.unitPrice} = $lineTotal $currencyLabel",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 13.sp
+                            )
+                            Text(
+                                estimatedProfit?.let { "الربح التقديري: ${it.toPlainString()} $currencyLabel" }
+                                    ?: "كلفة الشراء غير محددة",
+                                color = if (estimatedProfit != null && estimatedProfit.signum() < 0) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                                fontSize = 12.sp
                             )
                         }
                         if (index < cart.lastIndex) {
