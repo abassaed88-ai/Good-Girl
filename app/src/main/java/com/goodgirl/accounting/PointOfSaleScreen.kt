@@ -2,6 +2,8 @@ package com.goodgirl.accounting
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -57,20 +59,28 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.goodgirl.accounting.data.InvoiceLineDraft
+import com.goodgirl.accounting.data.DailySalesExpenseDraft
 import com.goodgirl.accounting.data.InvoiceRepository
 import com.goodgirl.accounting.data.ProductBarcodeRepository
 import com.goodgirl.accounting.data.local.AccountingDatabase
 import com.goodgirl.accounting.data.local.ProductEntity
+import com.goodgirl.accounting.data.local.ProductUnitEntity
 import com.goodgirl.accounting.domain.PointOfSaleCartLineInput
 import com.goodgirl.accounting.domain.PointOfSaleCartRules
 import kotlinx.coroutines.launch
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.UUID
 
 private data class PointOfSaleLine(
     val productId: String,
     val quantity: String,
-    val unitPrice: String
+    val unitPrice: String,
+    val unitName: String,
+    val unitFactor: String,
+    val expenseDescription: String = "",
+    val expenseAmount: String = "",
+    val note: String = ""
 )
 
 @Composable
@@ -93,6 +103,9 @@ fun PointOfSaleScreen(
             .getString("usd_syp_rate", "1") ?: "1"
     }
     val cart = remember { mutableStateListOf<PointOfSaleLine>() }
+    var productUnits by remember { mutableStateOf<Map<String, List<ProductUnitEntity>>>(emptyMap()) }
+    var showProductPickerDialog by remember { mutableStateOf(false) }
+    var unitMenuExpandedForLine by remember { mutableStateOf<Int?>(null) }
     var currencyCode by remember { mutableStateOf("SYP") }
     var exchangeRate by remember { mutableStateOf("1") }
     var barcodeInput by remember { mutableStateOf("") }
@@ -109,9 +122,8 @@ fun PointOfSaleScreen(
     LaunchedEffect(cart.toList()) {
         onUnsavedChangesChanged(cart.isNotEmpty())
     }
-    LaunchedEffect(Unit) {
-        barcodeFocusRequester.requestFocus()
-        keyboardController?.hide()
+    LaunchedEffect(products) {
+        productUnits = database.productUnitDao().getAll().groupBy { it.productId }
     }
 
     val total = cart.fold(BigDecimal.ZERO) { sum, line ->
@@ -141,11 +153,19 @@ fun PointOfSaleScreen(
         }
 
         val index = cart.indexOfFirst { it.productId == product.id }
-        val currentQuantity = cart.getOrNull(index)?.quantity ?: "0"
+        val existingLine = cart.getOrNull(index)
+        val currentQuantity = existingLine?.quantity ?: "0"
+        val selectedFactor = existingLine?.unitFactor
+            ?: productUnits[product.id]?.firstOrNull { it.unitName == product.baseUnit }?.baseFactor
+            ?: "1"
+        val availableInSelectedUnit = runCatching {
+            BigDecimal(product.stockQuantity).divide(BigDecimal(selectedFactor), 8, RoundingMode.DOWN)
+                .stripTrailingZeros().toPlainString()
+        }.getOrDefault("0")
         val nextQuantity = try {
             PointOfSaleCartRules.nextScannedQuantity(
                 currentQuantity = currentQuantity,
-                stockQuantity = product.stockQuantity
+                stockQuantity = availableInSelectedUnit
             )
         } catch (error: Exception) {
             message = error.message ?: "الكمية المتاحة غير كافية"
@@ -159,12 +179,16 @@ fun PointOfSaleScreen(
                 PointOfSaleLine(
                     productId = product.id,
                     quantity = nextQuantity,
-                    unitPrice = product.salePrice
+                    unitPrice = product.salePrice,
+                    unitName = product.baseUnit,
+                    unitFactor = productUnits[product.id]
+                        ?.firstOrNull { it.unitName == product.baseUnit }?.baseFactor ?: "1"
                 )
             )
         }
-        message = "تمت إضافة ${product.name} إلى السلة"
+        message = "تمت إضافة " + product.name + " إلى دفتر المبيعات"
         searchQuery = ""
+        showProductPickerDialog = false
     }
 
     fun scanBarcode(value: String) {
@@ -191,22 +215,6 @@ fun PointOfSaleScreen(
         }
     }
 
-    fun updateQuantity(index: Int, delta: Int) {
-        val line = cart.getOrNull(index) ?: return
-        val product = products.firstOrNull { it.id == line.productId } ?: return
-        val current = line.quantity.toBigDecimalOrNull() ?: BigDecimal.ZERO
-        val next = current.add(BigDecimal.valueOf(delta.toLong()))
-        if (next <= BigDecimal.ZERO) {
-            cart.removeAt(index)
-            return
-        }
-        if (next > (product.stockQuantity.toBigDecimalOrNull() ?: BigDecimal.ZERO)) {
-            message = "لا يمكن تجاوز الكمية المتاحة في المخزون"
-            return
-        }
-        cart[index] = line.copy(quantity = next.stripTrailingZeros().toPlainString())
-    }
-
     fun validateSaleBeforeReview(): Boolean {
         if (cart.isEmpty()) {
             message = "أضف مادة واحدة على الأقل قبل مراجعة البيع"
@@ -217,13 +225,32 @@ fun PointOfSaleScreen(
                 val product = products.firstOrNull { it.id == line.productId }
                     ?: throw IllegalArgumentException("إحدى المواد لم تعد موجودة في قائمة المواد")
                 require(product.isActive) { "المادة ${product.name} غير فعالة ولا يمكن بيعها" }
+                val factor = line.unitFactor.trim().toBigDecimalOrNull()
+                    ?.takeIf { it > BigDecimal.ZERO }
+                    ?: throw IllegalArgumentException("عامل تحويل الوحدة غير صالح في السطر " + (cart.indexOf(line) + 1))
+                val availableInSelectedUnit = BigDecimal(product.stockQuantity)
+                    .divide(factor, 8, RoundingMode.DOWN).stripTrailingZeros().toPlainString()
                 PointOfSaleCartLineInput(
                     quantity = line.quantity,
                     unitPrice = line.unitPrice,
-                    stockQuantity = product.stockQuantity
+                    stockQuantity = availableInSelectedUnit
                 )
             }
             PointOfSaleCartRules.validateCart(lineInputs)
+            cart.forEachIndexed { index, line ->
+                val description = line.expenseDescription.trim()
+                val amount = line.expenseAmount.trim()
+                require(description.isEmpty() == amount.isEmpty()) {
+                    "أدخل بيان المصروف ومبلغه معاً في السطر " + (index + 1)
+                }
+                if (amount.isNotEmpty()) {
+                    val value = amount.toBigDecimalOrNull()
+                        ?: throw IllegalArgumentException("مبلغ المصروف غير صحيح في السطر " + (index + 1))
+                    require(value > BigDecimal.ZERO) {
+                        "مبلغ المصروف يجب أن يكون أكبر من صفر في السطر " + (index + 1)
+                    }
+                }
+            }
             val amountPaid = paidAmount.trim().ifEmpty { totalText }
             PointOfSaleCartRules.validatePayment(
                 total = totalText,
@@ -259,7 +286,16 @@ fun PointOfSaleScreen(
                 quantity = line.quantity,
                 unitPrice = line.unitPrice.trim(),
                 discount = "0",
-                unitName = products.firstOrNull { it.id == line.productId }?.baseUnit
+                unitName = line.unitName,
+                associatedExpenses = if (line.expenseAmount.isBlank()) emptyList() else listOf(
+                    DailySalesExpenseDraft(
+                        id = UUID.randomUUID().toString(),
+                        description = line.expenseDescription.trim(),
+                        amount = line.expenseAmount.trim(),
+                        currencyCode = currencyCode,
+                        exchangeRateSnapshot = exchangeRate
+                    )
+                )
             )
         }
         isPosting = true
@@ -275,7 +311,9 @@ fun PointOfSaleScreen(
                     lines = invoiceLines,
                     paidAmount = amountPaid,
                     issuedAt = System.currentTimeMillis(),
-                    note = "فاتورة نقطة البيع"
+                    note = cart.mapIndexedNotNull { index, line ->
+                        line.note.trim().takeIf { it.isNotEmpty() }?.let { "السطر " + (index + 1) + ": " + it }
+                    }.joinToString(" | ").ifEmpty { "فاتورة نقطة البيع" }
                 )
                 cart.clear()
                 paidAmount = ""
@@ -301,48 +339,215 @@ fun PointOfSaleScreen(
         ) {
             TextButton(onClick = onBack) { Text("رجوع") }
             Text(
-                "دفتر البيع اليومي",
+                "المبيعات اليومية",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
             TextButton(onClick = { cart.clear(); paidAmount = ""; message = null }) {
-                Text("تفريغ السلة", color = MaterialTheme.colorScheme.error)
+                Text("تفريغ الدفتر", color = MaterialTheme.colorScheme.error)
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                "أدخل تفاصيل كل مبيعة ضمن صفها، ويمكن التمرير أفقياً لرؤية جميع الأعمدة.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontSize = 12.sp
+            )
+            Button(onClick = { showProductPickerDialog = true }, enabled = !isPosting) {
+                Text("إضافة سطر")
             }
         }
 
+        val ledgerWidth = 52.dp + 220.dp + 190.dp + 150.dp + 135.dp + 160.dp + 190.dp + 200.dp
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(14.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text("مسح الباركود", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                OutlinedTextField(
-                    value = barcodeInput,
-                    onValueChange = { barcodeInput = it },
-                    modifier = Modifier.fillMaxWidth().focusRequester(barcodeFocusRequester).onPreviewKeyEvent { event ->
-                        if (event.type == KeyEventType.KeyUp && event.key == Key.Enter) {
-                            scanBarcode(barcodeInput)
-                            true
-                        } else false
-                    },
-                    label = { Text("امسح الرمز أو أدخله ثم اضغط إدخال") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { scanBarcode(barcodeInput) })
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { scanBarcode(barcodeInput) }, enabled = barcodeInput.isNotBlank() && !isLookingUpBarcode) {
-                        Text("إضافة الباركود")
+            Column(modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Row(
+                    modifier = Modifier.width(ledgerWidth).height(48.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    LedgerHeaderCell("تسلسل", 52.dp)
+                    LedgerHeaderCell("المادة", 220.dp)
+                    LedgerHeaderCell("الكمية / الوحدة", 190.dp)
+                    LedgerHeaderCell("المبيع", 150.dp)
+                    LedgerHeaderCell("الأرباح", 135.dp)
+                    LedgerHeaderCell("العميل (دائن / لأجل)", 160.dp)
+                    LedgerHeaderCell("مصروفات", 190.dp)
+                    LedgerHeaderCell("ملاحظات", 200.dp)
+                }
+                if (cart.isEmpty()) {
+                    Box(
+                        modifier = Modifier.width(ledgerWidth).height(104.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("الدفتر فارغ. اضغط «إضافة سطر» لاختيار مادة.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    TextButton(onClick = { showCameraScanner = true }) { Text("فتح كاميرا المسح") }
+                } else {
+                    cart.forEachIndexed { index, line ->
+                        val product = products.firstOrNull { it.id == line.productId }
+                        val factor = line.unitFactor.toBigDecimalOrNull() ?: BigDecimal.ONE
+                        val unitCost = product?.purchaseCost?.toBigDecimalOrNull()
+                            ?.multiply(factor)?.stripTrailingZeros()?.toPlainString()
+                        val estimatedGrossProfit = PointOfSaleCartRules.estimateGrossProfit(
+                            quantity = line.quantity,
+                            unitPrice = line.unitPrice,
+                            unitCost = unitCost
+                        )
+                        val expense = line.expenseAmount.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                        val netEstimate = estimatedGrossProfit?.subtract(expense)?.stripTrailingZeros()
+                        val options = productUnits[line.productId].orEmpty()
+                        Row(
+                            modifier = Modifier.width(ledgerWidth).height(124.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            LedgerBodyCell(52.dp) {
+                                Text((index + 1).toString(), fontWeight = FontWeight.SemiBold)
+                            }
+                            LedgerBodyCell(220.dp) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text(product?.name ?: "مادة غير متاحة", fontWeight = FontWeight.SemiBold)
+                                    Text(product?.sku?.takeIf { it.isNotBlank() } ?: "—", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 11.sp)
+                                    TextButton(onClick = { cart.removeAt(index) }, enabled = !isPosting) {
+                                        Text("حذف", color = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                            LedgerBodyCell(190.dp) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Material3OutlinedTextField(
+                                        value = line.quantity,
+                                        onValueChange = { value -> cart[index] = line.copy(quantity = value) },
+                                        modifier = Modifier.fillMaxWidth().testTag("pos-quantity-" + index),
+                                        label = { Text("الكمية") },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                    )
+                                    Box {
+                                        TextButton(onClick = { unitMenuExpandedForLine = index }, enabled = !isPosting) {
+                                            Text(line.unitName)
+                                        }
+                                        DropdownMenu(
+                                            expanded = unitMenuExpandedForLine == index,
+                                            onDismissRequest = { unitMenuExpandedForLine = null }
+                                        ) {
+                                            options.forEach { unit ->
+                                                DropdownMenuItem(
+                                                    text = { Text(unit.unitName) },
+                                                    onClick = {
+                                                        val nextFactor = unit.baseFactor.toBigDecimalOrNull() ?: BigDecimal.ONE
+                                                        val nextQuantity = line.quantity.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                                                        val available = product?.stockQuantity?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                                                        if (nextQuantity.multiply(nextFactor) > available) {
+                                                            message = "الكمية المدخلة تتجاوز المخزون بهذه الوحدة"
+                                                        } else {
+                                                            val basePrice = product?.salePrice?.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                                                            cart[index] = line.copy(
+                                                                unitName = unit.unitName,
+                                                                unitFactor = unit.baseFactor,
+                                                                unitPrice = basePrice.multiply(nextFactor).stripTrailingZeros().toPlainString()
+                                                            )
+                                                        }
+                                                        unitMenuExpandedForLine = null
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            LedgerBodyCell(150.dp) {
+                                Material3OutlinedTextField(
+                                    value = line.unitPrice,
+                                    onValueChange = { value -> cart[index] = line.copy(unitPrice = value) },
+                                    modifier = Modifier.fillMaxWidth().testTag("pos-sale-price-" + index),
+                                    label = { Text(if (currencyCode == "USD") "دولار" else "ل.س") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                )
+                            }
+                            LedgerBodyCell(135.dp) {
+                                Text(
+                                    netEstimate?.toPlainString() ?: "—",
+                                    color = if (netEstimate != null && netEstimate.signum() < 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            LedgerBodyCell(160.dp) {
+                                Text(
+                                    selectedCustomer?.name ?: "نقدي",
+                                    color = if (selectedCustomer == null) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                            LedgerBodyCell(190.dp) {
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Material3OutlinedTextField(
+                                        value = line.expenseDescription,
+                                        onValueChange = { value -> cart[index] = line.copy(expenseDescription = value) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text("بيان المصروف") },
+                                        singleLine = true
+                                    )
+                                    Material3OutlinedTextField(
+                                        value = line.expenseAmount,
+                                        onValueChange = { value -> cart[index] = line.copy(expenseAmount = value) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        label = { Text("المبلغ") },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                    )
+                                }
+                            }
+                            LedgerBodyCell(200.dp) {
+                                Material3OutlinedTextField(
+                                    value = line.note,
+                                    onValueChange = { value -> cart[index] = line.copy(note = value) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("ملاحظات السطر") },
+                                    singleLine = true
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val expenseTotal = cart.fold(BigDecimal.ZERO) { sum, line ->
+            sum.add(line.expenseAmount.toBigDecimalOrNull() ?: BigDecimal.ZERO)
+        }.stripTrailingZeros().toPlainString()
+        val estimatedProfitTotal = cart.fold(BigDecimal.ZERO) { sum, line ->
+            val product = products.firstOrNull { it.id == line.productId }
+            val factor = line.unitFactor.toBigDecimalOrNull() ?: BigDecimal.ONE
+            val cost = product?.purchaseCost?.toBigDecimalOrNull()?.multiply(factor)?.toPlainString()
+            val profit = PointOfSaleCartRules.estimateGrossProfit(line.quantity, line.unitPrice, cost)
+            sum.add(profit ?: BigDecimal.ZERO)
+        }.subtract(expenseTotal.toBigDecimal()).stripTrailingZeros().toPlainString()
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("إجماليات دفتر المبيعات", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("المبيعات: " + totalText + " " + if (currencyCode == "USD") "دولار" else "ل.س")
+                    Text("الأرباح التقديرية بعد المصروفات: " + estimatedProfitTotal + " " + if (currencyCode == "USD") "دولار" else "ل.س")
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("المصروفات: " + expenseTotal + " " + if (currencyCode == "USD") "دولار" else "ل.س")
+                    Text("عدد السطور: " + cart.size)
                 }
                 Text(
-                    "يمكن استخدام قارئ USB أو Bluetooth الذي يكتب الرمز ثم يرسل زر الإدخال، أو كاميرا الهاتف.",
+                    "عملة الدفتر الحالية: " + if (currencyCode == "USD") "الدولار الأمريكي" else "الليرة السورية",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
@@ -355,122 +560,7 @@ fun PointOfSaleScreen(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
         ) {
             Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("البحث اليدوي عن مادة", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    modifier = Modifier.fillMaxWidth().testTag("pos-product-search"),
-                    label = { Text("اسم المادة أو رمزها") },
-                    singleLine = true
-                )
-                if (searchQuery.isNotBlank()) {
-                    visibleProducts.forEach { product ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().clickable { addProduct(product) }.padding(vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(product.name, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-                                Text(
-                                    "المتوفر: ${product.stockQuantity} ${product.baseUnit}  •  سعر البيع: ${product.salePrice} ${if (product.priceCurrencyCode == "USD") "دولار" else "ل.س"}",
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    fontSize = 12.sp
-                                )
-                            }
-                            TextButton(onClick = { addProduct(product) }) { Text("إضافة") }
-                        }
-                    }
-                    if (visibleProducts.isEmpty()) {
-                        Text("لا توجد مادة مطابقة. تحقق من الاسم أو الرمز.", color = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-        }
-
-        Text("دفتر المبيع اليومي — تفاصيل البيع", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-        Text("كل مادة تظهر كسطر قابل للمراجعة، مع الكمية والسعر وإجمالي السطر.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-        if (cart.isEmpty()) {
-            Text("الدفتر فارغ. امسح باركود مادة أو ابحث عنها لإضافة أول سطر.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                Column(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("المادة", modifier = Modifier.weight(1.3f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        Text("الكمية", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
-                        Text("السعر", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
-                    }
-                    cart.forEachIndexed { index, line ->
-                        val product = products.firstOrNull { it.id == line.productId }
-                        val quantity = line.quantity.toBigDecimalOrNull() ?: BigDecimal.ZERO
-                        val unitPrice = line.unitPrice.toBigDecimalOrNull() ?: BigDecimal.ZERO
-                        val lineTotal = quantity.multiply(unitPrice).stripTrailingZeros().toPlainString()
-                        val estimatedProfit = PointOfSaleCartRules.estimateGrossProfit(
-                            quantity = line.quantity,
-                            unitPrice = line.unitPrice,
-                            unitCost = product?.purchaseCost
-                        )
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text(product?.name ?: "مادة غير متاحة", modifier = Modifier.weight(1.3f), fontWeight = FontWeight.SemiBold)
-                                Material3OutlinedTextField(
-                                    value = line.quantity,
-                                    onValueChange = { value ->
-                                        val parsed = value.toBigDecimalOrNull()
-                                        val available = product?.stockQuantity?.toBigDecimalOrNull()
-                                        if (parsed != null && parsed > BigDecimal.ZERO && (available == null || parsed <= available)) {
-                                            cart[index] = line.copy(quantity = value)
-                                        } else if (value.isBlank()) {
-                                            cart[index] = line.copy(quantity = "")
-                                        } else {
-                                            message = "الكمية يجب أن تكون أكبر من صفر ولا تتجاوز المخزون"
-                                        }
-                                    },
-                                    modifier = Modifier.weight(0.8f),
-                                    label = { Text("الكمية") },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                                )
-                                OutlinedTextField(
-                                    value = line.unitPrice,
-                                    onValueChange = { value -> cart[index] = line.copy(unitPrice = value) },
-                                    modifier = Modifier.weight(1f),
-                                    label = { Text("سعر الوحدة") },
-                                    singleLine = true,
-                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                                )
-                            }
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Text("إجمالي السطر: ${lineTotal} ${if (currencyCode == "USD") "دولار" else "ل.س"}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                TextButton(onClick = { cart.removeAt(index) }) { Text("حذف السطر", color = MaterialTheme.colorScheme.error) }
-                            }
-                            Text(
-                                estimatedProfit?.let {
-                                    "الربح التقديري: ${it.toPlainString()} ${if (currencyCode == "USD") "دولار" else "ل.س"}"
-                                } ?: "كلفة الشراء غير محددة — لا يمكن احتساب الربح",
-                                color = if (estimatedProfit != null && estimatedProfit.signum() < 0) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.onSurfaceVariant
-                                },
-                                fontSize = 12.sp
-                            )
-                            Text("المخزون المتاح: ${product?.stockQuantity ?: "0"} ${product?.baseUnit.orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
-                        }
-                        if (index < cart.lastIndex) androidx.compose.material3.HorizontalDivider()
-                    }
-                }
-            }
-        }
-
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-        ) {
-            Column(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("الحساب والتحصيل", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                Text("إجمالي الفاتورة: $totalText ${if (currencyCode == "USD") "دولار" else "ل.س"}", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Text("التحصيل وحساب العميل", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                 Box {
                     OutlinedTextField(
                         value = selectedCustomer?.name ?: "",
@@ -501,7 +591,7 @@ fun PointOfSaleScreen(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                 )
                 Text(
-                    "عملة الفاتورة: ${if (currencyCode == "USD") "الدولار" else "الليرة السورية"}",
+                    "عملة الفاتورة: " + if (currencyCode == "USD") "الدولار" else "الليرة السورية",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 12.sp
                 )
@@ -529,6 +619,65 @@ fun PointOfSaleScreen(
             fontSize = 12.sp
         )
     }
+
+    if (showProductPickerDialog) {
+        Dialog(onDismissRequest = { showProductPickerDialog = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(18.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("اختيار مادة للدفتر", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.fillMaxWidth().testTag("pos-product-search"),
+                        label = { Text("ابحث باسم المادة أو رمزها") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(onSearch = { keyboardController?.hide() })
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { showCameraScanner = true }, modifier = Modifier.weight(1f)) {
+                            Text("مسح الباركود بالكاميرا")
+                        }
+                        TextButton(onClick = { scanBarcode(searchQuery) }, enabled = searchQuery.isNotBlank() && !isLookingUpBarcode) {
+                            Text("إضافة بالباركود")
+                        }
+                    }
+                    if (searchQuery.isNotBlank()) {
+                        visibleProducts.forEach { product ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().clickable { addProduct(product) }.padding(vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(product.name, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        "الرمز: " + product.sku + " • المتوفر: " + product.stockQuantity + " " + product.baseUnit,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                TextButton(onClick = { addProduct(product) }) { Text("اختيار") }
+                            }
+                            androidx.compose.material3.HorizontalDivider()
+                        }
+                        if (visibleProducts.isEmpty()) Text("لا توجد مادة مطابقة بالاسم أو الرمز.", color = MaterialTheme.colorScheme.error)
+                    }
+                    TextButton(onClick = { showProductPickerDialog = false }, modifier = Modifier.align(Alignment.End)) {
+                        Text("إغلاق")
+                    }
+                }
+            }
+        }
+    }
+
 
     if (showReviewDialog) {
         val amountToCollect = paidAmount.trim().ifEmpty { totalText }
@@ -641,5 +790,37 @@ fun PointOfSaleScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LedgerHeaderCell(label: String, cellWidth: androidx.compose.ui.unit.Dp) {
+    Box(
+        modifier = Modifier.width(cellWidth).fillMaxSize()
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            .background(MaterialTheme.colorScheme.primaryContainer)
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            label,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            textAlign = TextAlign.Center,
+            fontSize = 12.sp
+        )
+    }
+}
+
+@Composable
+private fun LedgerBodyCell(cellWidth: androidx.compose.ui.unit.Dp, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier.width(cellWidth).fillMaxSize()
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        content()
     }
 }
