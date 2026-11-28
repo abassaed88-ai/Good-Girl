@@ -24,7 +24,16 @@ data class InvoiceLineDraft(
     val unitPrice: String,
     val discount: String = "0",
     val unitName: String? = null,
-    val saleUnitCostSnapshot: String? = null
+    val saleUnitCostSnapshot: String? = null,
+    val associatedExpenses: List<DailySalesExpenseDraft> = emptyList()
+)
+
+data class DailySalesExpenseDraft(
+    val id: String,
+    val description: String,
+    val amount: String,
+    val currencyCode: String,
+    val exchangeRateSnapshot: String
 )
 
 data class PostedInvoiceResult(
@@ -159,6 +168,23 @@ class InvoiceRepository(private val database: AccountingDatabase) {
         val cleanRate = ProductInputRules.normalizeNonNegativeDecimal(exchangeRateSnapshot, "سعر الصرف")
         require(cleanRate.toBigDecimal() > BigDecimal.ZERO) { "سعر الصرف يجب أن يكون أكبر من صفر" }
         require(lines.isNotEmpty()) { "أضف مادة واحدة على الأقل إلى الفاتورة" }
+        val attachedExpenses = lines.flatMap { it.associatedExpenses }
+        require(cleanKind == "SALE" || attachedExpenses.isEmpty()) {
+            "لا يمكن إرفاق مصروفات مبيعات بفاتورة شراء"
+        }
+        require(attachedExpenses.map { it.id }.distinct().size == attachedExpenses.size) {
+            "يوجد معرّف مصروف مكرر ضمن الفاتورة"
+        }
+        attachedExpenses.forEach { expense ->
+            require(expense.id.isNotBlank()) { "معرّف المصروف مطلوب" }
+            require(expense.description.trim().isNotEmpty()) { "بيان المصروف مطلوب" }
+            require(expense.description.trim().length <= 180) { "بيان المصروف طويل جداً" }
+            CashTransactionRules.normalize(
+                amount = expense.amount,
+                currencyCode = expense.currencyCode,
+                exchangeRate = expense.exchangeRateSnapshot
+            )
+        }
 
         val cleanInvoiceDiscount =
             ProductInputRules.normalizeNonNegativeDecimal(invoiceDiscount, "خصم الفاتورة").toBigDecimal()
@@ -399,6 +425,17 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                 inventoryRevaluations = inventoryRevaluations,
                 revaluationOccurredAt = now
             )
+            if (cleanKind == "SALE") {
+                attachedExpenses.forEach { expense ->
+                    DailySalesExpenseJournalPoster.post(
+                        database = database,
+                        invoiceId = invoiceId,
+                        invoiceNumber = cleanNumber,
+                        occurredAt = issuedAt,
+                        expense = expense
+                    )
+                }
+            }
 
             if (amounts.remaining > BigDecimal.ZERO) {
                 database.ledgerDao().insert(
