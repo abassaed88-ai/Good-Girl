@@ -354,43 +354,47 @@ fun PointOfSaleScreen(
             }
         }
 
-        Text("سلة المبيعات", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("دفتر المبيع اليومي — تفاصيل البيع", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text("كل مادة تظهر كسطر قابل للمراجعة، مع الكمية والسعر وإجمالي السطر.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
         if (cart.isEmpty()) {
-            Text("السلة فارغة. امسح باركود مادة أو ابحث عنها لإضافتها.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("الدفتر فارغ. امسح باركود مادة أو ابحث عنها لإضافة أول سطر.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            cart.forEachIndexed { index, line ->
-                val product = products.firstOrNull { it.id == line.productId }
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                ) {
-                    Column(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(product?.name ?: "مادة غير متاحة", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                            TextButton(onClick = { cart.removeAt(index) }) { Text("حذف", color = MaterialTheme.colorScheme.error) }
+            Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(modifier = Modifier.fillMaxWidth().padding(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("المادة", modifier = Modifier.weight(1.3f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("الكمية", modifier = Modifier.weight(0.8f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
+                        Text("السعر", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.Center)
+                    }
+                    cart.forEachIndexed { index, line ->
+                        val product = products.firstOrNull { it.id == line.productId }
+                        val quantity = line.quantity.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                        val unitPrice = line.unitPrice.toBigDecimalOrNull() ?: BigDecimal.ZERO
+                        val lineTotal = quantity.multiply(unitPrice).stripTrailingZeros().toPlainString()
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(product?.name ?: "مادة غير متاحة", modifier = Modifier.weight(1.3f), fontWeight = FontWeight.SemiBold)
+                                Row(modifier = Modifier.weight(0.8f), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                    TextButton(onClick = { updateQuantity(index, -1) }) { Text("−") }
+                                    Text(line.quantity, fontWeight = FontWeight.Bold)
+                                    TextButton(onClick = { updateQuantity(index, 1) }) { Text("+") }
+                                }
+                                OutlinedTextField(
+                                    value = line.unitPrice,
+                                    onValueChange = { value -> cart[index] = line.copy(unitPrice = value) },
+                                    modifier = Modifier.weight(1f),
+                                    label = { Text("سعر الوحدة") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                                )
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("إجمالي السطر: ${lineTotal} ${if (currencyCode == "USD") "دولار" else "ل.س"}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                TextButton(onClick = { cart.removeAt(index) }) { Text("حذف السطر", color = MaterialTheme.colorScheme.error) }
+                            }
+                            Text("المخزون المتاح: ${product?.stockQuantity ?: "0"} ${product?.baseUnit.orEmpty()}", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
                         }
-                        Text(
-                            "المخزون المتاح: ${product?.stockQuantity ?: "0"} ${product?.baseUnit.orEmpty()}",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontSize = 12.sp
-                        )
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { updateQuantity(index, -1) }) { Text("−") }
-                            Text(line.quantity, fontWeight = FontWeight.Bold)
-                            TextButton(onClick = { updateQuantity(index, 1) }) { Text("+") }
-                            Spacer(Modifier.width(8.dp))
-                            OutlinedTextField(
-                                value = line.unitPrice,
-                                onValueChange = { value ->
-                                    cart[index] = line.copy(unitPrice = value)
-                                },
-                                modifier = Modifier.weight(1f),
-                                label = { Text("سعر الوحدة") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                            )
-                        }
+                        if (index < cart.lastIndex) androidx.compose.material3.HorizontalDivider()
                     }
                 }
             }
