@@ -6703,7 +6703,8 @@ private fun DailySalesScreen(
                                             note = note,
                                             updatedAt = System.currentTimeMillis()
                                         ),
-                                        pendingDailySales.mapIndexed { index, line -> line.toDraftEntity(index) }
+                                        pendingDailySales.mapIndexed { index, line -> line.toDraftEntity(index) },
+                                        pendingDailySales.flatMap { it.expenses }
                                     )
                                     while (pendingDailySales.isNotEmpty()) {
                                         val pending = pendingDailySales.first()
