@@ -545,12 +545,12 @@ fun PointOfSaleScreen(
                         fontSize = 13.sp
                     )
                     cart.forEachIndexed { index, line ->
-                        val product = products.first { it.id == line.productId }
+                        val product = products.firstOrNull { it.id == line.productId }
                         val quantity = line.quantity.toBigDecimal()
                         val price = line.unitPrice.toBigDecimal()
                         val lineTotal = quantity.multiply(price).stripTrailingZeros().toPlainString()
                         Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                            Text(product.name, fontWeight = FontWeight.SemiBold)
+                            Text(product?.name ?: "مادة غير متاحة", fontWeight = FontWeight.SemiBold)
                             Text(
                                 "${line.quantity} × ${line.unitPrice} = $lineTotal $currencyLabel",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
