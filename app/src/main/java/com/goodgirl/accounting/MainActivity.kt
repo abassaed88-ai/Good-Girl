@@ -5943,6 +5943,7 @@ private fun DailySalesScreen(
     var canPersistDraft by remember { mutableStateOf(false) }
     var isDraftPersisted by remember { mutableStateOf(false) }
     var isSaving by remember { mutableStateOf(false) }
+    var editingDraftLineId by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var showMaterialPicker by remember { mutableStateOf(false) }
     var showQuantityEditor by remember { mutableStateOf(false) }
@@ -6029,13 +6030,19 @@ private fun DailySalesScreen(
 
 
     LaunchedEffect(
-        isDraftLoaded, canPersistDraft, isSaving, selectedDay, selectedProductId,
+        isDraftLoaded, canPersistDraft, isSaving, editingDraftLineId, selectedDay, selectedProductId,
         selectedProductNameSnapshot, currentCurrencyCode, selectedUnitName,
         productSearchQuery, selectedProductCategoryId, quantity, salePrice,
         lineDiscount, exchangeRate, paidAmount, paidAmountTouched,
         selectedPartyId, note, pendingDailySales.toList()
     ) {
         if (!isDraftLoaded || !canPersistDraft || isSaving) return@LaunchedEffect
+        if (editingDraftLineId != null) {
+            // Keep the last committed draft untouched while a saved row is being edited.
+            // A process restart therefore restores the original row instead of losing its identity.
+            isDraftPersisted = false
+            return@LaunchedEffect
+        }
         isDraftPersisted = false
         delay(300)
         val header = DailySalesDraftEntity(
@@ -6097,7 +6104,13 @@ private fun DailySalesScreen(
             val product = selectedProduct ?: throw IllegalArgumentException("اختر المادة أولاً")
             val unit = selectedUnit ?: throw IllegalArgumentException("اختر وحدة قياس صالحة للمادة")
             require(product.isActive) { "لا يمكن تسجيل مبيعة بمادة مؤرشفة" }
-            require(pendingDailySales.size < 100) { "وصلت إلى الحد الأقصى للمسودة (100 سطر)." }
+            val editingId = editingDraftLineId
+            val editingIndex = editingId?.let { id -> pendingDailySales.indexOfFirst { it.id == id } } ?: -1
+            if (editingId == null) {
+                require(pendingDailySales.size < 100) { "وصلت إلى الحد الأقصى للمسودة (100 سطر)." }
+            } else {
+                require(editingIndex >= 0) { "السطر المراد تعديله لم يعد موجوداً في المسودة" }
+            }
             val cleanQuantity = InvoicePostingRules.normalizePositiveQuantity(quantity)
             val cleanPrice = InvoicePostingRules.normalizeNonNegativeAmount(salePrice, "سعر المبيع")
             val cleanDiscount = InvoicePostingRules.normalizeNonNegativeAmount(lineDiscount, "خصم المبيعة")
@@ -6113,27 +6126,28 @@ private fun DailySalesScreen(
             val cleanRate = if (product.priceCurrencyCode == "SYP") "1" else
                 InvoicePostingRules.normalizeNonNegativeAmount(exchangeRate, "سعر الصرف")
             require(cleanRate.toBigDecimal() > BigDecimal.ZERO) { "سعر الصرف يجب أن يكون أكبر من صفر" }
-            pendingDailySales.add(
-                PendingDailySaleLine(
-                    id = DailySalesDraftRepository.newLineId(),
-                    productId = product.id,
-                    productName = product.name,
-                    quantity = cleanQuantity,
-                    unitName = unit.unitName,
-                    unitFactor = unit.baseFactor,
-                    unitPrice = cleanPrice,
-                    discount = cleanDiscount,
-                    currencyCode = product.priceCurrencyCode,
-                    exchangeRate = cleanRate,
-                    paidAmount = cleanPaid,
-                    customerId = selectedPartyId,
-                    note = note.trim(),
-                    issuedAt = dailySalesIssuedAt(
-                        selectedDayStartMillis = selectedDay,
-                        currentTimeMillis = System.currentTimeMillis()
-                    )
+            val updatedLine = PendingDailySaleLine(
+                id = editingId ?: DailySalesDraftRepository.newLineId(),
+                productId = product.id,
+                productName = product.name,
+                quantity = cleanQuantity,
+                unitName = unit.unitName,
+                unitFactor = unit.baseFactor,
+                unitPrice = cleanPrice,
+                discount = cleanDiscount,
+                currencyCode = product.priceCurrencyCode,
+                exchangeRate = cleanRate,
+                paidAmount = cleanPaid,
+                customerId = selectedPartyId,
+                note = note.trim(),
+                issuedAt = if (editingId != null) pendingDailySales[editingIndex].issuedAt else dailySalesIssuedAt(
+                    selectedDayStartMillis = selectedDay,
+                    currentTimeMillis = System.currentTimeMillis()
                 )
             )
+            if (editingId == null) pendingDailySales.add(updatedLine)
+            else pendingDailySales[editingIndex] = updatedLine
+            editingDraftLineId = null
             selectedProductId = null
             selectedProductNameSnapshot = ""
             currentCurrencyCode = "SYP"
@@ -6148,15 +6162,78 @@ private fun DailySalesScreen(
             paidAmountTouched = false
             note = ""
             productSearchQuery = ""
-            message = "تمت إضافة السطر إلى الجدول كمسودة. لم يُرحّل إلى المخزون أو الحسابات بعد."
+            message = if (editingId != null) {
+                "تم حفظ تعديل السطر في المسودة. لم يُرحّل إلى المخزون أو الحسابات بعد."
+            } else {
+                "تمت إضافة السطر إلى الجدول كمسودة. لم يُرحّل إلى المخزون أو الحسابات بعد."
+            }
         } catch (error: Exception) {
             message = error.message ?: "تعذر إضافة السطر إلى المسودة"
         }
     }
 
-    LaunchedEffect(isDraftLoaded, canPersistDraft, isDraftPersisted) {
-        // Do not leave the screen while an editor snapshot is waiting to be committed.
-        onUnsavedChangesChanged(isDraftLoaded && canPersistDraft && !isDraftPersisted)
+    fun beginEditingDailySalesDraftLine(pending: PendingDailySaleLine, index: Int) {
+        if (selectedProductId != null || note.isNotBlank() || paidAmountTouched) {
+            message = "احفظ الإدخال الحالي أولاً قبل فتح سطر آخر للتعديل."
+            return
+        }
+        selectedProductId = pending.productId
+        selectedProductNameSnapshot = pending.productName
+        currentCurrencyCode = pending.currencyCode
+        selectedUnitName = pending.unitName
+        quantity = pending.quantity
+        salePrice = pending.unitPrice
+        lineDiscount = pending.discount
+        exchangeRate = pending.exchangeRate
+        paidAmount = pending.paidAmount
+        val lineGross = runCatching {
+            BigDecimal(pending.quantity).multiply(BigDecimal(pending.unitPrice))
+                .subtract(BigDecimal(pending.discount))
+        }.getOrDefault(BigDecimal.ZERO)
+        paidAmountTouched = runCatching {
+            BigDecimal(pending.paidAmount).compareTo(lineGross) != 0
+        }.getOrDefault(true)
+        selectedPartyId = pending.customerId
+        note = pending.note
+        selectedProductCategoryId = null
+        productSearchQuery = ""
+        selectedDay = Calendar.getInstance().apply {
+            timeInMillis = pending.issuedAt
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        editingDraftLineId = pending.id
+        isDraftPersisted = false
+        message = "تعديل السطر رقم ${index + 1}؛ اضغط «حفظ التعديل» بعد الانتهاء."
+    }
+
+    fun cancelEditingDailySalesDraftLine() {
+        editingDraftLineId = null
+        selectedProductId = null
+        selectedProductNameSnapshot = ""
+        currentCurrencyCode = "SYP"
+        selectedUnitName = null
+        selectedPartyId = null
+        quantity = "1"
+        salePrice = "0"
+        lineDiscount = "0"
+        exchangeRate = context.getSharedPreferences("good_girl_settings", android.content.Context.MODE_PRIVATE)
+            .getString("usd_syp_rate", "1") ?: "1"
+        paidAmount = ""
+        paidAmountTouched = false
+        note = ""
+        productSearchQuery = ""
+        message = "تم إلغاء التعديل؛ بقي السطر الأصلي محفوظاً."
+    }
+
+    LaunchedEffect(isDraftLoaded, canPersistDraft, isDraftPersisted, editingDraftLineId) {
+        // An edit is not committed until the user saves it; guard navigation while
+        // the row's stable identity is held by this in-memory editor.
+        onUnsavedChangesChanged(
+            isDraftLoaded && canPersistDraft && (!isDraftPersisted || editingDraftLineId != null)
+        )
     }
 
     val todayStart = Calendar.getInstance().apply {
@@ -6388,6 +6465,11 @@ private fun DailySalesScreen(
                                     Text(pending.note.ifBlank { "—" }, color = MutedText, fontSize = 9.sp, maxLines = 2)
                                     TextButton(
                                         enabled = !isSaving,
+                                        onClick = { beginEditingDailySalesDraftLine(pending, index) },
+                                        contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                                    ) { Text("تعديل", fontSize = 10.sp, color = BrandBlue) }
+                                    TextButton(
+                                        enabled = !isSaving && editingDraftLineId != pending.id,
                                         onClick = {
                                             scope.launch {
                                                 try {
@@ -6412,8 +6494,15 @@ private fun DailySalesScreen(
                         onClick = { addDailySalesDraftLine() },
                         enabled = isDraftLoaded && canPersistDraft && !isSaving && selectedProduct?.isActive == true && selectedUnit != null,
                         modifier = Modifier.weight(1f)
-                    ) { Text("إضافة السطر") }
+                    ) { Text(if (editingDraftLineId == null) "إضافة السطر" else "حفظ التعديل") }
                     TextButton(onClick = { showMaterialPicker = true }, modifier = Modifier.weight(1f)) { Text("اختيار مادة") }
+                }
+                if (editingDraftLineId != null) {
+                    TextButton(
+                        onClick = { cancelEditingDailySalesDraftLine() },
+                        enabled = !isSaving,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("إلغاء التعديل") }
                 }
                 if (selectedProduct != null) {
                     Text("العملة المعتمدة للمادة: $currentCurrencyCode. يحافظ النظام على عملة المادة في الفاتورة وسجل التكلفة.", color = MutedText, fontSize = 10.sp)
@@ -6464,9 +6553,17 @@ private fun DailySalesScreen(
                                 }
                             }
                         },
-                        enabled = !isSaving && pendingDailySales.isNotEmpty(),
+                        enabled = !isSaving && pendingDailySales.isNotEmpty() && editingDraftLineId == null,
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (isSaving) "جارٍ ترحيل السطور..." else "ترحيل جميع السطور المحفوظة") }
+                    ) {
+                        Text(
+                            when {
+                                isSaving -> "جارٍ ترحيل السطور..."
+                                editingDraftLineId != null -> "احفظ التعديل أو ألغِه قبل الترحيل"
+                                else -> "ترحيل جميع السطور المحفوظة"
+                            }
+                        )
+                    }
                     TextButton(
                         enabled = !isSaving,
                         onClick = {
@@ -6474,6 +6571,7 @@ private fun DailySalesScreen(
                                 try {
                                     dailySalesDraftRepository.clearPendingLines()
                                     pendingDailySales.clear()
+                                    editingDraftLineId = null
                                 } catch (error: Exception) {
                                     message = error.message ?: "تعذر إلغاء سطور المسودة"
                                 }
