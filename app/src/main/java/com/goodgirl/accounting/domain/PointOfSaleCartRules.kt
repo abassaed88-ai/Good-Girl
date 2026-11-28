@@ -2,7 +2,37 @@ package com.goodgirl.accounting.domain
 
 import java.math.BigDecimal
 
+data class PointOfSaleCartLineInput(
+    val quantity: String,
+    val unitPrice: String,
+    val stockQuantity: String
+)
+
 object PointOfSaleCartRules {
+    fun validateCart(lines: List<PointOfSaleCartLineInput>) {
+        require(lines.isNotEmpty()) { "أضف مادة واحدة على الأقل إلى دفتر البيع" }
+        lines.forEachIndexed { index, line ->
+            val lineNumber = index + 1
+            val quantity = line.quantity.trim().toBigDecimalOrNull()
+                ?: throw IllegalArgumentException("أدخل كمية رقمية صحيحة في السطر $lineNumber")
+            require(quantity > BigDecimal.ZERO) {
+                "كمية السطر $lineNumber يجب أن تكون أكبر من صفر"
+            }
+
+            val stock = line.stockQuantity.trim().toBigDecimalOrNull()
+                ?: throw IllegalArgumentException("تعذر قراءة رصيد المخزون في السطر $lineNumber")
+            require(stock >= BigDecimal.ZERO && quantity <= stock) {
+                "كمية السطر $lineNumber تتجاوز الكمية المتاحة في المخزون"
+            }
+
+            val unitPrice = line.unitPrice.trim().toBigDecimalOrNull()
+                ?: throw IllegalArgumentException("أدخل سعر وحدة رقمياً صحيحاً في السطر $lineNumber")
+            require(unitPrice >= BigDecimal.ZERO) {
+                "سعر الوحدة في السطر $lineNumber لا يمكن أن يكون سالباً"
+            }
+        }
+    }
+
     fun nextScannedQuantity(currentQuantity: String, stockQuantity: String): String {
         val current = currentQuantity.toBigDecimal()
         val available = stockQuantity.toBigDecimal()
