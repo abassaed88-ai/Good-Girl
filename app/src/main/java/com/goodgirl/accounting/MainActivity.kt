@@ -6200,6 +6200,10 @@ private fun DailySalesScreen(
         index: Int,
         currentProductCost: String?
     ) {
+        if (!isDraftPersisted) {
+            message = "انتظر اكتمال حفظ المسودة قبل تعديل السطر."
+            return
+        }
         if (selectedProductId != null || note.isNotBlank() || paidAmountTouched) {
             message = "احفظ الإدخال الحالي أولاً قبل فتح سطر آخر للتعديل."
             return
@@ -6494,7 +6498,7 @@ private fun DailySalesScreen(
                                 Column(Modifier.width(158.dp).padding(horizontal = 4.dp)) {
                                     Text(pending.note.ifBlank { "—" }, color = MutedText, fontSize = 9.sp, maxLines = 2)
                                     TextButton(
-                                        enabled = !isSaving,
+                                        enabled = !isSaving && isDraftPersisted,
                                         onClick = { beginEditingDailySalesDraftLine(pending, index, pendingProduct?.purchaseCost) },
                                         contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
                                     ) { Text("تعديل", fontSize = 10.sp, color = BrandBlue) }
