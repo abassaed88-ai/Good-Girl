@@ -6016,9 +6016,16 @@ private fun DailySalesScreen(
             message = "لا يمكن استخدام مادة مؤرشفة في مبيعة جديدة."
             return
         }
+        val originalEditingLine = editingDraftLineId?.let { id ->
+            pendingDailySales.firstOrNull { it.id == id }
+        }
         selectedProductId = product.id
         selectedProductNameSnapshot = product.name
-        selectedPurchaseCostSnapshot = product.purchaseCost
+        selectedPurchaseCostSnapshot = if (originalEditingLine?.productId == product.id) {
+            originalEditingLine.purchaseCostSnapshot ?: product.purchaseCost
+        } else {
+            product.purchaseCost
+        }
         currentCurrencyCode = product.priceCurrencyCode
         selectedUnitName = product.baseUnit
         salePrice = product.salePrice
@@ -6086,10 +6093,13 @@ private fun DailySalesScreen(
     val previewGross = enteredQuantity.multiply(enteredPrice)
     val previewSales = previewGross.subtract(enteredDiscount).max(BigDecimal.ZERO)
     val unitFactor = runCatching { BigDecimal(selectedUnit?.baseFactor ?: "1") }.getOrDefault(BigDecimal.ONE)
+    val previewUnitCost = if (editingDraftLineId != null) {
+        selectedPurchaseCostSnapshot ?: selectedProduct?.purchaseCost ?: "0"
+    } else {
+        selectedProduct?.purchaseCost ?: "0"
+    }
     val previewCost = enteredQuantity.multiply(unitFactor)
-        .multiply(runCatching {
-            BigDecimal(selectedPurchaseCostSnapshot ?: selectedProduct?.purchaseCost ?: "0")
-        }.getOrDefault(BigDecimal.ZERO))
+        .multiply(runCatching { BigDecimal(previewUnitCost) }.getOrDefault(BigDecimal.ZERO))
     val previewProfit = previewSales.subtract(previewCost)
     val effectivePaidAmount = if (paidAmountTouched) paidAmount else previewSales.stripTrailingZeros().toPlainString()
     val hasUnsavedDailySaleChanges = hasUnsavedDailySaleDraft(
@@ -6141,7 +6151,11 @@ private fun DailySalesScreen(
                 unitName = unit.unitName,
                 unitFactor = unit.baseFactor,
                 unitPrice = cleanPrice,
-                purchaseCostSnapshot = selectedPurchaseCostSnapshot ?: product.purchaseCost,
+                purchaseCostSnapshot = if (editingId != null) {
+                    selectedPurchaseCostSnapshot ?: product.purchaseCost
+                } else {
+                    product.purchaseCost
+                },
                 discount = cleanDiscount,
                 currencyCode = product.priceCurrencyCode,
                 exchangeRate = cleanRate,
