@@ -267,7 +267,7 @@ fun PointOfSaleScreen(
         ) {
             TextButton(onClick = onBack) { Text("رجوع") }
             Text(
-                "نقطة البيع",
+                "دفتر البيع اليومي",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
