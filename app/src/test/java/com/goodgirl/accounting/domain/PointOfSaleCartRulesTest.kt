@@ -75,4 +75,23 @@ class PointOfSaleCartRulesTest {
             listOf(PointOfSaleCartLineInput("1.5", "2.75", "3"))
         )
     }
+
+    @Test
+    fun estimatedGrossProfitUsesCurrentUnitCost() {
+        assertEquals(
+            java.math.BigDecimal("3"),
+            PointOfSaleCartRules.estimateGrossProfit("1.5", "5", "3")
+        )
+        assertEquals(
+            java.math.BigDecimal("-2"),
+            PointOfSaleCartRules.estimateGrossProfit("2", "2", "3")
+        )
+    }
+
+    @Test
+    fun estimatedGrossProfitIsUnavailableWhenCostOrInputIsMissing() {
+        assertEquals(null, PointOfSaleCartRules.estimateGrossProfit("1", "5", "0"))
+        assertEquals(null, PointOfSaleCartRules.estimateGrossProfit("", "5", "3"))
+        assertEquals(null, PointOfSaleCartRules.estimateGrossProfit("1", "bad", "3"))
+    }
 }
