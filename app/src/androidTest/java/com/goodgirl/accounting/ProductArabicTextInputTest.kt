@@ -45,14 +45,16 @@ class ProductArabicTextInputTest {
 
 
     @Test
-    fun arabicLettersRenderImmediatelyInPointOfSaleSearch() {
-        composeRule.onNodeWithTag("dashboard-pos")
+    fun arabicLettersRenderImmediatelyInDailySalesMaterialSearch() {
+        composeRule.onNodeWithText("المبيعات اليومية")
             .performScrollTo()
             .performClick()
         composeRule.waitForIdle()
+        composeRule.onNodeWithText("اختيار المادة").performClick()
+        composeRule.waitForIdle()
 
         assertArabicCharactersAppearOneByOne(
-            composeRule.onNodeWithTag("pos-product-search").performScrollTo(),
+            composeRule.onNodeWithTag("daily-sales-product-search"),
             "عطر الياسمين"
         )
     }
