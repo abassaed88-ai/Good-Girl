@@ -206,13 +206,24 @@ class LatestPurchaseCostPolicyMigrationIntegrationTest {
                 databaseFile.absolutePath,
                 null,
                 SQLiteDatabase.OPEN_READWRITE
-            ).use { it.version = 10 }
+            ).use {
+                // The fixture was created with the current schema. Remove the
+                // v12/v13-only draft tables so the simulated v10 file really
+                // follows the production 10 -> 11 -> 12 -> 13 migration path.
+                it.execSQL("DROP TABLE IF EXISTS daily_sales_draft_lines")
+                it.execSQL("DROP TABLE IF EXISTS daily_sales_drafts")
+                it.version = 10
+            }
 
             val upgraded = Room.databaseBuilder(
                 context,
                 AccountingDatabase::class.java,
                 databaseName
-            ).addMigrations(AccountingDatabase.MIGRATION_10_11, AccountingDatabase.MIGRATION_11_12)
+            ).addMigrations(
+                AccountingDatabase.MIGRATION_10_11,
+                AccountingDatabase.MIGRATION_11_12,
+                AccountingDatabase.MIGRATION_12_13
+            )
                 .allowMainThreadQueries()
                 .build()
             try {
