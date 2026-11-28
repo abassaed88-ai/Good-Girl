@@ -17,6 +17,7 @@ import com.goodgirl.accounting.data.local.StockCostRecalculationAuditEntity
 import com.goodgirl.accounting.data.local.StockCostRecalculationItemEntity
 import com.goodgirl.accounting.data.local.DailySalesDraftEntity
 import com.goodgirl.accounting.data.local.DailySalesDraftLineEntity
+import com.goodgirl.accounting.data.local.DailySalesDraftExpenseEntity
 import com.goodgirl.accounting.data.local.ExchangeRateHistoryEntity
 import com.goodgirl.accounting.data.local.ExchangeRateAuditEntity
 import com.goodgirl.accounting.data.local.ExchangeRateCorrectionItemEntity
@@ -54,7 +55,8 @@ object BackupIntegrityValidator {
         stockCostRecalculationAudits: List<StockCostRecalculationAuditEntity> = emptyList(),
         stockCostRecalculationItems: List<StockCostRecalculationItemEntity> = emptyList(),
         dailySalesDraft: DailySalesDraftEntity? = null,
-        dailySalesDraftLines: List<DailySalesDraftLineEntity> = emptyList()
+        dailySalesDraftLines: List<DailySalesDraftLineEntity> = emptyList(),
+        dailySalesDraftExpenses: List<DailySalesDraftExpenseEntity> = emptyList()
     ) {
         ensureUnique(categories.map { it.id }, "معرّفات التصنيفات")
         ensureUnique(products.map { it.id }, "معرّفات المنتجات")
@@ -83,6 +85,7 @@ object BackupIntegrityValidator {
         ensureUnique(exchangeRateCorrectionItems.map { it.auditId + "|" + it.recordType + "|" + it.recordId }, "سجلات العمليات المصححة")
         ensureUnique(dailySalesDraftLines.map { it.id }, "معرّفات سطور مسودة المبيعات")
         ensureUnique(dailySalesDraftLines.map { it.draftId + "|" + it.lineOrder }, "ترتيب سطور مسودة المبيعات")
+        ensureUnique(dailySalesDraftExpenses.map { it.id }, "معرّفات مصروفات مسودة المبيعات")
         require(dailySalesDraft == null || dailySalesDraft.id == "active") {
             "معرّف مسودة المبيعات غير صالح في النسخة الاحتياطية"
         }
@@ -91,6 +94,12 @@ object BackupIntegrityValidator {
         }
         require(dailySalesDraftLines.size <= 100) {
             "تجاوزت مسودة المبيعات الحد الأقصى لعدد السطور"
+        }
+        require(dailySalesDraftExpenses.isEmpty() || dailySalesDraft != null) {
+            "تحتوي النسخة الاحتياطية على مصروفات مسودة دون رأس للمسودة"
+        }
+        require(dailySalesDraftExpenses.size <= 500) {
+            "تجاوزت مسودة المبيعات الحد الأقصى لعدد المصروفات"
         }
         dailySalesDraftLines.forEachIndexed { index, line ->
             require(line.draftId == dailySalesDraft?.id && line.lineOrder == index) {
@@ -114,6 +123,22 @@ object BackupIntegrityValidator {
             require(BigDecimal(line.paidAmount) <= gross.subtract(BigDecimal(line.discount))) {
                 "المبلغ المقبوض في سطر المسودة أكبر من قيمته"
             }
+        }
+        val draftLineIds = dailySalesDraftLines.map { it.id }.toSet()
+        dailySalesDraftExpenses.forEach { expense ->
+            require(expense.draftId == dailySalesDraft?.id && expense.lineId in draftLineIds) {
+                "يوجد مصروف مسودة غير مرتبط بسطر محفوظ"
+            }
+            require(expense.description.isNotBlank() && expense.description.length <= 180) {
+                "بيان مصروف مسودة المبيعات غير صالح"
+            }
+            positive(expense.amount, "مبلغ مصروف مسودة المبيعات")
+            requireCurrency(expense.currencyCode, "عملة مصروف مسودة المبيعات")
+            requireRate(
+                expense.exchangeRateSnapshot,
+                expense.currencyCode,
+                "سعر صرف مصروف مسودة المبيعات"
+            )
         }
         ensureUnique(journalLines.map { it.journalEntryId + "|" + it.lineNumber }, "ترتيب أسطر قيود اليومية")
         ensureUnique(categories.map { it.name }, "أسماء التصنيفات")
