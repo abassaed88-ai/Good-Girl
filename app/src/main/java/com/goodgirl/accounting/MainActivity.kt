@@ -6444,6 +6444,27 @@ private fun DailySalesScreen(
             items.fold(BigDecimal.ZERO) { total, row -> total.add(row.profit) }
         }
     }
+    val expenseTotals = remember(ledgerEntries, invoices, dayBounds) {
+        val invoiceIds = invoices.asSequence()
+            .filter {
+                it.kind == "SALE" && it.status == "POSTED" &&
+                    it.issuedAt >= dayBounds.first && it.issuedAt < dayBounds.second
+            }
+            .map { it.id }
+            .toSet()
+        ledgerEntries.asSequence()
+            .filter {
+                it.entryType == "EXPENSE" &&
+                    it.sourceType == "DAILY_SALE_EXPENSE" &&
+                    it.sourceId in invoiceIds
+            }
+            .groupBy { it.currencyCode }
+            .mapValues { (_, entries) ->
+                entries.fold(BigDecimal.ZERO) { total, entry ->
+                    total.add(entry.amount.toBigDecimal())
+                }
+            }
+    }
 
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -6919,14 +6940,21 @@ private fun DailySalesScreen(
                             Text(formatCurrencyTotals(salesTotals), modifier = Modifier.width(120.dp).padding(horizontal = 4.dp), color = Ink, fontWeight = FontWeight.Bold, fontSize = 10.sp, textAlign = TextAlign.Center)
                             Text(formatCurrencyTotals(profitTotals), modifier = Modifier.width(100.dp).padding(horizontal = 4.dp), color = SoftGreen, fontWeight = FontWeight.Bold, fontSize = 9.sp, textAlign = TextAlign.Center)
                             Text("—", modifier = Modifier.width(140.dp), color = MutedText, fontSize = 10.sp, textAlign = TextAlign.Center)
-                            Text("—", modifier = Modifier.width(90.dp), color = MutedText, fontSize = 10.sp, textAlign = TextAlign.Center)
+                            Text(
+                                formatCurrencyTotals(expenseTotals),
+                                modifier = Modifier.width(90.dp).padding(horizontal = 3.dp),
+                                color = SoftRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.sp,
+                                textAlign = TextAlign.Center
+                            )
                             Text("عدد السطور: " + rows.size, modifier = Modifier.width(158.dp).padding(horizontal = 6.dp), color = MutedText, fontSize = 10.sp)
                         }
                     }
                 }
             }
             Text(
-                "اسحب الجدول أفقياً لرؤية الأعمدة الثمانية. بيانات العميل مأخوذة من فاتورة البيع؛ المصروفات حالياً غير مربوطة بسطر الفاتورة ولن تُعرض كقيمة وهمية.",
+                "اسحب الجدول أفقياً لرؤية الأعمدة الثمانية. تظهر مصروفات كل سطر في عمودها، ويُعرض مجموعها في نهاية الجدول حسب العملة.",
                 color = MutedText,
                 fontSize = 11.sp
             )
