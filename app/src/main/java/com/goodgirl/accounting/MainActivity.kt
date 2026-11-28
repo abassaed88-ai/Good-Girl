@@ -5956,6 +5956,7 @@ private fun DailySalesScreen(
     var editingDraftLineId by remember { mutableStateOf<String?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var showMaterialPicker by remember { mutableStateOf(false) }
+    var showDailySalesReview by remember { mutableStateOf(false) }
     var showQuantityEditor by remember { mutableStateOf(false) }
     var showSaleEditor by remember { mutableStateOf(false) }
     var showCustomerPicker by remember { mutableStateOf(false) }
@@ -6354,6 +6355,57 @@ private fun DailySalesScreen(
         expenseMessage = null
     }
 
+
+    fun postPendingDailySales() {
+        if (isSaving || pendingDailySales.isEmpty()) return
+        scope.launch {
+            isSaving = true
+            message = null
+            val totalToPost = pendingDailySales.size
+            var postedCount = 0
+            try {
+                dailySalesDraftRepository.saveSnapshot(
+                    DailySalesDraftEntity(
+                        selectedDay = selectedDay,
+                        selectedProductId = selectedProductId,
+                        selectedProductNameSnapshot = selectedProductNameSnapshot,
+                        selectedUnitName = selectedUnitName,
+                        productSearchQuery = productSearchQuery,
+                        selectedProductCategoryId = selectedProductCategoryId,
+                        quantity = quantity,
+                        salePrice = salePrice,
+                        lineDiscount = lineDiscount,
+                        currencyCode = currentCurrencyCode,
+                        exchangeRate = exchangeRate,
+                        paidAmount = paidAmount,
+                        paidAmountTouched = paidAmountTouched,
+                        selectedPartyId = selectedPartyId,
+                        note = note,
+                        updatedAt = System.currentTimeMillis()
+                    ),
+                    pendingDailySales.mapIndexed { index, line -> line.toDraftEntity(index) },
+                    pendingDailySales.flatMap { it.expenses }
+                )
+                while (pendingDailySales.isNotEmpty()) {
+                    val pending = pendingDailySales.first()
+                    dailySalesDraftRepository.postPendingLine(
+                        pending.toDraftEntity(0),
+                        pending.expenses
+                    )
+                    pendingDailySales.removeAt(0)
+                    postedCount += 1
+                }
+                message = "تم ترحيل " + postedCount + " سطراً بنجاح. تم تحديث المخزون والحسابات والتقارير."
+            } catch (error: Exception) {
+                message = "تم ترحيل " + postedCount + " من أصل " + totalToPost +
+                    " سطراً. بقيت السطور غير المرحلة في المسودة. " +
+                    (error.message ?: "تعذر إكمال الترحيل")
+            } finally {
+                isSaving = false
+            }
+        }
+    }
+
     LaunchedEffect(
         isDraftLoaded, canPersistDraft, isDraftPersisted, editingDraftLineId,
         expenseEditingLineId, showExpenseEditor, isSaving
@@ -6698,61 +6750,18 @@ private fun DailySalesScreen(
                 message?.let { Text(it, color = if (it.startsWith("تم")) SoftGreen else SoftRed, fontSize = 12.sp) }
 
                 if (pendingDailySales.isNotEmpty()) {
+
                     Button(
-                        onClick = {
-                            scope.launch {
-                                isSaving = true
-                                message = null
-                                val totalToPost = pendingDailySales.size
-                                var postedCount = 0
-                                try {
-                                    dailySalesDraftRepository.saveSnapshot(
-                                        DailySalesDraftEntity(
-                                            selectedDay = selectedDay,
-                                            selectedProductId = selectedProductId,
-                                            selectedProductNameSnapshot = selectedProductNameSnapshot,
-                                            selectedUnitName = selectedUnitName,
-                                            productSearchQuery = productSearchQuery,
-                                            selectedProductCategoryId = selectedProductCategoryId,
-                                            quantity = quantity,
-                                            salePrice = salePrice,
-                                            lineDiscount = lineDiscount,
-                                            currencyCode = currentCurrencyCode,
-                                            exchangeRate = exchangeRate,
-                                            paidAmount = paidAmount,
-                                            paidAmountTouched = paidAmountTouched,
-                                            selectedPartyId = selectedPartyId,
-                                            note = note,
-                                            updatedAt = System.currentTimeMillis()
-                                        ),
-                                        pendingDailySales.mapIndexed { index, line -> line.toDraftEntity(index) },
-                                        pendingDailySales.flatMap { it.expenses }
-                                    )
-                                    while (pendingDailySales.isNotEmpty()) {
-                                        val pending = pendingDailySales.first()
-                                        dailySalesDraftRepository.postPendingLine(
-                                            pending.toDraftEntity(0),
-                                            pending.expenses
-                                        )
-                                        pendingDailySales.removeAt(0)
-                                        postedCount += 1
-                                    }
-                                    message = "تم ترحيل $postedCount سطراً بنجاح. تم تحديث المخزون والحسابات والتقارير."
-                                } catch (error: Exception) {
-                                    message = "تم ترحيل $postedCount من أصل $totalToPost سطراً. بقيت السطور غير المرحلة في المسودة. " + (error.message ?: "تعذر إكمال الترحيل")
-                                } finally {
-                                    isSaving = false
-                                }
-                            }
-                        },
-                        enabled = !isSaving && pendingDailySales.isNotEmpty() && editingDraftLineId == null,
+                        onClick = { showDailySalesReview = true },
+                        enabled = !isSaving && pendingDailySales.isNotEmpty() && editingDraftLineId == null && isDraftPersisted,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
                             when {
                                 isSaving -> "جارٍ ترحيل السطور..."
                                 editingDraftLineId != null -> "احفظ التعديل أو ألغِه قبل الترحيل"
-                                else -> "ترحيل جميع السطور المحفوظة"
+                                !isDraftPersisted -> "جارٍ حفظ المسودة..."
+                                else -> "مراجعة السطور قبل الترحيل"
                             }
                         )
                     }
@@ -6966,6 +6975,125 @@ private fun DailySalesScreen(
             fontSize = 12.sp
         )
     }
+
+    if (showDailySalesReview) {
+        val reviewSalesTotals = pendingDailySales.groupBy { it.currencyCode }.mapValues { (_, lines) ->
+            lines.fold(BigDecimal.ZERO) { total, line ->
+                val gross = BigDecimal(line.quantity).multiply(BigDecimal(line.unitPrice))
+                total.add(gross.subtract(BigDecimal(line.discount)))
+            }
+        }
+        val reviewProfitTotals = pendingDailySales.groupBy { it.currencyCode }.mapValues { (_, lines) ->
+            lines.fold(BigDecimal.ZERO) { total, line ->
+                val sales = BigDecimal(line.quantity).multiply(BigDecimal(line.unitPrice))
+                    .subtract(BigDecimal(line.discount))
+                val cost = BigDecimal(line.quantity).multiply(BigDecimal(line.unitFactor))
+                    .multiply(BigDecimal(line.purchaseCostSnapshot ?: "0"))
+                total.add(sales.subtract(cost))
+            }
+        }
+        val reviewExpenseTotals = pendingDailySales.flatMap { it.expenses }
+            .groupBy { it.currencyCode }.mapValues { (_, expenses) ->
+                expenses.fold(BigDecimal.ZERO) { total, expense -> total.add(BigDecimal(expense.amount)) }
+            }
+        Dialog(
+            onDismissRequest = { if (!isSaving) showDailySalesReview = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = CardSurface
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(18.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        "مراجعة المبيعات قبل الترحيل",
+                        color = Ink,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 19.sp
+                    )
+                    Text(
+                        "راجع السطور والمبالغ والعملاء والمصروفات. لن يتغير المخزون أو الحسابات حتى تضغط «تأكيد الترحيل».",
+                        color = MutedText,
+                        fontSize = 12.sp
+                    )
+                    Text("عدد السطور: " + pendingDailySales.size, color = Ink, fontWeight = FontWeight.SemiBold)
+                    pendingDailySales.forEachIndexed { index, line ->
+                        val sales = BigDecimal(line.quantity).multiply(BigDecimal(line.unitPrice))
+                            .subtract(BigDecimal(line.discount))
+                        val cost = BigDecimal(line.quantity).multiply(BigDecimal(line.unitFactor))
+                            .multiply(BigDecimal(line.purchaseCostSnapshot ?: "0"))
+                        val expenses = line.expenses.groupBy { it.currencyCode }.mapValues { (_, values) ->
+                            values.fold(BigDecimal.ZERO) { total, expense -> total.add(BigDecimal(expense.amount)) }
+                        }
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp))
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                (index + 1).toString() + ". " + line.productName,
+                                color = Ink,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                line.quantity + " " + line.unitName + " × " + line.unitPrice +
+                                    " = " + sales.stripTrailingZeros().toPlainString() + " " + line.currencyCode,
+                                color = MutedText,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                "الربح التقديري قبل المصروفات: " +
+                                    sales.subtract(cost).stripTrailingZeros().toPlainString() + " " + line.currencyCode,
+                                color = Ink,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                "العميل: " + (customers.firstOrNull { it.id == line.customerId }?.name ?: "نقدي"),
+                                color = Ink,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                "المصروفات: " + if (expenses.isEmpty()) "لا يوجد" else formatCurrencyTotals(expenses),
+                                color = MutedText,
+                                fontSize = 11.sp
+                            )
+                            if (line.note.isNotBlank()) Text("ملاحظة: " + line.note, color = MutedText, fontSize = 11.sp)
+                        }
+                    }
+                    androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Text("إجمالي المبيعات حسب العملة: " + formatCurrencyTotals(reviewSalesTotals), color = Ink, fontWeight = FontWeight.SemiBold)
+                    Text("إجمالي الأرباح التقديرية: " + formatCurrencyTotals(reviewProfitTotals), color = SoftGreen, fontWeight = FontWeight.SemiBold)
+                    Text("إجمالي المصروفات: " + formatCurrencyTotals(reviewExpenseTotals), color = SoftRed, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "تبقى العملات منفصلة؛ لا يتم جمع الدولار والليرة في إجمالي واحد.",
+                        color = MutedText,
+                        fontSize = 11.sp
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                        TextButton(
+                            onClick = { showDailySalesReview = false },
+                            enabled = !isSaving,
+                            modifier = Modifier.weight(1f)
+                        ) { Text("عودة للتعديل") }
+                        Button(
+                            onClick = {
+                                showDailySalesReview = false
+                                postPendingDailySales()
+                            },
+                            enabled = !isSaving && pendingDailySales.isNotEmpty(),
+                            modifier = Modifier.weight(1f)
+                        ) { Text(if (isSaving) "جارٍ الترحيل..." else "تأكيد الترحيل") }
+                    }
+                }
+            }
+        }
+    }
+
     if (showMaterialPicker) {
         Dialog(onDismissRequest = { showMaterialPicker = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             Surface(Modifier.fillMaxWidth().padding(16.dp), shape = RoundedCornerShape(18.dp), color = CardSurface) {
