@@ -6444,7 +6444,7 @@ private fun DailySalesScreen(
                             Box(Modifier.width(52.dp), contentAlignment = Alignment.Center) {
                                 Text((pendingDailySales.size + 1).toString(), color = MutedText, fontSize = 11.sp)
                             }
-                            Box(Modifier.width(190.dp).clickable { showMaterialPicker = true }.padding(horizontal = 6.dp, vertical = 10.dp)) {
+                            Box(Modifier.width(190.dp).testTag("daily-sales-material-cell").clickable { showMaterialPicker = true }.padding(horizontal = 6.dp, vertical = 10.dp)) {
                                 Text(selectedProduct?.name ?: "اختيار المادة", color = if (selectedProduct == null) BrandBlue else Ink, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, maxLines = 2)
                             }
                             Box(Modifier.width(110.dp).clickable {
