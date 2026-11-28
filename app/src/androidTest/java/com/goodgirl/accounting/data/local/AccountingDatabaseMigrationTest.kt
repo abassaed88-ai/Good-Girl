@@ -163,6 +163,66 @@ class AccountingDatabaseMigrationTest {
     }
 
     @Test
+    fun migrationFromVersionThirteenCreatesExpenseRowsAndCascadesWithDraftLine() {
+        val databaseName = "room-migration-v13-v14-daily-sales-expenses.db"
+        val legacy = roomMigrationHelper.createDatabase(databaseName, 13)
+        try {
+            legacy.execSQL(
+                "INSERT INTO daily_sales_drafts (id, selectedDay, selectedProductId, " +
+                    "selectedProductNameSnapshot, selectedUnitName, productSearchQuery, " +
+                    "selectedProductCategoryId, quantity, salePrice, lineDiscount, currencyCode, " +
+                    "exchangeRate, paidAmount, paidAmountTouched, selectedPartyId, note, updatedAt) " +
+                    "VALUES ('active', 1000, NULL, '', NULL, '', NULL, '1', '0', '0', 'SYP', '1', '', 0, NULL, '', 1000)"
+            )
+            legacy.execSQL(
+                "INSERT INTO daily_sales_draft_lines (id, draftId, lineOrder, productId, " +
+                    "productNameSnapshot, quantity, unitName, unitFactor, unitPrice, discount, " +
+                    "currencyCode, exchangeRate, paidAmount, customerId, note, issuedAt, purchaseCostSnapshot) " +
+                    "VALUES ('expense-parent-line', 'active', 0, 'deleted-product', 'مادة محفوظة', " +
+                    "'2', 'علبة', '1', '5', '0', 'SYP', '1', '10', NULL, '', 1000, '2')"
+            )
+        } finally {
+            legacy.close()
+        }
+
+        val migrated = roomMigrationHelper.runMigrationsAndValidate(
+            databaseName,
+            14,
+            true,
+            AccountingDatabase.MIGRATION_13_14
+        )
+        try {
+            migrated.execSQL(
+                "INSERT INTO daily_sales_draft_expenses " +
+                    "(id, draftId, lineId, description, amount, currencyCode, exchangeRateSnapshot, createdAt) " +
+                    "VALUES ('expense-1', 'active', 'expense-parent-line', 'توصيل', '2.5', 'USD', '15000', 1100)"
+            )
+            migrated.query(
+                "SELECT description, amount, currencyCode, exchangeRateSnapshot " +
+                    "FROM daily_sales_draft_expenses WHERE lineId = 'expense-parent-line'"
+            ).use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("توصيل", cursor.getString(0))
+                assertEquals("2.5", cursor.getString(1))
+                assertEquals("USD", cursor.getString(2))
+                assertEquals("15000", cursor.getString(3))
+            }
+
+            migrated.execSQL("DELETE FROM daily_sales_draft_lines WHERE id = 'expense-parent-line'")
+            assertEquals(0, databaseCount(migrated, "daily_sales_draft_expenses"))
+
+            migrated.query("PRAGMA foreign_key_list(daily_sales_draft_expenses)").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals("daily_sales_draft_lines", cursor.getString(cursor.getColumnIndexOrThrow("table")))
+                assertEquals("CASCADE", cursor.getString(cursor.getColumnIndexOrThrow("on_delete")))
+            }
+        } finally {
+            migrated.close()
+            InstrumentationRegistry.getInstrumentation().targetContext.deleteDatabase(databaseName)
+        }
+    }
+
+    @Test
     fun migrationReconcilesBalancesWithoutChangingExistingMovementRows() {
         withVersionFourDatabase { database ->
             insertProduct(database, "p-match", "7.5", "4.00", "SYP")
