@@ -52,15 +52,16 @@ class DailySalesArabicTextInputTest {
                 .performScrollTo()
                 .performClick()
 
+            composeRule.onNodeWithText("اختيار المادة").performClick()
             val searchField = composeRule.onNodeWithTag("daily-sales-product-search")
             assertArabicCharactersAppearOneByOne(searchField, "عطر ورد")
             searchField.performTextClearance()
 
-            composeRule.onNodeWithText("اختيار المادة").performClick()
-            composeRule.onNodeWithText("مادة اختبار الإدخال العربي — المتوفر: 7 قطعة")
+            composeRule.onNodeWithText("مادة اختبار الإدخال العربي")
                 .performClick()
 
-            val noteField = composeRule.onNodeWithTag("daily-sales-note").performScrollTo()
+            composeRule.onNodeWithText("إضافة ملاحظة").performClick()
+            val noteField = composeRule.onNodeWithTag("daily-sales-note")
             assertArabicCharactersAppearOneByOne(noteField, "ملاحظة عربية")
         } finally {
             runBlocking {
