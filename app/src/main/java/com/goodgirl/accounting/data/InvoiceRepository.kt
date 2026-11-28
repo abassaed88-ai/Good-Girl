@@ -23,7 +23,8 @@ data class InvoiceLineDraft(
     val quantity: String,
     val unitPrice: String,
     val discount: String = "0",
-    val unitName: String? = null
+    val unitName: String? = null,
+    val saleUnitCostSnapshot: String? = null
 )
 
 data class PostedInvoiceResult(
@@ -246,7 +247,9 @@ class InvoiceRepository(private val database: AccountingDatabase) {
                     require(currentStock >= baseQuantity) { "الكمية المتاحة غير كافية للمنتج: " + product.name }
                     val newStock = currentStock.subtract(baseQuantity).stripTrailingZeros().toPlainString()
                     database.productDao().updateStock(product.id, newStock, now)
-                    unitCostSnapshot = currentCost.stripTrailingZeros().toPlainString()
+                    unitCostSnapshot = draft.saleUnitCostSnapshot?.let {
+                        ProductInputRules.normalizeNonNegativeDecimal(it, "كلفة الوحدة المحفوظة")
+                    } ?: currentCost.stripTrailingZeros().toPlainString()
 
                     database.stockMovementDao().insert(
                         StockMovementEntity(
