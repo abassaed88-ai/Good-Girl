@@ -448,6 +448,13 @@ class DailySalesDraftRepositoryIntegrationTest {
         issuedAt = 1_798_000_000_123L
     )
 
+    private fun assertDecimal(expected: String, actual: String) {
+        assertEquals(
+            0,
+            java.math.BigDecimal(expected).compareTo(java.math.BigDecimal(actual))
+        )
+    }
+
     private fun newInMemoryDatabase(): AccountingDatabase {
         val context: Context = InstrumentationRegistry.getInstrumentation().targetContext
         return Room.inMemoryDatabaseBuilder(context, AccountingDatabase::class.java)
